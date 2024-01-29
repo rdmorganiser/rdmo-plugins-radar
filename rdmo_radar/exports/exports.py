@@ -233,7 +233,7 @@ class RadarExport(Export):
         # subjectArea
         subject_areas = \
             self.get_values('project/dataset/subject', set_index=set_index) or \
-            self.get_values('project/research_field/title', set_index=set_index)
+            self.get_values('project/research_field/title')
 
         if subject_areas:
             dataset['subjectAreas'] = {
