@@ -185,8 +185,10 @@ class RadarExport(Export):
         # if identifier:
         #     dataset['identifier'] = identifier
         #     dataset['identifierType'] = \
-        #         self.get_option(self.identifier_type_options, 'project/dataset/identifier_type', set_index=set_index) or \
-        #         self.get_option(self.identifier_type_options, 'project/dataset/pids/system', set_index=set_index) or \
+        #         self.get_option(self.identifier_type_options, 'project/dataset/identifier_type',
+        #                         set_index=set_index) or \
+        #         self.get_option(self.identifier_type_options, 'project/dataset/pids/system',
+        #                         set_index=set_index) or \
         #         self.other
         # else:
         #     dataset['identifier'] = self.get_text('project/dataset/id', set_index=set_index)
@@ -240,7 +242,8 @@ class RadarExport(Export):
             for subject_area in subject_areas:
                 if subject_area.is_true:
                     if subject_area.option:
-                        controlled_subject_area_name = self.controlled_subject_area_options.get(subject_area.option.uri_path, self.other)
+                        controlled_subject_area_name = \
+                            self.controlled_subject_area_options.get(subject_area.option.uri_path, self.other)
                     else:
                         controlled_subject_area_name = self.other
 
@@ -259,7 +262,8 @@ class RadarExport(Export):
         if resource_type:
             dataset['resource'] = {
                 'value': resource_type,
-                'resourceType': self.get_option(self.resource_type_options, 'project/dataset/resource_type_general', set_index=set_index)
+                'resourceType': self.get_option(self.resource_type_options, 'project/dataset/resource_type_general',
+                                                set_index=set_index)
             }
 
         dataset['title'] = \
@@ -268,7 +272,8 @@ class RadarExport(Export):
             f'Dataset #{set_index + 1}'
 
         # alternate_identifiers
-        alternate_identifier_sets = self.get_set('project/dataset/alternate_identifier/identifier', set_prefix=str(set_index))
+        alternate_identifier_sets = self.get_set('project/dataset/alternate_identifier/identifier',
+                                                 set_prefix=str(set_index))
         if alternate_identifier_sets:
             dataset['alternateIdentifiers'] = {
               'alternateIdentifier': []
@@ -285,7 +290,8 @@ class RadarExport(Export):
                 })
 
         # related_identifiers
-        related_identifier_sets = self.get_set('project/dataset/related_identifier/identifier', set_prefix=str(set_index))
+        related_identifier_sets = self.get_set('project/dataset/related_identifier/identifier',
+                                               set_prefix=str(set_index))
         if related_identifier_sets:
             dataset['relatedIdentifiers'] = {
               'relatedIdentifier': []
@@ -365,7 +371,8 @@ class RadarExport(Export):
             dataset['dataSources'] = {
                 'dataSource': [{
                     'value': data_source,
-                    'dataSourceDetail': self.get_option(self.data_source_options, 'project/dataset/data_source_detail', set_index=set_index)
+                    'dataSourceDetail': self.get_option(self.data_source_options, 'project/dataset/data_source_detail',
+                                                        set_index=set_index)
                 }]
             }
 
@@ -382,18 +389,35 @@ class RadarExport(Export):
             }
             for funding_reference_set in funding_reference_sets:
                 funding_reference = {
-                    'funderName': self.get_text('project/funder/name', set_index=funding_reference_set.set_index),
-                    'awardURI': self.get_text('project/funder/programme/url', set_index=funding_reference_set.set_index),
-                    'awardNumber': self.get_text('project/funder/programme/number', set_index=funding_reference_set.set_index),
-                    'awardTitle': self.get_text('project/funder/programme/title', set_index=funding_reference_set.set_index)
+                    'funderName': self.get_text(
+                        'project/funder/name',
+                        set_index=funding_reference_set.set_index
+                    ),
+                    'awardURI': self.get_text(
+                        'project/funder/programme/url',
+                        set_index=funding_reference_set.set_index
+                    ),
+                    'awardNumber': self.get_text(
+                        'project/funder/programme/number',
+                        set_index=funding_reference_set.set_index
+                    ),
+                    'awardTitle': self.get_text(
+                        'project/funder/programme/title',
+                        set_index=funding_reference_set.set_index
+                    )
                 }
 
-                funder_identifier = self.get_text('project/funder/name_identifier', set_index=funding_reference_set.set_index)
+                funder_identifier = self.get_text('project/funder/name_identifier',
+                                                  set_index=funding_reference_set.set_index)
                 if funder_identifier:
                     funding_reference['funderIdentifier'] = {
                         'value': funder_identifier,
-                        'type': self.get_option(self.name_identifier_scheme_options, 'project/funder/name_identifier_scheme',
-                                                set_index=funding_reference_set.set_index, default=self.other)
+                        'type': self.get_option(
+                            self.name_identifier_scheme_options,
+                            'project/funder/name_identifier_scheme',
+                            set_index=funding_reference_set.set_index,
+                            default=self.other
+                        )
                     }
 
                 dataset['fundingReferences']['fundingReference'].append(funding_reference)

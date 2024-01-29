@@ -75,9 +75,11 @@ class RadarExportRenderer(BaseXMLRenderer):
             xml.startElement('subjectAreas', {})
             for subject_area in subject_areas:
                 xml.startElement('subjectArea', {})
-                self.render_text_element(xml, 'controlledSubjectAreaName', {}, subject_area.get('controlledSubjectAreaName'))
+                self.render_text_element(xml, 'controlledSubjectAreaName', {},
+                                         subject_area.get('controlledSubjectAreaName'))
                 if subject_area.get('additionalSubjectAreaName'):
-                    self.render_text_element(xml, 'additionalSubjectAreaName', {}, subject_area.get('additionalSubjectAreaName'))
+                    self.render_text_element(xml, 'additionalSubjectAreaName', {},
+                                             subject_area.get('additionalSubjectAreaName'))
                 xml.endElement('subjectArea')
             xml.endElement('subjectAreas')
 
@@ -150,7 +152,8 @@ class RadarExportRenderer(BaseXMLRenderer):
                     self.render_text_element(xml, 'familyName', {}, contributor.get('familyName'))
 
                 if contributor.get('contributorAffiliation'):
-                    self.render_text_element(xml, 'contributorAffiliation', {}, contributor.get('contributorAffiliation'))
+                    self.render_text_element(xml, 'contributorAffiliation', {},
+                                             contributor.get('contributorAffiliation'))
 
                 name_identifier = contributor.get('nameIdentifier')
                 if name_identifier:

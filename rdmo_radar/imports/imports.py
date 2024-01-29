@@ -80,34 +80,34 @@ class RadarImport(Import):
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/agriculture': 'Agriculture',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/architecture': 'Architecture',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/arts_and_media': 'Arts and Media',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/astrophysics_and_astronomy': 'Astrophysics and Astronomy',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/astrophysics_and_astronomy': 'Astrophysics and Astronomy',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/biochemistry': 'Biochemistry',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/biology': 'Biology',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/behavioural_sciences': 'Behavioural Sciences',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/behavioural_sciences': 'Behavioural Sciences',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/chemistry': 'Chemistry',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/computer_science': 'Computer Science',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/economics': 'Economics',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/engineering': 'Engineering',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/environmental_science_and_ecology': 'Environmental Science and Ecology',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/environmental_science_and_ecology': 'Environmental Science and Ecology',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/ethnology': 'Ethnology',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/geological_science': 'Geological Science',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/geological_science': 'Geological Science',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/geography': 'Geography',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/history': 'History',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/horticulture': 'Horticulture',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/information_technology': 'Information Technology',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/information_technology': 'Information Technology',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/life_science': 'Life Science',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/linguistics': 'Linguistics',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/materials_science': 'Materials Science',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/materials_science': 'Materials Science',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/mathematics': 'Mathematics',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/medicine': 'Medicine',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/philosophy': 'Philosophy',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/physics': 'Physics',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/psychology': 'Psychology',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/social_sciences': 'Social Sciences',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/software_technology': 'Software Technology',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/software_technology': 'Software Technology',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/sports': 'Sports',
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/theology': 'Theology',
-        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/veterinary_medicine': 'Veterinary Medicine',
+        'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/veterinary_medicine': 'Veterinary Medicine',  # noqa: E501
         'https://rdmo.jochenklar.dev/terms/options/radar_controlled_subject_area/other': 'Other'
     }
 
@@ -115,10 +115,10 @@ class RadarImport(Import):
         'https://rdmorganiser.github.io/terms/options/dataset_license_types/71': 'CC BY 4.0 Attribution',
         'https://rdmorganiser.github.io/terms/options/dataset_license_types/74': 'CC BY-ND 4.0 Attribution-NoDerivs',
         'https://rdmorganiser.github.io/terms/options/dataset_license_types/75': 'CC BY-SA 4.0 Attribution-ShareAlike',
-        'https://rdmorganiser.github.io/terms/options/dataset_license_types/73': 'CC BY-NC 4.0 Attribution-NonCommercial',
+        'https://rdmorganiser.github.io/terms/options/dataset_license_types/73': 'CC BY-NC 4.0 Attribution-NonCommercial',  # noqa: E501
         # '': 'CC BY-NC-SA 4.0 Attribution-NonCommercial-ShareAlike',
         # '': 'CC BY-NC-ND 4.0 Attribution-NonCommercial-NoDerivs',
-        'https://rdmorganiser.github.io/terms/options/dataset_license_types/cc0': 'CC0 1.0 Universal Public Domain Dedication',
+        'https://rdmorganiser.github.io/terms/options/dataset_license_types/cc0': 'CC0 1.0 Universal Public Domain Dedication',  # noqa: E501
         # '': 'All rights reserved',
         'https://rdmorganiser.github.io/terms/options/dataset_license_types/233': 'Other'
     }
@@ -197,7 +197,8 @@ class RadarImport(Import):
 
     def process(self):
         if self.current_project is None:
-            raise ValidationError(_('RADAR files can only be imported into existing projects. Please create a project first.'))
+            raise ValidationError(_('RADAR files can only be imported into existing projects.'
+                                    ' Please create a project first.'))
 
         self.catalog = self.current_project.catalog
 
@@ -229,7 +230,8 @@ class RadarImport(Import):
                 ))
 
         # descriptions/description
-        description_node = self.root.find("./ns1:descriptions/ns1:description[@descriptionType='Abstract']", self.ns_map)
+        description_node = self.root.find("./ns1:descriptions/ns1:description[@descriptionType='Abstract']",
+                                          self.ns_map)
         if description_node is not None:
             self.values.append(Value(
                 attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/description'),
@@ -250,21 +252,28 @@ class RadarImport(Import):
         resource_type_node = self.root.find('./ns1:resourceType', self.ns_map)
         if resource_type_node is not None:
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/resource_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/resource_type'
+                ),
                 set_index=set_index,
                 text=resource_type_node.text
             ))
 
             # resourceTypeGeneral
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/resource_type_general'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/resource_type_general'
+                ),
                 set_index=set_index,
-                option=self.get_option(self.get_key(self.resource_type_general_options,
-                                                    resource_type_node.attrib.get('resourceTypeGeneral', 'Dataset')))
+                option=self.get_option(self.get_key(
+                    self.resource_type_general_options,
+                    resource_type_node.attrib.get('resourceTypeGeneral', 'Dataset')
+                ))
             ))
 
         # subjects
-        subject_nodes = self.root.findall('./ns1:subjectAreas/ns1:subjectArea/ns1:controlledSubjectAreaName', self.ns_map)
+        subject_nodes = self.root.findall('./ns1:subjectAreas/ns1:subjectArea/ns1:controlledSubjectAreaName',
+                                          self.ns_map)
         for collection_index, subject_node in enumerate(subject_nodes):
             attribute = self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/subject')
             self.values.append(Value(
@@ -280,7 +289,9 @@ class RadarImport(Import):
             name_node = creator_node.find('./ns1:creatorName', self.ns_map)
             if name_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name'
+                    ),
                     set_prefix=str(set_index),
                     set_index=creator_index,
                     text=name_node.text
@@ -289,23 +300,31 @@ class RadarImport(Import):
             name_identifier_node = creator_node.find('./ns1:nameIdentifier', self.ns_map)
             if name_identifier_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name_identifier'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name_identifier'
+                    ),
                     set_prefix=str(set_index),
                     set_index=creator_index,
                     text=name_identifier_node.text
                 ))
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name_identifier_scheme'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/creator/name_identifier_scheme'
+                    ),
                     set_prefix=str(set_index),
                     set_index=creator_index,
-                    option=self.get_option(self.get_key(self.name_identifier_scheme_options,
-                                                        name_identifier_node.attrib.get('nameIdentifierScheme', 'ORCID')))
+                    option=self.get_option(self.get_key(
+                        self.name_identifier_scheme_options,
+                        name_identifier_node.attrib.get('nameIdentifierScheme', 'ORCID')
+                    ))
                 ))
 
             affiliation_nodes = creator_node.findall('./ns1:affiliation', self.ns_map)
             for collection_index, affiliation_node in enumerate(affiliation_nodes):
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/creator/affiliation'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/creator/affiliation'
+                    ),
                     set_prefix=str(set_index),
                     set_index=creator_index,
                     collection_index=collection_index,
@@ -316,17 +335,23 @@ class RadarImport(Import):
         contributor_nodes = self.root.findall('./ns1:contributors/ns1:contributor', self.ns_map)
         for contributor_index, contributor_node in enumerate(contributor_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/contributor_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/contributor_type'
+                ),
                 set_prefix=str(set_index),
                 set_index=contributor_index,
-                option=self.get_option(self.get_key(self.contributor_type_options,
-                                                    contributor_node.attrib.get('contributorType', 'Other')))
+                option=self.get_option(self.get_key(
+                    self.contributor_type_options,
+                    contributor_node.attrib.get('contributorType', 'Other')
+                ))
             ))
 
             name_node = contributor_node.find('./ns1:contributorName', self.ns_map)
             if name_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name'
+                    ),
                     set_prefix=str(set_index),
                     set_index=contributor_index,
                     text=name_node.text
@@ -335,23 +360,31 @@ class RadarImport(Import):
             name_identifier_node = contributor_node.find('./ns1:nameIdentifier', self.ns_map)
             if name_identifier_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name_identifier'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name_identifier'
+                    ),
                     set_prefix=str(set_index),
                     set_index=contributor_index,
                     text=name_identifier_node.text
                 ))
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name_identifier_scheme'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/name_identifier_scheme'
+                    ),
                     set_prefix=str(set_index),
                     set_index=contributor_index,
-                    option=self.get_option(self.get_key(self.name_identifier_scheme_options,
-                                                        name_identifier_node.attrib.get('nameIdentifierScheme', 'ORCID')))
+                    option=self.get_option(self.get_key(
+                        self.name_identifier_scheme_options,
+                        name_identifier_node.attrib.get('nameIdentifierScheme', 'ORCID')
+                    ))
                 ))
 
             affiliation_nodes = contributor_node.findall('./ns1:affiliation', self.ns_map)
             for collection_index, affiliation_node in enumerate(affiliation_nodes):
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/affiliation'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/dataset/contributor/affiliation'
+                    ),
                     set_prefix=str(set_index),
                     set_index=contributor_index,
                     collection_index=collection_index,
@@ -362,25 +395,35 @@ class RadarImport(Import):
         identifier_node = self.root.find('./ns1:identifier', self.ns_map)
         if identifier_node is not None:
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/identifier'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/identifier'
+                ),
                 set_index=set_index,
                 text=identifier_node.text
             ))
 
             # identifierType
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/identifier_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/identifier_type'
+                ),
                 set_index=set_index,
-                option=self.get_option(self.get_key(self.identifier_type_options,
-                                                    identifier_node.attrib.get('identifierType', 'DOI')))
+                option=self.get_option(self.get_key(
+                    self.identifier_type_options,
+                    identifier_node.attrib.get('identifierType', 'DOI')
+                ))
             ))
 
         # publisher
         publisher_node = self.root.find('./ns1:publisher', self.ns_map)
         if publisher_node is not None:
             attribute = \
-                self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/publisher') or \
-                self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/preservation/repository')
+                self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/publisher'
+                ) or \
+                self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/preservation/repository'
+                )
             self.values.append(Value(
                 attribute=attribute,
                 set_index=set_index,
@@ -416,7 +459,9 @@ class RadarImport(Import):
         rights_nodes = self.root.findall("./ns1:rights/ns1:controlledRights", self.ns_map)
         for collection_index, rights_node in enumerate(rights_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/conditions'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/conditions'
+                ),
                 set_index=set_index,
                 collection_index=collection_index,
                 option=self.get_option(self.get_key(self.controlled_rights_options, rights_node.text))
@@ -426,24 +471,33 @@ class RadarImport(Import):
         rights_holder_nodes = self.root.findall("./ns1:rightsHolders/ns1:rightsHolder", self.ns_map)
         for collection_index, rights_holder_node in enumerate(rights_holder_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/rights_holder'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/rights_holder'
+                ),
                 set_index=set_index,
                 collection_index=collection_index,
                 text=rights_holder_node.text
             ))
 
         # alternate identifiers
-        alternate_identifiers_nodes = self.root.findall("./ns1:alternateIdentifiers/ns1:alternateIdentifier", self.ns_map)
+        alternate_identifiers_nodes = self.root.findall("./ns1:alternateIdentifiers/ns1:alternateIdentifier",
+                                                        self.ns_map)
         for alternate_identifier_index, alternate_identifier_node in enumerate(alternate_identifiers_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/alternate_identifier/identifier_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/alternate_identifier/identifier_type'
+                ),
                 set_prefix=str(set_index),
                 set_index=alternate_identifier_index,
-                option=self.get_option(self.get_key(self.identifier_type_options,
-                                                    alternate_identifier_node.attrib.get('alternateIdentifierType', 'DOI')))
+                option=self.get_option(self.get_key(
+                    self.identifier_type_options,
+                    alternate_identifier_node.attrib.get('alternateIdentifierType', 'DOI')
+                ))
             ))
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/alternate_identifier/identifier'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/alternate_identifier/identifier'
+                ),
                 set_prefix=str(set_index),
                 set_index=alternate_identifier_index,
                 text=alternate_identifier_node.text
@@ -453,21 +507,31 @@ class RadarImport(Import):
         related_identifiers_nodes = self.root.findall("./ns1:relatedIdentifiers/ns1:relatedIdentifier", self.ns_map)
         for related_identifier_index, related_identifier_node in enumerate(related_identifiers_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/identifier_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/identifier_type'
+                ),
                 set_prefix=str(set_index),
                 set_index=related_identifier_index,
-                option=self.get_option(self.get_key(self.identifier_type_options,
-                                                    related_identifier_node.attrib.get('relatedIdentifierType', 'DOI')))
+                option=self.get_option(self.get_key(
+                    self.identifier_type_options,
+                    related_identifier_node.attrib.get('relatedIdentifierType', 'DOI')
+                ))
             ))
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/relation_type'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/relation_type'
+                ),
                 set_prefix=str(set_index),
                 set_index=related_identifier_index,
-                option=self.get_option(self.get_key(self.relation_type_options,
-                                                    related_identifier_node.attrib.get('relationType', 'References')))
+                option=self.get_option(self.get_key(
+                    self.relation_type_options,
+                    related_identifier_node.attrib.get('relationType', 'References')
+                ))
             ))
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/identifier'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/related_identifier/identifier'
+                ),
                 set_prefix=str(set_index),
                 set_index=related_identifier_index,
                 text=related_identifier_node.text
@@ -477,18 +541,24 @@ class RadarImport(Import):
         data_source_nodes = self.root.findall("./ns1:dataSources/ns1:dataSource", self.ns_map)
         for collection_index, data_source_node in enumerate(data_source_nodes):
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/data_source'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/data_source'
+                ),
                 set_index=set_index,
                 collection_index=collection_index,
                 text=data_source_node.text
             ))
 
             self.values.append(Value(
-                attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/dataset/data_source_detail'),
+                attribute=self.get_attribute(
+                    'https://rdmorganiser.github.io/terms/domain/project/dataset/data_source_detail'
+                ),
                 set_index=set_index,
                 collection_index=collection_index,
-                option=self.get_option(self.get_key(self.data_source_options,
-                                                    data_source_node.attrib.get('dataSourceDetail', 'Other')))
+                option=self.get_option(self.get_key(
+                    self.data_source_options,
+                    data_source_node.attrib.get('dataSourceDetail', 'Other')
+                ))
             ))
 
     def process_funders(self):
@@ -522,26 +592,36 @@ class RadarImport(Import):
             name_identifier_node = funding_reference_node.find('./ns1:funderIdentifier', self.ns_map)
             if name_identifier_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier'
+                    ),
                     set_index=set_index,
                     text=name_identifier_node.text
                 ))
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier_scheme'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier_scheme'
+                    ),
                     set_index=set_index,
-                    option=self.get_option(self.get_key(self.name_identifier_scheme_options,
-                                                        name_identifier_node.attrib.get('funderIdentifierType', 'ORCID')))
+                    option=self.get_option(self.get_key(
+                        self.name_identifier_scheme_options,
+                        name_identifier_node.attrib.get('funderIdentifierType', 'ORCID')
+                    ))
                 ))
 
             award_number_node = funding_reference_node.find('./ns1:awardNumber', self.ns_map)
             if award_number_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/funder/programme/number'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/funder/programme/number'
+                    ),
                     set_index=set_index,
                     text=award_number_node.text
                 ))
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/funder/programme/url'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/funder/programme/url'
+                    ),
                     set_index=set_index,
                     text=award_number_node.attrib.get('awardURI')
                 ))
@@ -549,7 +629,9 @@ class RadarImport(Import):
             award_title_node = funding_reference_node.find('./ns1:awardTitle', self.ns_map)
             if award_title_node is not None:
                 self.values.append(Value(
-                    attribute=self.get_attribute('https://rdmorganiser.github.io/terms/domain/project/funder/programme/title'),
+                    attribute=self.get_attribute(
+                        'https://rdmorganiser.github.io/terms/domain/project/funder/programme/title'
+                    ),
                     set_index=set_index,
                     text=award_title_node.text
                 ))
