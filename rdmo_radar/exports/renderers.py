@@ -129,11 +129,11 @@ class RadarExportRenderer(BaseXMLRenderer):
             xml.endElement('descriptions')
 
         # keywords
-        keywords = dataset.get('keywords')
+        keywords = dataset.get('keywords', {}).get('keyword')
         if keywords:
             xml.startElement('keywords', {})
             for keyword in keywords:
-                self.render_text_element(xml, 'keyword', {}, keyword)
+                self.render_text_element(xml, 'keyword', {}, keyword.get('value'))
             xml.endElement('keywords')
 
         # contributors
