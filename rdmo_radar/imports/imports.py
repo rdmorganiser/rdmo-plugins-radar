@@ -505,7 +505,6 @@ class RadarImport(Import):
             set_index = 0
 
         funding_reference_nodes = self.root.findall("./ns1:fundingReferences/ns1:fundingReference", self.ns_map)
-        print(funding_reference_nodes)
         for funding_reference_node in funding_reference_nodes:
             name_node = funding_reference_node.find('./ns1:funderName', self.ns_map)
             if name_node is not None:

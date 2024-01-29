@@ -8,7 +8,7 @@ on:
     # run CI only if files in these whitelisted paths are changed
     paths:
       - '.github/workflows/**'
-      - 'rdmo_plugins/**'
+      - 'rdmo_radar/**'
       - .pre-commit-config.yaml
       - pyproject.toml
 
@@ -57,7 +57,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -Im pip install -e .[dev]
-      - run: python -Ic 'import rdmo_plugins; print(rdmo_plugins.__version__)'
+      - run: python -Ic 'import rdmo_radar; print(rdmo_radar.__version__)'
 
   required-checks-pass:
     if: always()

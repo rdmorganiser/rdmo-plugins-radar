@@ -1,80 +1,64 @@
-# rdmo-plugins
+# rdmo-plugins-radar
 
-[![Python Versions](https://img.shields.io/pypi/pyversions/rdmo.svg?style=flat)](https://www.python.org/)
-[![Django Versions](https://img.shields.io/pypi/frameworkversions/django/rdmo)](https://pypi.python.org/pypi/rdmo/)
-[![License](https://img.shields.io/github/license/rdmorganiser/rdmo?style=flat)](https://github.com/rdmorganiser/rdmo/blob/master/LICENSE) \
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![CI Workflow Status](https://github.com/rdmorganiser/rdmo-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/rdmorganiser/rdmo-plugins/actions/workflows/ci.yml)
+This repo implements several plugins to connect [RDMO](https://github.com/rdmorganiser/rdmo) with [RADAR](https://www.radar-service.eu/):
 
-<!--- mdtoc: toc begin -->
-1. [Synopsis](#synopsis)
-2. [Setup](#setup)
-3. [Other plugins](#other-plugins)
-   1. [RDMO Sensor AWI optionset plugin](#rdmo-sensor-awi-optionset-plugin)
-<!--- mdtoc: toc end -->
+* `rdmo_radar.exports.RadarExport`, which lets users download their RDMO datasets as RADAR-XML metadata files,
+* `rdmo_radar.exports.RadarExportProvider`, which lets push their RDMO datasets directly to RADAR,
+* `rdmo_radar.imports.RadarImport`, which lets users import RADAR-XML metadata files (exported from RADAR) into RDMO.
 
-## Synopsis
+The `RadarExportProvider` plugin uses [OAUTH 2.0](https://oauth.net/2/), so that users use their respective accounts in both systems.
 
-Import and export plugins for [RDMO](https://github.com/rdmorganiser/rdmo). Included are plugins for [maDMP](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard), [DataCite (Kernel 4.3)](https://schema.datacite.org/meta/kernel-4.3/), and the [Radar metadata schema](https://www.radar-service.eu/de/radar-schema).
 
-**Since the RDMO questionnaires and the domain does not contain all information needed for maDMP, DataCite, or Radar, the exports will not produce valid files. We will fix this in the future.**
+Setup
+-----
 
-Please visit the [RDMO documentation](https://rdmo.readthedocs.io/en/latest/plugins/index.html#project-export-plugins) for detailed information.
-
-Please note that the re3data plugin was moved to a [separate repository](https://github.com/rdmorganiser/rdmo-re3data).
-
-## Setup
-
-Install the plugins in your RDMO virtual environment using pip (directly from GitHub):
+Install the plugin in your RDMO virtual environment using pip (directly from GitHub):
 
 ```bash
-python -m pip install git+https://github.com/rdmorganiser/rdmo-plugins
+pip install git+https://github.com/rdmorganiser/rdmo-plugins-radar
 ```
 
-Add the `rdmo_plugins` to the `INSTALLED_APPS` in `config/settings/local.py`:
+For the `RadarExport`, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
 
 ```python
-from . import INSTALLED_APPS
-INSTALLED_APPS = ["rdmo_plugins", *INSTALLED_APPS]
-```
-
-Add the export plugins to the `PROJECT_EXPORTS` in `config/settings/local.py`:
-
-```python
-from django.utils.translation import gettext_lazy as _
-from . import PROJECT_EXPORTS
-
 PROJECT_EXPORTS += [
-    ('madmp', _('as maDMP JSON'), 'rdmo_plugins.exports.madmp.MaDMPExport'),
-    ('datacite-xml', _('as DataCite XML'), 'rdmo_plugins.exports.datacite.DataCiteExport'),
-    ('radar-xml', _('as RADAR XML'), 'rdmo_plugins.exports.radar.RadarExport'),
-    ('radar', _('directly to RADAR'), 'rdmo_plugins.exports.radar.RadarExportProvider'),
-    ('zenodo', _('directly to Zenodo'), 'rdmo_plugins.exports.zenodo.ZenodoExportProvider')
+    ('radar-xml', _('as RADAR XML'), 'rdmo_radar.exports.RadarExport')
 ]
 ```
 
-Add the import plugins to the `PROJECT_IMPORTS` in `config/settings/local.py`:
+For the `RadarExportProvider` an *App* has to be registered with RADAR. Please contact the RADAR support for the nessesary steps. The `radar_url`, the `client_id`, the `client_secret`, and the `redirect_uri` need to be configured in `config/settings/local.py`, e.g. for the RADAR test service:
 
 ```python
-from django.utils.translation import gettext_lazy as _
-from . import PROJECT_IMPORTS
+RADAR_PROVIDER = {
+    'radar_url': 'https://test.radar-service.eu',
+    'client_id': '',
+    'client_secret': '',
+    'redirect_uri': 'https://rdmo.example.com/services/oauth/radar/callback/'
+}
+```
 
-PROJECT_IMPORTS += [
-    ('madmp', _('from maDMP'), 'rdmo_plugins.imports.madmp.MaDMPImport'),
-    ('datacite', _('from DataCite XML'), 'rdmo_plugins.imports.datacite.DataCiteImport'),
-    ('radar', _('from RADAR XML'), 'rdmo_plugins.imports.radar.RadarImport'),
+Then, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
+
+```python
+PROJECT_EXPORTS += [
+    ('radar', _('directly to RADAR'), 'rdmo_radar.exports.RadarExportProvider')
 ]
 ```
 
-After restarting RDMO, the exports/imports should be usable for all projects.
+For the `RadarImport`, add the plugin to `PROJECT_IMPORTS` in `config/settings/local.py`:
 
-## Other plugins
+```python
+PROJECT_IMPORTS += [
+    ('radar', _('from RADAR XML'), 'rdmo_radar.imports.RadarImport')
+]
+```
 
-### RDMO Sensor AWI optionset plugin
 
-[https://github.com/hafu/rdmo-sensor-awi](https://github.com/hafu/rdmo-sensor-awi)
+Usage
+-----
 
-Queries the Sensor Information System of the Alfred-Wegener-Institut, Helmholtz-Zentrum für Polar- und Meeresforschung (AWI).
+The plugins apear as export/import options on the RDMO project overview.
 
-This is an example optionset plugin, to show how to gather information from other systems.
+The export provider fetches the available RADAR workspaces, and then lets the user choose
+which dateset should be archived in which workspace. The plugin creates a RADAR datasets.
+The actual data can be uploaded through the RADAR interface.

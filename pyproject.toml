@@ -1,70 +1,56 @@
 [build-system]
+requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools", "wheel"]
 
 [project]
-name = "rdmo-plugins"
-description = "Import and export plugins for RDMO."
-readme = "README.md"
-keywords = [
-  "data management plan",
-  "dmp",
-  "rdmo",
-  "research data",
-  "research data management",
-]
-license = {text = "Apache-2.0"}
+name = "rdmo-plugins-radar"
 authors = [
-  {name = "RDMO Arbeitsgemeinschaft", email = "rdmo-team@listserv.dfn.de"},
+    {name = "RDMO Arbeitsgemeinschaft", email = "rdmo-team@listserv.dfn.de"},
 ]
+maintainers = [
+    {name = "Jochen Klar", email = "mail@jochenklar.de"},
+]
+description = "Plugins to connect RDMO with RADAR"
+readme = "README.md"
 requires-python = ">=3.8"
+license = {file = "LICENSE"}
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
-  "Environment :: Web Environment",
-  "Framework :: Django :: 4.2",
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-]
-dynamic = [
-  "version",
+    'Development Status :: 5 - Production/Stable',
+    'Environment :: Web Environment',
+    'Framework :: Django :: 2.2',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: Apache Software License',
+    'Operating System :: OS Independent',
+    "Programming Language :: Python :: 3 :: Only",
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
 ]
 dependencies = [
-  "rdmo"
+    "rdmo",
 ]
+dynamic = ["version"]
 
 [project.optional-dependencies]
 ci = [
-  "rdmo-plugins[dev]",
+  "rdmo-plugins-radar[dev]",
 ]
 dev = [
   "pre-commit~=3.5",
   "rdmo[allauth]",
-  "rdmo-plugins[pytest]",
+  "rdmo-plugins-radar[pytest]",
 ]
 
 [project.urls]
-documentation = "https://rdmo.readthedocs.io/en/latest/plugins/"
-homepage = "https://rdmorganiser.github.io"
-issues = "https://github.com/rdmorganiser/rdmo-plugins/issues"
-repository = "https://github.com/rdmorganiser/rdmo-plugins.git"
-slack = "https://rdmo.slack.com"
+repository = "https://github.com/rdmorganiser/rdmo-plugins-radar"
 
-[tool.setuptools.packages.find]
-include = ["rdmo_plugins*"]
-
-[tool.setuptools.package-data]
-"*" = ["*"]
+[tool.setuptools]
+packages = ["rdmo_radar"]
 
 [tool.setuptools.dynamic]
-version = {attr = "rdmo_plugins.__version__"}
+version = {attr = "rdmo_radar.__version__"}
 
 [tool.ruff]
 target-version = "py38"
@@ -85,19 +71,18 @@ ignore = [
   "B006",   # mutable-argument-default
   "B007",   # unused-loop-control-variable
   "B018",   # useless-expression
-  "E501",   # line-too-long
   "RUF012", # mutable-class-default
 ]
 
 [tool.ruff.isort]
-known-first-party = ["rdmo_plugins"]
 section-order = [
   "future",
   "standard-library",
   "pytest",
   "django",
-  "rdmo",
+  "rest_framework",
   "third-party",
+  "rdmo",
   "first-party",
   "local-folder"
 ]
@@ -105,4 +90,5 @@ section-order = [
 [tool.ruff.isort.sections]
 pytest = ["pytest"]
 django = ["django"]
+rest_framework = ["rest_framework"]
 rdmo = ["rdmo"]

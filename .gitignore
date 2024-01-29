@@ -4,13 +4,12 @@ __pycache__/
 *~
 *-
 *.swp
-.DS_*
-
-build
-dist
-*.egg-info
+*.save
+.DS_Store
 
 /env
+/venv
 
-.pytest_cache
-.ruff_cache
+/build
+/dist
+/*.egg-info
