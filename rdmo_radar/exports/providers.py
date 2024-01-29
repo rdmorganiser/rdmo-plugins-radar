@@ -242,6 +242,8 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
         )
 
         if 'cancel' in self.request.POST:
+            self.pop_from_session(self.request, 'get')
+            self.pop_from_session(self.request, 'workspace_choices')
             return redirect('project', self.project.id)
 
         if form.is_valid():
