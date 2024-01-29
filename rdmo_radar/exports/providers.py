@@ -254,7 +254,7 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
             return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
 
     def get_get_url(self):
-        return f'{self.radar_url}/radar/api/workspaces'
+        return f'{self.radar_url}/radar/api/workspaces?rows=100'
 
     def get_success(self, request, response):
         workspace_choices = [
