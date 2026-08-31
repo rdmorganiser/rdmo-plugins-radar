@@ -141,8 +141,9 @@ class RadarExportRenderer(BaseXMLRenderer):
         if contributors:
             xml.startElement('contributors', {})
             for contributor in contributors:
-                print(contributor)
-                xml.startElement('contributor', {})
+                xml.startElement('contributor', {
+                    'contributorType': contributor.get('contributorType')
+                })
                 self.render_text_element(xml, 'contributorName', {}, contributor.get('contributorName'))
 
                 if contributor.get('givenName'):
