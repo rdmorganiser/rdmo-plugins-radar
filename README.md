@@ -57,7 +57,7 @@ PROJECT_IMPORTS += [
 Usage
 -----
 
-The plugins apear as export/import options on the RDMO project overview.
+The plugins appear as export/import options on the RDMO project overview.
 
 The export provider fetches the available RADAR workspaces, and then lets the user choose
 which dateset should be archived in which workspace. The plugin creates a RADAR datasets.
