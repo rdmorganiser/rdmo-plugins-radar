@@ -358,7 +358,7 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
     def get_authorize_params(self, request, state):
         return {
             'response_type': 'code',
-            'client_id': 'jochenklar',
+            'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
             'state': state
         }
