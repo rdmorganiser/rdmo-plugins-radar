@@ -3,7 +3,7 @@ import time
 from django import forms
 from django.conf import settings
 from django.shortcuts import redirect, render
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from rdmo.domain.models import Attribute
@@ -187,8 +187,8 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
 
     class Form(forms.Form):
 
-        dataset = forms.CharField(label=_('Select dataset of your project'))
-        workspace = forms.CharField(label=_('Select a workspace in RADAR'))
+        dataset = forms.ChoiceField(label=_('Select dataset of your project'))
+        workspace = forms.ChoiceField(label=_('Select a workspace in RADAR'))
 
         def __init__(self, *args, **kwargs):
             dataset_choices = kwargs.pop('dataset_choices')
@@ -201,8 +201,14 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
             for dataset, radar_url in zip(dataset_choices, radar_urls):
                 set_index, label = dataset
                 if radar_url is not None:
-                    label += f' (Already exported to RADAR: <a href="{radar_url}" target="_blank">{radar_url}</a>)'
-                dataset_choices_with_radar_urls.append((set_index, mark_safe(label)))
+                    label = format_html(
+                        '{} (Already exported to RADAR: <a href="{}" target="_blank" '
+                        'rel="noopener noreferrer">{}</a>)',
+                        label,
+                        radar_url,
+                        radar_url
+                    )
+                dataset_choices_with_radar_urls.append((set_index, label))
 
             self.fields['dataset'].widget = forms.RadioSelect(choices=dataset_choices_with_radar_urls)
             self.fields['workspace'].widget = forms.RadioSelect(choices=workspace_choices)
@@ -302,7 +308,7 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
 
             try:
                 attribute = Attribute.objects.get(path='project/dataset/radar_id')
-                value, created = Value.objects.get_or_create(
+                value, _created = Value.objects.get_or_create(
                     attribute=attribute,
                     project_id=project_id,
                     set_index=set_index
@@ -314,7 +320,7 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
 
             try:
                 attribute = Attribute.objects.get(path='project/dataset/radar_url')
-                value, created = Value.objects.get_or_create(
+                value, _created = Value.objects.get_or_create(
                     attribute=attribute,
                     project_id=project_id,
                     set_index=set_index
