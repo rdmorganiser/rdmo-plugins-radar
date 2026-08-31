@@ -118,9 +118,9 @@ class RadarExport(Export):
         'radar_data_source/instrument': 'Instrument',
         'radar_data_source/media': 'Media',
         'radar_data_source/observation': 'Observation',
-        'radar_data_source/trial': 'Survey',
-        'radar_data_source/organism': 'Trial',
-        'radar_data_source/tissue': 'Organism',
+        'radar_data_source/trial': 'Trial',
+        'radar_data_source/organism': 'Organism',
+        'radar_data_source/tissue': 'Tissue',
         'radar_data_source/other': 'Other'
     }
 
@@ -262,8 +262,8 @@ class RadarExport(Export):
         if resource_type:
             dataset['resource'] = {
                 'value': resource_type,
-                'resourceType': self.get_option(self.resource_type_options, 'project/dataset/resource_type_general',
-                                                set_index=set_index)
+                'resourceType': self.get_option(self.resource_type_general_options,
+                                                'project/dataset/resource_type_general', set_index=set_index)
             }
 
         dataset['title'] = \
@@ -448,8 +448,7 @@ class RadarExport(Export):
             if family_name:
                 name['familyName'] = family_name
 
-            if not ('givenName' in name or 'familyName' in name):
-                name[f'{prefix}Name'] = name_text
+            name[f'{prefix}Name'] = name_text
 
             # identifier
             identifier = self.get_text(attribute + '/name_identifier', set_prefix=set_prefix, set_index=set_index)
@@ -473,20 +472,20 @@ class RadarExport(Export):
 
     def render(self):
         response = HttpResponse(content_type='application/zip')
-        response['Content-Disposition'] = 'filename="%s.zip"' % self.project.title
+        response['Content-Disposition'] = f'filename="{self.project.title}.zip"'
 
-        zip_file = zipfile.ZipFile(response, 'w')
-        for rdmo_dataset in self.get_set('project/dataset/id'):
-            set_index = rdmo_dataset.set_index
+        with zipfile.ZipFile(response, 'w') as zip_file:
+            for rdmo_dataset in self.get_set('project/dataset/id'):
+                set_index = rdmo_dataset.set_index
 
-            file_name = '{}.xml'.format(
-                self.get_text('project/dataset/identifier', set_index=set_index) or
-                self.get_text('project/dataset/id', set_index=set_index) or
-                str(set_index + 1)
-            )
+                file_name = '{}.xml'.format(
+                    self.get_text('project/dataset/identifier', set_index=set_index) or
+                    self.get_text('project/dataset/id', set_index=set_index) or
+                    str(set_index + 1)
+                )
 
-            dataset = self.get_dataset(set_index)
-            xmldata = RadarExportRenderer().render(dataset)
-            zip_file.writestr(file_name, prettify_xml(xmldata))
+                dataset = self.get_dataset(set_index)
+                xmldata = RadarExportRenderer().render(dataset)
+                zip_file.writestr(file_name, prettify_xml(xmldata))
 
         return response
