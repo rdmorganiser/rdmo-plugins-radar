@@ -13,7 +13,7 @@ from rdmo.services.providers import OauthProviderMixin
 from .exports import RadarExport
 
 
-class RadarExportProvider(RadarExport, OauthProviderMixin):
+class RadarExportProviderBase(RadarExport):
 
     other = 'OTHER'
 
@@ -186,7 +186,6 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
     }
 
     class Form(forms.Form):
-
         dataset = forms.ChoiceField(label=_('Select dataset of your project'))
         workspace = forms.ChoiceField(label=_('Select a workspace in RADAR'))
 
@@ -210,10 +209,12 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
                     )
                 dataset_choices_with_radar_urls.append((set_index, label))
 
-            self.fields['dataset'].widget = forms.RadioSelect(choices=dataset_choices_with_radar_urls)
-            self.fields['workspace'].widget = forms.RadioSelect(choices=workspace_choices)
+            self.fields['dataset'].widget = forms.RadioSelect()
+            self.fields['dataset'].choices = dataset_choices_with_radar_urls
+            self.fields['workspace'].widget = forms.RadioSelect()
+            self.fields['workspace'].choices = workspace_choices
 
-    def render(self):
+    def prepare_export_session(self):
         datasets = self.get_set('project/dataset/id')
         dataset_choices = [(dataset.set_index, dataset.value) for dataset in datasets]
         radar_urls = [self.get_text('project/dataset/radar_url', set_index=dataset.set_index) for dataset in datasets]
@@ -222,56 +223,48 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
         self.store_in_session(self.request, 'radar_urls', radar_urls)
         self.store_in_session(self.request, 'project_id', self.project.id)
 
-        if self.pop_from_session(self.request, 'get') is True:
-            workspace_choices = self.get_from_session(self.request, 'workspace_choices')
-            form = self.Form(
-                dataset_choices=dataset_choices,
-                workspace_choices=workspace_choices,
-                radar_urls=radar_urls
-            )
-            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
-        else:
-            # run the oauth get request to obtain the workspace_choices
-            url = self.get_get_url()
-            return self.get(self.request, url)
-
-    def submit(self):
-        dataset_choices = self.get_from_session(self.request, 'dataset_choices')
-        workspace_choices = self.get_from_session(self.request, 'workspace_choices')
-        radar_urls = self.get_from_session(self.request, 'radar_urls')
-
-        form = self.Form(
-            self.request.POST,
-            dataset_choices=dataset_choices,
-            workspace_choices=workspace_choices,
-            radar_urls=radar_urls
+    def get_export_form(self, data=None, workspace_choices=None):
+        return self.Form(
+            data,
+            dataset_choices=self.get_from_session(self.request, 'dataset_choices') or [],
+            workspace_choices=workspace_choices or self.get_from_session(self.request, 'workspace_choices') or [],
+            radar_urls=self.get_from_session(self.request, 'radar_urls') or []
         )
 
-        if 'cancel' in self.request.POST:
-            self.pop_from_session(self.request, 'get')
-            self.pop_from_session(self.request, 'workspace_choices')
-            return redirect('project', self.project.id)
+    def clear_session(self, request):
+        for key in (
+            'access_token',
+            'dataset_choices',
+            'workspace_choices',
+            'radar_urls',
+            'project_id',
+            'set_index'
+        ):
+            self.pop_from_session(request, key)
 
-        if form.is_valid():
-            self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
+    def get_session_key(self, key):
+        return f'{self.class_name}.{key}'
 
-            url = self.get_post_url(form.cleaned_data['workspace'])
-            data = self.get_post_data(form.cleaned_data['dataset'])
-            return self.post(self.request, url, data)
-        else:
-            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+    def store_in_session(self, request, key, data):
+        request.session[self.get_session_key(key)] = data
 
-    def get_get_url(self):
-        return f'{self.radar_url}/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title'
+    def get_from_session(self, request, key):
+        return request.session.get(self.get_session_key(key))
 
-    def get_success(self, request, response):
-        workspace_choices = [
+    def pop_from_session(self, request, key):
+        return request.session.pop(self.get_session_key(key), None)
+
+    def get_authorization_headers(self, access_token):
+        return {'Authorization': f'Bearer {access_token}'}
+
+    def get_workspace_choices(self, response):
+        return [
             (workspace.get('id'), workspace.get('descriptiveMetadata', {}).get('title'))
             for workspace in response.json().get('data', [])
         ]
-        self.store_in_session(request, 'get', True)
-        self.store_in_session(request, 'workspace_choices', workspace_choices)
-        return redirect('project_export', self.get_from_session(request, 'project_id'), self.key)
+
+    def get_get_url(self):
+        return f'{self.radar_url}/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title'
 
     def get_post_url(self, workspace_id):
         return f'{self.radar_url}/radar/api/workspaces/{workspace_id}/datasets'
@@ -342,20 +335,59 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
         return settings.RADAR_PROVIDER['radar_url'].strip('/')
 
     @property
-    def authorize_url(self):
-        return f'{self.radar_url}/radar-backend/oauth/authorize'
-
-    @property
-    def token_url(self):
-        return f'{self.radar_url}/radar-backend/oauth/token'
-
-    @property
     def client_id(self):
         return settings.RADAR_PROVIDER['client_id']
 
     @property
     def client_secret(self):
         return settings.RADAR_PROVIDER['client_secret']
+
+    @property
+    def request_timeout(self):
+        return settings.RADAR_PROVIDER.get('request_timeout', 30)
+
+
+class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
+
+    def render(self):
+        self.prepare_export_session()
+
+        if self.pop_from_session(self.request, 'get') is True:
+            form = self.get_export_form()
+            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+
+        return self.get(self.request, self.get_get_url())
+
+    def submit(self):
+        form = self.get_export_form(data=self.request.POST)
+
+        if 'cancel' in self.request.POST:
+            self.pop_from_session(self.request, 'get')
+            self.pop_from_session(self.request, 'workspace_choices')
+            return redirect('project', self.project.id)
+
+        if form.is_valid():
+            self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
+            return self.post(
+                self.request,
+                self.get_post_url(form.cleaned_data['workspace']),
+                self.get_post_data(form.cleaned_data['dataset'])
+            )
+
+        return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+
+    def get_success(self, request, response):
+        self.store_in_session(request, 'get', True)
+        self.store_in_session(request, 'workspace_choices', self.get_workspace_choices(response))
+        return redirect('project_export', self.get_from_session(request, 'project_id'), self.key)
+
+    @property
+    def authorize_url(self):
+        return f'{self.radar_url}/radar-backend/oauth/authorize'
+
+    @property
+    def token_url(self):
+        return f'{self.radar_url}/radar-backend/oauth/token'
 
     @property
     def redirect_uri(self):

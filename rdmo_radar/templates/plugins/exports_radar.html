@@ -6,6 +6,10 @@
 
     <h1>{% trans 'Export to RADAR' %}</h1>
 
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
     {% bootstrap_form submit=_('Export to RADAR') %}
 
 {% endblock %}

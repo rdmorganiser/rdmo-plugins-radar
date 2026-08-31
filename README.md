@@ -3,10 +3,12 @@
 This repo implements several plugins to connect [RDMO](https://github.com/rdmorganiser/rdmo) with [RADAR](https://www.radar-service.eu/):
 
 * `rdmo_radar.exports.RadarExport`, which lets users download their RDMO datasets as RADAR-XML metadata files,
-* `rdmo_radar.exports.RadarExportProvider`, which lets push their RDMO datasets directly to RADAR,
+* `rdmo_radar.exports.RadarExportProvider`, which pushes RDMO datasets to RADAR using a browser OAuth flow,
+* `rdmo_radar.exports.RadarCredentialsExportProvider`, which pushes them using local RADAR credentials,
 * `rdmo_radar.imports.RadarImport`, which lets users import RADAR-XML metadata files (exported from RADAR) into RDMO.
 
-The `RadarExportProvider` plugin uses [OAUTH 2.0](https://oauth.net/2/), so that users use their respective accounts in both systems.
+The direct export can use either an [OAuth 2.0](https://oauth.net/2/) authorization-code flow or RADAR's JSON
+token endpoint, depending on the client registered by RADAR support.
 
 
 Setup
@@ -26,10 +28,13 @@ PROJECT_EXPORTS += [
 ]
 ```
 
-For the `RadarExportProvider` an *App* has to be registered with RADAR. Please contact the RADAR support for the nessesary steps. The `radar_url`, the `client_id`, the `client_secret`, and the `redirect_uri` need to be configured in `config/settings/local.py`, e.g. for the RADAR test service:
+For direct exports an *App* has to be registered with RADAR. Please contact RADAR support for the necessary steps.
+Configure the OAuth callback as `redirect_uri`; the credentials provider derives the tenant root URL required by
+RADAR from this value:
 
 ```python
 RADAR_PROVIDER = {
+    'authentication_mode': 'oauth',
     'radar_url': 'https://test.radar-service.eu',
     'client_id': '',
     'client_secret': '',
@@ -37,11 +42,24 @@ RADAR_PROVIDER = {
 }
 ```
 
-Then, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
+The modes are:
+
+* `oauth`: use `RadarExportProvider`, the browser authorization-code flow, and `redirect_uri`. This is the default
+  for existing installations without an `authentication_mode` setting.
+* `credentials`: use `RadarCredentialsExportProvider`. Users enter a local RADAR username and password. RDMO sends
+  them directly to the RADAR token endpoint, does not store them, and retains the bearer token only for that single
+  export. The token request derives `https://rdmo.example.com/` from `redirect_uri`.
+
+Select the provider class from the setting when adding it to `PROJECT_EXPORTS`:
 
 ```python
+radar_provider_class = {
+    'oauth': 'rdmo_radar.exports.RadarExportProvider',
+    'credentials': 'rdmo_radar.exports.RadarCredentialsExportProvider',
+}[RADAR_PROVIDER.get('authentication_mode', 'oauth')]
+
 PROJECT_EXPORTS += [
-    ('radar', _('directly to RADAR'), 'rdmo_radar.exports.RadarExportProvider')
+    ('radar', _('directly to RADAR'), radar_provider_class)
 ]
 ```
 

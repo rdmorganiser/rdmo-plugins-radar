@@ -50,8 +50,14 @@ pytest = [
 [project.urls]
 repository = "https://github.com/rdmorganiser/rdmo-plugins-radar"
 
-[tool.setuptools]
-packages = ["rdmo_radar"]
+[tool.setuptools.packages.find]
+include = ["rdmo_radar*"]
+
+[tool.setuptools.package-data]
+rdmo_radar = [
+  "templates/**/*.html",
+  "xml/**/*.xml",
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "rdmo_radar.__version__"}

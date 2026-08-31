@@ -1,17 +1,276 @@
 import io
 import zipfile
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
+from django.test import override_settings
+
+import requests
+
+from rdmo.services.providers import OauthProviderMixin
+
+from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
 from rdmo_radar.exports.exports import RadarExport
-from rdmo_radar.exports.providers import RadarExportProvider
 from rdmo_radar.exports.renderers import RadarExportRenderer
 
 
-def test_authorize_params_use_configured_client_id():
-    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider')
+def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
+    class_name = f'rdmo_radar.exports.{provider_class.__name__}'
+    provider = provider_class('radar', 'RADAR', class_name)
+    provider.request = SimpleNamespace(
+        POST=post or {},
+        GET={},
+        session={},
+        user=SimpleNamespace(email='user@example.test'),
+        LANGUAGE_CODE='en'
+    )
+    provider.project = SimpleNamespace(id=1)
+    return provider
 
-    assert provider.get_authorize_params(None, 'state')['client_id'] == 'configured-client-id'
+
+def test_oauth_provider_uses_authorization_code_configuration():
+    provider = make_provider(provider_class=RadarExportProvider)
+
+    assert isinstance(provider, OauthProviderMixin)
+    assert provider.authorize_url == 'https://radar.example.test/radar-backend/oauth/authorize'
+    assert provider.token_url == 'https://radar.example.test/radar-backend/oauth/token'
+    assert provider.get_authorize_params(None, 'state') == {
+        'response_type': 'code',
+        'client_id': 'configured-client-id',
+        'redirect_uri': 'https://rdmo.example.test/services/oauth/radar/callback/',
+        'state': 'state'
+    }
+    assert provider.get_callback_auth(None) == ('configured-client-id', 'client-secret')
+
+
+def test_oauth_render_redirects_and_preserves_workspace_request():
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.get_set = lambda *args, **kwargs: [SimpleNamespace(set_index=0, value='Dataset')]
+    provider.get_text = lambda *args, **kwargs: None
+
+    response = provider.render()
+
+    query = parse_qs(urlparse(response.url).query)
+    assert response.status_code == 302
+    assert query['client_id'] == ['configured-client-id']
+    assert query['redirect_uri'] == ['https://rdmo.example.test/services/oauth/radar/callback/']
+    assert provider.get_from_session(provider.request, 'request') == ('get', provider.get_get_url())
+    assert provider.get_from_session(provider.request, 'state') == query['state'][0]
+
+
+def test_oauth_callback_exchanges_code_and_resumes_request(monkeypatch):
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
+    provider.store_in_session(provider.request, 'state', 'expected-state')
+    provider.store_in_session(provider.request, 'request', ('get', provider.get_get_url()))
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {'access_token': 'oauth-token'}
+
+    def post(url, data, **kwargs):
+        captured['url'] = url
+        captured['data'] = data
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr('rdmo.services.providers.requests.post', post)
+    monkeypatch.setattr(provider, 'get', lambda request, url: ('resumed', url))
+
+    result = provider.callback(provider.request)
+
+    assert result == ('resumed', provider.get_get_url())
+    assert captured['url'].startswith('https://radar.example.test/radar-backend/oauth/token?')
+    assert captured['auth'] == ('configured-client-id', 'client-secret')
+    assert provider.get_from_session(provider.request, 'access_token') == 'oauth-token'
+
+
+def test_credentials_provider_uses_json_api_and_registered_url():
+    provider = make_provider()
+
+    assert provider.token_url == 'https://radar.example.test/radar/api/tokens'
+    assert provider.client_id == 'configured-client-id'
+    assert provider.redirect_url == 'https://rdmo.example.test/'
+
+
+@override_settings(RADAR_PROVIDER={
+    'radar_url': 'https://radar.example.test',
+    'client_id': 'configured-client-id',
+    'client_secret': 'client-secret',
+    'redirect_uri': 'https://rdmo.example.test:8443/services/oauth/radar/callback/?source=test#fragment',
+})
+def test_credentials_redirect_url_preserves_origin_only():
+    provider = make_provider()
+
+    assert provider.redirect_url == 'https://rdmo.example.test:8443/'
+
+
+def test_credentials_are_exchanged_without_being_stored(monkeypatch):
+    provider = make_provider({
+        'stage': 'credentials',
+        'username': 'radar-user',
+        'password': 'radar-password'
+    })
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {'access_token': 'bearer-token', 'refresh_token': 'unused-refresh-token'}
+
+    def post(url, **kwargs):
+        captured['url'] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr('rdmo_radar.exports.credentials.requests.post', post)
+    monkeypatch.setattr('rdmo_radar.exports.credentials.redirect', lambda *args: args)
+
+    result = provider.submit_credentials_form()
+
+    assert result == ('project_export', 1, 'radar')
+    assert captured == {
+        'url': 'https://radar.example.test/radar/api/tokens',
+        'json': {
+            'clientId': 'configured-client-id',
+            'clientSecret': 'client-secret',
+            'userName': 'radar-user',
+            'userPassword': 'radar-password',
+            'redirectUrl': 'https://rdmo.example.test/'
+        },
+        'timeout': 30
+    }
+    assert provider.request.session == {
+        'rdmo_radar.exports.RadarCredentialsExportProvider.access_token': 'bearer-token'
+    }
+    assert 'radar-password' not in repr(provider.request.session)
+    assert 'unused-refresh-token' not in repr(provider.request.session)
+
+
+def test_failed_login_does_not_store_credentials(monkeypatch):
+    provider = make_provider({
+        'stage': 'credentials',
+        'username': 'radar-user',
+        'password': 'wrong-password'
+    })
+
+    def post(*args, **kwargs):
+        raise requests.HTTPError
+
+    monkeypatch.setattr('rdmo_radar.exports.credentials.requests.post', post)
+    monkeypatch.setattr(provider, 'render_credentials_form', lambda form: form)
+
+    form = provider.submit_credentials_form()
+
+    assert not form.is_valid()
+    assert form.non_field_errors()
+    assert provider.request.session == {}
+
+
+def test_workspace_request_uses_bearer_token(monkeypatch):
+    provider = make_provider()
+    provider.store_in_session(provider.request, 'access_token', 'bearer-token')
+    provider.store_in_session(provider.request, 'dataset_choices', [(0, 'Dataset')])
+    provider.store_in_session(provider.request, 'radar_urls', [None])
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {'data': [{'id': 'workspace-1', 'descriptiveMetadata': {'title': 'Workspace'}}]}
+
+    def get(url, **kwargs):
+        captured['url'] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr('rdmo_radar.exports.credentials.requests.get', get)
+    monkeypatch.setattr(
+        'rdmo_radar.exports.credentials.render',
+        lambda request, template, context, status: context
+    )
+
+    context = provider.render_export_form()
+
+    assert captured['headers'] == {'Authorization': 'Bearer bearer-token'}
+    assert captured['timeout'] == 30
+    assert context['form'].fields['workspace'].widget.choices == [('workspace-1', 'Workspace')]
+
+
+def test_workspace_request_failure_clears_export_session(monkeypatch):
+    provider = make_provider()
+    provider.store_in_session(provider.request, 'access_token', 'expired-token')
+    provider.store_in_session(provider.request, 'dataset_choices', [(0, 'Dataset')])
+    provider.store_in_session(provider.request, 'radar_urls', [None])
+    provider.store_in_session(provider.request, 'project_id', 1)
+
+    def get(*args, **kwargs):
+        raise requests.HTTPError
+
+    monkeypatch.setattr('rdmo_radar.exports.credentials.requests.get', get)
+    monkeypatch.setattr(provider, 'render_credentials_form', lambda form=None, error=None: error)
+
+    error = provider.render_export_form()
+
+    assert error
+    assert provider.request.session == {}
+
+
+def test_cancel_clears_export_session(monkeypatch):
+    provider = make_provider({'cancel': '1'})
+    provider.store_in_session(provider.request, 'access_token', 'bearer-token')
+    provider.store_in_session(provider.request, 'dataset_choices', [(0, 'Dataset')])
+    provider.store_in_session(provider.request, 'project_id', 1)
+    monkeypatch.setattr('rdmo_radar.exports.credentials.redirect', lambda *args: args)
+
+    result = provider.submit()
+
+    assert result == ('project', 1)
+    assert provider.request.session == {}
+
+
+def test_dataset_export_clears_bearer_token(monkeypatch):
+    provider = make_provider({
+        'stage': 'export',
+        'dataset': '0',
+        'workspace': 'workspace-1'
+    })
+    provider.store_in_session(provider.request, 'access_token', 'bearer-token')
+    provider.store_in_session(provider.request, 'dataset_choices', [(0, 'Dataset')])
+    provider.store_in_session(provider.request, 'workspace_choices', [('workspace-1', 'Workspace')])
+    provider.store_in_session(provider.request, 'radar_urls', [None])
+    provider.store_in_session(provider.request, 'project_id', 1)
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    def post(url, **kwargs):
+        captured['url'] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr('rdmo_radar.exports.credentials.requests.post', post)
+    monkeypatch.setattr(provider, 'get_post_data', lambda set_index: {'descriptiveMetadata': {'title': 'Dataset'}})
+    monkeypatch.setattr(provider, 'post_success', lambda request, response: 'success')
+
+    result = provider.submit_export_form()
+
+    assert result == 'success'
+    assert captured['url'].endswith('/radar/api/workspaces/workspace-1/datasets')
+    assert captured['headers'] == {'Authorization': 'Bearer bearer-token'}
+    assert captured['timeout'] == 30
+    assert provider.request.session == {}
 
 
 def test_provider_form_validates_choices_and_escapes_export_link():

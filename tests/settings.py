@@ -27,6 +27,7 @@ USE_TZ = True
 ROOT_URLCONF = 'tests.urls'
 
 RADAR_PROVIDER = {
+    'authentication_mode': 'credentials',
     'radar_url': 'https://radar.example.test',
     'client_id': 'configured-client-id',
     'client_secret': 'client-secret',
