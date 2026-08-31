@@ -42,6 +42,10 @@ dev = [
   "rdmo[allauth]",
   "rdmo-plugins-radar[pytest]",
 ]
+pytest = [
+  "pytest>=7,<9",
+  "pytest-django>=4,<5",
+]
 
 [project.urls]
 repository = "https://github.com/rdmorganiser/rdmo-plugins-radar"
