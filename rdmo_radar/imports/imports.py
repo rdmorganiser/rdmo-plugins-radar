@@ -187,7 +187,7 @@ class RadarImport(Import):
             return None
 
     def check(self):
-        file_type, encoding = mimetypes.guess_type(self.file_name)
+        file_type, _encoding = mimetypes.guess_type(self.file_name)
         if file_type == 'application/xml':
             self.root = read_xml_file(self.file_name)
             if self.root:
@@ -598,16 +598,18 @@ class RadarImport(Import):
                     set_index=set_index,
                     text=name_identifier_node.text
                 ))
-                self.values.append(Value(
-                    attribute=self.get_attribute(
-                        'https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier_scheme'
-                    ),
-                    set_index=set_index,
-                    option=self.get_option(self.get_key(
-                        self.name_identifier_scheme_options,
-                        name_identifier_node.attrib.get('funderIdentifierType', 'ORCID')
+                identifier_scheme = self.get_key(
+                    self.name_identifier_scheme_options,
+                    name_identifier_node.attrib.get('type')
+                )
+                if identifier_scheme:
+                    self.values.append(Value(
+                        attribute=self.get_attribute(
+                            'https://rdmorganiser.github.io/terms/domain/project/funder/name_identifier_scheme'
+                        ),
+                        set_index=set_index,
+                        option=self.get_option(identifier_scheme)
                     ))
-                ))
 
             award_number_node = funding_reference_node.find('./ns1:awardNumber', self.ns_map)
             if award_number_node is not None:
