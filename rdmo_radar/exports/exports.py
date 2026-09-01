@@ -1,11 +1,12 @@
 import zipfile
 
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 
 from rdmo.core.exports import prettify_xml
 from rdmo.projects.exports import Export
 
 from .renderers import RadarExportRenderer
+from .validation import validate_radar_xml
 
 
 class RadarExport(Export):
@@ -14,16 +15,57 @@ class RadarExport(Export):
 
     abstract = 'Abstract'
 
+    description_type_options = {
+        'description_type/abstract': 'Abstract',
+        'description_type/object': 'Object',
+        'description_type/method': 'Method',
+        'description_type/table_of_contents': 'TableOfContents',
+        'description_type/technical_info': 'TechnicalInfo',
+        'description_type/technical_remarks': 'TechnicalRemarks',
+        'description_type/version_notes': 'VersionNotes',
+        'description_type/other': 'Other'
+    }
+
     identifier_type_options = {
         'identifier_type/doi': 'DOI',
         'identifier_type/url': 'URL',
         'identifier_type/handle': 'Handle',
+        'identifier_type/radar': 'RADAR',
         'identifier_type/other': 'Other'
     }
 
+    primary_identifier_types = {'DOI', 'Handle', 'RADAR'}
+
+    related_identifier_type_options = {
+        'identifier_type/ark': 'ARK',
+        'identifier_type/arxiv': 'arXiv',
+        'identifier_type/bibcode': 'bibcode',
+        'identifier_type/cstr': 'CSTR',
+        'identifier_type/doi': 'DOI',
+        'identifier_type/ean13': 'EAN13',
+        'identifier_type/eissn': 'EISSN',
+        'identifier_type/handle': 'Handle',
+        'identifier_type/epic': 'ePIC',
+        'identifier_type/igsn': 'IGSN',
+        'identifier_type/isbn': 'ISBN',
+        'identifier_type/issn': 'ISSN',
+        'identifier_type/istc': 'ISTC',
+        'identifier_type/lissn': 'LISSN',
+        'identifier_type/lsid': 'LSID',
+        'identifier_type/pmid': 'PMID',
+        'identifier_type/purl': 'PURL',
+        'identifier_type/raid': 'RAiD',
+        'identifier_type/rrid': 'RRID',
+        'identifier_type/swhid': 'SWHID',
+        'identifier_type/upc': 'UPC',
+        'identifier_type/url': 'URL',
+        'identifier_type/urn': 'URN',
+        'identifier_type/w3id': 'w3id'
+    }
+
     language_options = {
-        'language/en': 'ENG',
-        'language/de': 'DEU'
+        'language/en': 'eng',
+        'language/de': 'deu'
     }
 
     name_type_options = {
@@ -33,12 +75,24 @@ class RadarExport(Export):
 
     name_identifier_scheme_options = {
         'name_identifier_scheme/orcid': 'ORCID',
-        'name_identifier_scheme/insi': 'INSI',
         'name_identifier_scheme/ror': 'ROR',
-        'name_identifier_scheme/grid': 'GRID'
+        'name_identifier_scheme/isni': 'Other',
+        'name_identifier_scheme/insi': 'Other',
+        'name_identifier_scheme/grid': 'Other',
+        'name_identifier_scheme/other': 'Other'
+    }
+
+    funder_identifier_scheme_options = {
+        'name_identifier_scheme/crossref_funder': 'CrossRefFunder',
+        'name_identifier_scheme/grid': 'GRID',
+        'name_identifier_scheme/isni': 'ISNI',
+        'name_identifier_scheme/insi': 'ISNI',
+        'name_identifier_scheme/ror': 'ROR',
+        'name_identifier_scheme/other': 'Other'
     }
 
     contributor_type_options = {
+        'contributor_type/contact_person': 'ContactPerson',
         'contributor_type/contact_persion': 'ContactPerson',
         'contributor_type/data_collector': 'DataCollector',
         'contributor_type/data_curator': 'DataCurator',
@@ -57,6 +111,7 @@ class RadarExport(Export):
         'contributor_type/research_group': 'ResearchGroup',
         'contributor_type/sponsor': 'Sponsor',
         'contributor_type/supervisor': 'Supervisor',
+        'contributor_type/translator': 'Translator',
         'contributor_type/work_package_leader': 'WorkPackageLeader',
         'contributor_type/other': 'Other'
     }
@@ -64,16 +119,20 @@ class RadarExport(Export):
     resource_type_general_options = {
         'resource_type_general/audiovisual': 'Audiovisual',
         'resource_type_general/collection': 'Collection',
+        'resource_type_general/computational_notebook': 'ComputationalNotebook',
         'resource_type_general/data_paper': 'DataPaper',
         'resource_type_general/dataset': 'Dataset',
         'resource_type_general/event': 'Event',
         'resource_type_general/image': 'Image',
         'resource_type_general/interactive_resource': 'InteractiveResource',
+        'resource_type_general/instrument': 'Instrument',
         'resource_type_general/model': 'Model',
         'resource_type_general/physical_object': 'PhysicalObject',
+        'resource_type_general/project': 'Project',
         'resource_type_general/service': 'Service',
         'resource_type_general/software': 'Software',
         'resource_type_general/sound': 'Sound',
+        'resource_type_general/standard': 'Standard',
         'resource_type_general/text': 'Text',
         'resource_type_general/workflow': 'Workflow',
         'resource_type_general/other': 'Other'
@@ -91,7 +150,7 @@ class RadarExport(Export):
         'radar_controlled_subject_area/computer_science': 'Computer Science',
         'radar_controlled_subject_area/economics': 'Economics',
         'radar_controlled_subject_area/engineering': 'Engineering',
-        'radar_controlled_subject_area/environmental_science_and_ecology': ' Environmental Science and Ecology',
+        'radar_controlled_subject_area/environmental_science_and_ecology': 'Environmental Science and Ecology',
         'radar_controlled_subject_area/ethnology': 'Ethnology',
         'radar_controlled_subject_area/geological_science': 'Geological Science',
         'radar_controlled_subject_area/geography': 'Geography',
@@ -118,6 +177,7 @@ class RadarExport(Export):
         'radar_data_source/instrument': 'Instrument',
         'radar_data_source/media': 'Media',
         'radar_data_source/observation': 'Observation',
+        'radar_data_source/survey': 'Survey',
         'radar_data_source/trial': 'Trial',
         'radar_data_source/organism': 'Organism',
         'radar_data_source/tissue': 'Tissue',
@@ -163,6 +223,7 @@ class RadarExport(Export):
         'relation_type/is_documented_by': 'IsDocumentedBy',
         'relation_type/documents': 'Documents',
         'relation_type/is_compiled_by': 'IsCompiledBy',
+        'relation_type/compiles': 'Compiles',
         'relation_type/Compiles': 'Compiles',
         'relation_type/is_variant_form_of': 'IsVariantFormOf',
         'relation_type/is_original_form_of': 'IsOriginalFormOf',
@@ -174,25 +235,27 @@ class RadarExport(Export):
         'relation_type/requires': 'Requires',
         'relation_type/is_required_by': 'IsRequiredBy',
         'relation_type/obsoletes': 'Obsoletes',
-        'relation_type/is_obsoleted_by': 'IsObsoletedBy'
+        'relation_type/is_obsoleted_by': 'IsObsoletedBy',
+        'relation_type/is_collected_by': 'IsCollectedBy',
+        'relation_type/collects': 'Collects',
+        'relation_type/has_translation': 'HasTranslation',
+        'relation_type/is_translation_of': 'IsTranslationOf'
     }
 
     def get_dataset(self, set_index):
         dataset = {}
 
-        # # identifier
-        # identifier = self.get_text('project/dataset/identifier', set_index=set_index)
-        # if identifier:
-        #     dataset['identifier'] = identifier
-        #     dataset['identifierType'] = \
-        #         self.get_option(self.identifier_type_options, 'project/dataset/identifier_type',
-        #                         set_index=set_index) or \
-        #         self.get_option(self.identifier_type_options, 'project/dataset/pids/system',
-        #                         set_index=set_index) or \
-        #         self.other
-        # else:
-        #     dataset['identifier'] = self.get_text('project/dataset/id', set_index=set_index)
-        #     dataset['identifierType'] = self.other
+        # identifier
+        identifier = self.get_text('project/dataset/identifier', set_index=set_index)
+        if identifier:
+            identifier_type = \
+                self.get_option(self.identifier_type_options, 'project/dataset/identifier_type',
+                                set_index=set_index) or \
+                self.get_option(self.identifier_type_options, 'project/dataset/pids/system',
+                                set_index=set_index)
+            if identifier_type in self.primary_identifier_types:
+                dataset['identifier'] = identifier
+                dataset['identifierType'] = identifier_type
 
         # creators
         for creator_set in self.get_set('project/dataset/creator/name', set_prefix=str(set_index)):
@@ -221,14 +284,18 @@ class RadarExport(Export):
             }
 
         # productionYear
-        dataset['productionYear'] = \
+        production_year = \
             self.get_year('project/dataset/created', set_index=set_index) or \
             self.get_year('project/dataset/data_publication_date', set_index=set_index)
+        if production_year:
+            dataset['productionYear'] = production_year
 
         # publicationYear
-        dataset['publicationYear'] = \
+        publication_year = \
             self.get_year('project/dataset/issued', set_index=set_index) or \
             self.get_year('project/dataset/data_publication_date', set_index=set_index)
+        if publication_year:
+            dataset['publicationYear'] = publication_year
 
         # subjectArea
         subject_areas = \
@@ -301,7 +368,7 @@ class RadarExport(Export):
                     'value': self.get_text('project/dataset/related_identifier/identifier',
                                            set_prefix=related_identifier_set.set_prefix,
                                            set_index=related_identifier_set.set_index),
-                    'relatedIdentifierType': self.get_option(self.identifier_type_options,
+                    'relatedIdentifierType': self.get_option(self.related_identifier_type_options,
                                                              'project/dataset/related_identifier/identifier_type',
                                                              set_prefix=related_identifier_set.set_prefix,
                                                              set_index=related_identifier_set.set_index),
@@ -363,7 +430,9 @@ class RadarExport(Export):
                 dataset['contributors']['contributor'].append(contributor)
 
         # language
-        dataset['language'] = self.get_option(self.language_options, 'project/dataset/language', set_index=set_index)
+        language = self.get_option(self.language_options, 'project/dataset/language', set_index=set_index)
+        if language:
+            dataset['language'] = language
 
         # dataSource
         data_source = self.get_text('project/dataset/data_source', set_index=set_index)
@@ -413,7 +482,7 @@ class RadarExport(Export):
                     funding_reference['funderIdentifier'] = {
                         'value': funder_identifier,
                         'type': self.get_option(
-                            self.name_identifier_scheme_options,
+                            self.funder_identifier_scheme_options,
                             'project/funder/name_identifier_scheme',
                             set_index=funding_reference_set.set_index,
                             default=self.other
@@ -421,6 +490,10 @@ class RadarExport(Export):
                     }
 
                 dataset['fundingReferences']['fundingReference'].append(funding_reference)
+
+        version = self.get_text('project/dataset/version', set_index=set_index)
+        if version:
+            dataset['version'] = version
 
         return dataset
 
@@ -458,7 +531,7 @@ class RadarExport(Export):
                     'nameIdentifierScheme': self.get_option(self.name_identifier_scheme_options,
                                                             attribute + '/name_identifier_scheme',
                                                             set_prefix=set_prefix, set_index=set_index,
-                                                            default='ORCID')
+                                                            default=self.other)
                 }]
 
             # affiliations
@@ -471,21 +544,30 @@ class RadarExport(Export):
             return None
 
     def render(self):
+        files = []
+        for rdmo_dataset in self.get_set('project/dataset/id'):
+            set_index = rdmo_dataset.set_index
+
+            file_name = '{}.xml'.format(
+                self.get_text('project/dataset/identifier', set_index=set_index) or
+                self.get_text('project/dataset/id', set_index=set_index) or
+                str(set_index + 1)
+            )
+
+            dataset = self.get_dataset(set_index)
+            xmldata = prettify_xml(RadarExportRenderer().render(dataset))
+            validation_error = validate_radar_xml(xmldata)
+            if validation_error:
+                return HttpResponseBadRequest(
+                    f'RADAR XML validation failed for "{file_name}": {validation_error}',
+                    content_type='text/plain'
+                )
+            files.append((file_name, xmldata))
+
         response = HttpResponse(content_type='application/zip')
         response['Content-Disposition'] = f'filename="{self.project.title}.zip"'
-
         with zipfile.ZipFile(response, 'w') as zip_file:
-            for rdmo_dataset in self.get_set('project/dataset/id'):
-                set_index = rdmo_dataset.set_index
-
-                file_name = '{}.xml'.format(
-                    self.get_text('project/dataset/identifier', set_index=set_index) or
-                    self.get_text('project/dataset/id', set_index=set_index) or
-                    str(set_index + 1)
-                )
-
-                dataset = self.get_dataset(set_index)
-                xmldata = RadarExportRenderer().render(dataset)
-                zip_file.writestr(file_name, prettify_xml(xmldata))
+            for file_name, xmldata in files:
+                zip_file.writestr(file_name, xmldata)
 
         return response

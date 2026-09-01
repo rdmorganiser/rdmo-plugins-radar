@@ -77,7 +77,7 @@ For the `RadarImport`, add the plugin to `PROJECT_IMPORTS` in `config/settings/l
 
 ```python
 PROJECT_IMPORTS += [
-    ('radar', _('from RADAR XML'), 'rdmo_radar.imports.RadarImport')
+    ('radar-xml', _('from RADAR XML'), 'rdmo_radar.imports.RadarImport')
 ]
 ```
 
@@ -88,8 +88,18 @@ Usage
 The plugins appear as export/import options on the RDMO project overview.
 
 The export provider fetches the available RADAR workspaces, and then lets the user choose
-which dateset should be archived in which workspace. The plugin creates a RADAR datasets.
-The actual data can be uploaded through the RADAR interface.
+which dataset should be created in which workspace. The plugin creates a PENDING RADAR dataset using RDDM 9.3.
+Incomplete descriptive metadata is accepted at this stage and can be completed in the RADAR interface before the
+dataset is archived or published. The actual data can also be uploaded through the RADAR interface.
+
+The downloadable RADAR XML export also targets RDDM 9.3. Unlike direct draft creation, every generated XML file is
+validated against the bundled official schema before the ZIP is returned. An incomplete dataset therefore produces
+an HTTP 400 response identifying the affected XML file instead of an invalid or partial archive.
+
+For diagnostics, RADAR administrators can use the API endpoints
+`GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does
+not call either endpoint during a normal direct export because newly created drafts are intentionally allowed to be
+incomplete.
 
 
 OAuth troubleshooting

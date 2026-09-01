@@ -1,0 +1,693 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright 2026 FIZ Karlsruhe - Leibniz-Institut fuer Informationsinfrastruktur GmbH
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+RADAR Revision History
+2022-12-09 v9.1: Revision of the RADAR Metadata Schema version 0.9; adjustments following the DataCite Metadata Schema 4.4.
+Addition of new attributes "affiliationIdentifierScheme" and "affiliationIdentifier" for the elements creatorAffiliation and contributorAffiliation.
+Addition of new attribute "schemeURI" for the elements creatorAffiliation, contributorAffiliation, publisher, rightsHolder, keywords and funderIdentifier.
+Addition of new attributes "nameIdentifierScheme" and "nameIdentifier" for the elements publisher and rightsHolder.
+Addition of new attribute "keywordScheme", "classificiationCode" and "valueURI" for the element keyword.
+Addition of controlled lists in Radar Types: "nameIdentifierScheme" with the values "Other", "ORCID" and "ROR"; "keywordScheme" with the values "GND" and "Other".
+Additions to controlled lists "rights", "dataSourceDetail", "additionalTitleType", "contributorType", "relatedIdentifierType", "relationType" and "funderIdentifierType" in Radar Types:
+Added values for the element rights: "Public Domain Mark 1.0", "Public Domain Dedication and License (PDDL)", "Attribution License (ODC-By)", "Open Database License (ODC-ODbL)", "Apache License 2.0", "Common Development and Distribution License 1.0", "Eclipse Public License 1.0", "Eclipse Public License 2.0", "GNU General Public License v3.0 only", "GNU Lesser General Public License v3.0 only", "BSD 2-Clause Simplified License", "BSD 3-Clause New or Revised License" and "MIT License".
+Added value for the attribute dataSourceDetail: "Survey".
+Added value for the attribute additionalTitleType: "Other".
+Added value for the attribute contributorType: "Supervisor".
+Added values for the attribute relatedIdentifierType: "ePIC" and "w3id".
+Added values for the attribute relationType: "isDescribedBy", "Describes", "HasVersion", "IsVersionOf", "IsPublishedIn", "IsRequiredBy", "Requires", "IsObsoleteBy" and "Obsoletes".
+Added values for the attribute funderIdentifierType: "ROR".
+Replacement of the type xs:string with rtype:notNull to prevent empty fields for the elements rightsHolder and keyword.
+2025-05-07 v9.2: Revision of the RADAR Metadata Schema version 9.1; adjustments following the DataCite Metadata Schema 4.6.
+Added value for the attribute contributorType: "Translator".
+Added values for the attribute relatedIdentifierType: "CSTR" and "RRID".
+Added values for the attribute relationType: "IsCollectedBy", "Collects", "HasTranslation" and "IsTranslationOf".
+Added value for the attribute resourceType: "Audiovisual", "Collection", "ComputationalNotebook", "DataPaper", "Dataset", "Event", "Image", "InteractiveResource", "Instrument", "Model", "PhysicalObject", "Project", "Service", "Software", "Sound", "Standard", "Text", "Workflow" and "Other".
+Removal of the import of "http://datacite.org/schema/kernel-3" schemaLocation="https://schema.datacite.org/meta/kernel-3/include/datacite-resourceType-v3.xsd" for the attribute resourceType.
+Added new attributes ontologyURI and ontologyId to keyword element.
+2026-06-11 v9.3: Revision of the RADAR Metadata Schema version 9.2; adjustments following the DataCite Metadata Schema 4.7.
+Addition of new element "version" with the type xs:string.
+Added values for the attribute relatedIdentifierType: "RAiD" and "SWHID".
+Added value for the attribute descriptionType: "VersionNotes".
+
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:datacite="http://datacite.org/schema/kernel-3"
+  xmlns:rtype="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types" xmlns:dct="http://purl.org/dc/terms/"
+  xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements" targetNamespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements"
+  elementFormDefault="qualified" version="9.3">
+
+  <xs:import namespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types" schemaLocation="RadarTypes.xsd" />
+  <xs:import namespace="http://purl.org/dc/terms/" schemaLocation="https://www.radar-service.eu/schemas/dcterms.xsd" />
+
+  <xs:element name="identifier">
+    <xs:annotation>
+      <xs:documentation>The identifier is a unique string which identifies a resource. In RADAR Handles and DOIs are used as identifiers.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="rtype:identifierValue">
+          <xs:attribute name="identifierType" type="rtype:identifierType" use="required" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="creators">
+    <xs:annotation>
+      <xs:documentation>The main researchers involved in producing the data, or the authors of the publication, in priority order.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="creator" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="creator">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element type="rtype:notNull" name="creatorName">
+          <xs:annotation>
+            <xs:documentation>Format: family name, given name.</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element type="rtype:notNull" name="givenName" minOccurs="0" maxOccurs="1" />
+        <xs:element type="rtype:notNull" name="familyName" minOccurs="0" maxOccurs="1" />
+        <xs:element ref="nameIdentifier" minOccurs="0" maxOccurs="unbounded" />
+        <xs:element ref="creatorAffiliation" minOccurs="0" maxOccurs="1" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="creatorAffiliation">
+	<xs:annotation>
+		<xs:documentation>The organizational or institutional affiliation of the creator.</xs:documentation>
+	</xs:annotation>
+	<xs:complexType>
+		<xs:simpleContent>
+			<xs:extension base="rtype:notNull">
+				<xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+					<xs:annotation>
+						<xs:documentation>The URI of the affiliation identifier scheme. Example: https://ror.org/</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="affiliationIdentifierScheme" type="rtype:notNull" use="optional">
+					<xs:annotation>
+						<xs:documentation>Example: ROR</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="affiliationIdentifier" type="rtype:notNull" use="optional">
+					<xs:annotation>
+						<xs:documentation>Uniquely identifies the organizational affiliation of the creator. Example: https://ror.org/04aj4c181</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	</xs:element>
+
+  <xs:element name="nameIdentifier">
+    <xs:annotation>
+      <xs:documentation>Uniquely identifies an individual or legal entity.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="rtype:notNull">
+          <xs:attribute name="schemeURI" use="optional" type="rtype:notNull">
+            <xs:annotation>
+              <xs:documentation>The URI of the name identifier scheme. Example: http://www.orcid.org</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="nameIdentifierScheme" use="required" type="rtype:nameIdentifierScheme">
+            <xs:annotation>
+              <xs:documentation>Examples: ORCID, ROR</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="title" type="rtype:notNull">
+    <xs:annotation>
+      <xs:documentation>A heading or caption by which a resource is well described.</xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <xs:element name="publishers">
+    <xs:annotation>
+      <xs:documentation>The name of the entity that holds, archives, publishes, prints, distributes, releases, issues, or produces the data.</xs:documentation>
+      <xs:documentation>Format: Family name, given name or official name of the publishing institution.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="publisher" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="publisher">
+  	<xs:complexType>
+			<xs:simpleContent>
+				<xs:extension base="rtype:notNull">
+					<xs:attribute name="nameIdentifierScheme" type="rtype:nameIdentifierScheme" use="optional">
+						<xs:annotation>
+							<xs:documentation>Examples: ORCID, ROR</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+					<xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+						<xs:annotation>
+							<xs:documentation>The URI of the name identifier scheme. Examples: https://ror.org/, http://www.orcid.org/</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+					<xs:attribute name="nameIdentifier" type="rtype:notNull" use="optional">
+						<xs:annotation>
+							<xs:documentation>Examples: https://ror.org/04t3en479, </xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+				</xs:extension>
+			</xs:simpleContent>
+		</xs:complexType>
+  </xs:element>
+
+  <xs:element name="productionYear" type="rtype:yearOrUnknown">
+    <xs:annotation>
+      <xs:documentation>Year, in which the resource was created or the resource refers to. (YYYY or YYYY-YYYY or "unknown").</xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <xs:element name="publicationYear" type="rtype:year">
+    <xs:annotation>
+      <xs:documentation>Year, in which the resource was published. (YYYY)</xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <xs:element name="subjectAreas">
+    <xs:annotation>
+      <xs:documentation>RADAR specific list of scientific research areas. Please select appropriate field(s). Multiple selections are possible.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="subjectArea" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="subjectArea">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="controlledSubjectAreaName" type="rtype:subjectArea" minOccurs="1" maxOccurs="1"/>
+				<xs:element name="additionalSubjectAreaName" type="xs:string" minOccurs="0" maxOccurs="1"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+
+  <xs:element name="resource">
+    <xs:annotation>
+      <xs:documentation>General information on the resource s content.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute name="resourceType" use="required" type="rtype:resourceType">
+            <xs:annotation>
+              <xs:documentation>Specifies the type of the resource to be archived/published.</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="rights">
+    <xs:annotation>
+      <xs:documentation>Provides a rights management statement (= data licence) for the resource uploaded to RADAR.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="controlledRights" type="rtype:rightsType" minOccurs="1" maxOccurs="1" />
+        <xs:element name="additionalRights" type="xs:string" minOccurs="0" maxOccurs="1" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="rightsHolders">
+    <xs:annotation>
+      <xs:documentation>The institution or person owning or managing property rights,including intellectual property rights, utilization rights and/or exploitation rights over the resource uploaded to RADAR.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="rightsHolder" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="rightsHolder">
+  	<xs:complexType>
+			<xs:simpleContent>
+				<xs:extension base="rtype:notNull">
+					<xs:attribute name="nameIdentifierScheme" type="rtype:nameIdentifierScheme" use="optional">
+						<xs:annotation>
+							<xs:documentation>Examples: ORCID, ROR</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+					<xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+						<xs:annotation>
+							<xs:documentation>The URI of the name identifier scheme. Examples: https://ror.org/, http://www.orcid.org/</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+					<xs:attribute name="nameIdentifier" type="rtype:notNull" use="optional">
+						<xs:annotation>
+							<xs:documentation>Examples: https://ror.org/04t3en479</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+				</xs:extension>
+			</xs:simpleContent>
+		</xs:complexType>
+  </xs:element>
+
+  <xs:element name="additionalTitles">
+    <xs:annotation>
+      <xs:documentation>Complementary textual information to the main title of the resource.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="additionalTitle" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="additionalTitle">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="rtype:additionalTitleType" name="additionalTitleType" use="required" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+
+  <xs:element name="descriptions">
+    <xs:annotation>
+      <xs:documentation>A textual description containing additional information about resource (English is strongly recommended as primary language).</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="description" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="description">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="rtype:descriptionType" name="descriptionType" use="required">
+          </xs:attribute>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="keywords">
+    <xs:annotation>
+      <xs:documentation>Keyword(s) describing the subject focus of the resource (English is
+        strongly recommended as primary language).
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="keyword" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="keyword">
+  	<xs:complexType>
+		<xs:simpleContent>
+			<xs:extension base="rtype:notNull">
+				<xs:attribute name="keywordScheme" type="rtype:keywordScheme" use="optional">
+				<xs:annotation>
+					<xs:documentation>The name of the keyword scheme. Example: GND.</xs:documentation>
+				</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+				<xs:annotation>
+					<xs:documentation>The URI of the keyword scheme. Example: https://d-nb.info/gnd/</xs:documentation>
+				</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="valueURI" type="rtype:notNull" use="optional">
+				<xs:annotation>
+					<xs:documentation>The URI of the keyword term.</xs:documentation>
+				</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="classificationCode" type="rtype:notNull" use="optional">
+				<xs:annotation>
+					<xs:documentation>The classification code or identifier used for the keyword term.</xs:documentation>
+				</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="ontologyURI" type="rtype:notNull" use="optional">
+                <xs:annotation>
+                    <xs:documentation>The URI of the keyword ontology. Example: https://terminology.tib.eu/ts/ontologies/afo</xs:documentation>
+                </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="ontologyId" type="rtype:notNull" use="optional">
+                <xs:annotation>
+                    <xs:documentation>The identifier of the keyword ontology. Example: afo</xs:documentation>
+                </xs:annotation>
+                </xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+  </xs:element>
+
+  <xs:element name="contributors">
+    <xs:annotation>
+      <xs:documentation>The institution or person responsible for collecting, managing, distributing, or otherwise contributing to the development or creation of the resource.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="contributor" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="contributor">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element type="rtype:notNull" name="contributorName">
+          <xs:annotation>
+            <xs:documentation>Format: family name, given name</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element type="rtype:notNull" name="givenName" minOccurs="0" maxOccurs="1" />
+        <xs:element type="rtype:notNull" name="familyName" minOccurs="0" maxOccurs="1" />
+        <xs:element ref="nameIdentifier" minOccurs="0" maxOccurs="unbounded" />
+        <xs:element ref="contributorAffiliation" minOccurs="0" maxOccurs="1" />
+      </xs:sequence>
+      <xs:attribute type="rtype:contributorType" name="contributorType" use="required" />
+    </xs:complexType>
+  </xs:element>
+
+
+    <xs:element name="contributorAffiliation">
+        <xs:annotation>
+            <xs:documentation>The organizational or institutional affiliation of the contributor.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:simpleContent>
+                <xs:extension base="rtype:notNull">
+                    <xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+                        <xs:annotation>
+                            <xs:documentation>The URI of the affiliation identifier scheme. Example: https://ror.org/</xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="affiliationIdentifierScheme" type="rtype:notNull" use="optional">
+                        <xs:annotation>
+                            <xs:documentation>Example: ROR</xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="affiliationIdentifier" type="rtype:notNull" use="optional">
+                        <xs:annotation>
+                            <xs:documentation>Uniquely identifies the organizational affiliation of the contributor. Example: https://ror.org/04aj4c181</xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:extension>
+            </xs:simpleContent>
+        </xs:complexType>
+    </xs:element>
+
+  <xs:element name="language" type="rtype:language">
+    <xs:annotation>
+      <xs:documentation>Main language used or relevant to the resource.</xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <xs:element name="alternateIdentifiers">
+    <xs:annotation>
+      <xs:documentation>An identifier or identifiers other than the primary Identifier applied
+        to the resource being registered.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="alternateIdentifier" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="alternateIdentifier">
+    <!-- dct:bibliographicCitation should be considered for substitutionGroup. -->
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="alternateIdentifierType" use="required" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="relatedIdentifiers">
+    <xs:annotation>
+      <xs:documentation>Identifiers of related resources. These must be globally unique identifiers.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="relatedIdentifier" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="relatedIdentifier">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="rtype:relatedIdentifierType" name="relatedIdentifierType" use="required" />
+          <xs:attribute type="rtype:relationType" name="relationType" use="required" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="geoLocations">
+    <xs:annotation>
+      <xs:documentation>Spatial region or place where the resource was originated or which the
+        resource refers to.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="geoLocation" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="geoLocation">
+    <!-- dct:spatial might be considered for substitutionGroup -->
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="geoLocationCountry" minOccurs="0" />
+        <xs:element ref="geoLocationRegion" minOccurs="0" />
+        <xs:choice minOccurs="0" maxOccurs="1">
+          <xs:element ref="geoLocationPoint" />
+          <xs:element ref="geoLocationBox" />
+        </xs:choice>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="geoLocationCountry" type="rtype:ISO3166-Country-Name" />
+  <xs:element name="geoLocationRegion" type="xs:string" />
+  <xs:element name="geoLocationPoint" type="geoPoint" />
+
+  <xs:element name="geoLocationBox">
+    <xs:complexType>
+      <xs:all>
+        <xs:element name="southWestPoint" type="geoPoint" />
+        <xs:element name="northEastPoint" type="geoPoint" />
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="dataSources">
+    <xs:annotation>
+      <xs:documentation>Specifies the origin of the data contained in the
+        resource.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="dataSource" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="dataSource">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="rtype:dataSourceDetail" name="dataSourceDetail" use="required">
+            <xs:annotation>
+              <xs:documentation>Specifies the type of data source.</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="software">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="softwareType" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="softwareType">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="softwareName" maxOccurs="unbounded" />
+        <xs:element ref="alternativeSoftwareName" minOccurs="0" maxOccurs="unbounded" />
+      </xs:sequence>
+      <xs:attribute name="type" use="required" type="rtype:softwareType" />
+
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="softwareName">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="softwareVersion" use="required" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="alternativeSoftwareName">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="alternativeSoftwareVersion" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="processing">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="dataProcessing" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="dataProcessing" type="xs:string">
+    <xs:annotation>
+      <xs:documentation>Specifies the data processing instructions, used for creating the data
+        in the digital resource.
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <xs:element name="relatedInformations">
+    <xs:annotation>
+      <xs:documentation>Specifies the database type of related information relevant
+        information on the sample used to produce the digital data in the
+        resource.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="relatedInformation" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="relatedInformation">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="relatedInformationType" />
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="geoPoint">
+    <xs:all>
+      <xs:element name="latitude">
+        <xs:simpleType>
+          <xs:restriction base="xs:double">
+            <xs:maxInclusive value="90" />
+            <xs:minInclusive value="-90" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="longitude">
+        <xs:simpleType>
+          <xs:restriction base="xs:double">
+            <xs:maxInclusive value="180" />
+            <xs:minInclusive value="-180" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:all>
+  </xs:complexType>
+  
+  <xs:element name="fundingReferences">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fundingReference" minOccurs="0" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="fundingReference">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element type="rtype:notNull" name="funderName" minOccurs="1" maxOccurs="1" />
+        <xs:element ref="funderIdentifier" minOccurs="0" maxOccurs="1" />
+        <xs:element type="rtype:notNull" name="awardNumber" minOccurs="0" maxOccurs="1" />
+        <xs:element type="rtype:notNull" name="awardURI" minOccurs="0" maxOccurs="1" />
+        <xs:element type="rtype:notNull" name="awardTitle" minOccurs="0" maxOccurs="1" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="funderIdentifier">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="rtype:notNull">
+          <xs:attribute type="rtype:funderIdentifierType" name="type" />
+          <xs:attribute name="schemeURI" type="rtype:notNull" use="optional">
+          <xs:annotation>
+          	<xs:documentation>The URI of the funder identifier scheme. Example: https://ror.org/</xs:documentation>
+          </xs:annotation>
+          </xs:attribute>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="version" type="xs:string">
+    <xs:annotation>
+      <xs:documentation>Version number of the resource.</xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+</xs:schema>

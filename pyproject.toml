@@ -30,6 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "rdmo",
+    "xmlschema>=3.4.5,<4",
 ]
 dynamic = ["version"]
 
@@ -55,6 +56,7 @@ include = ["rdmo_radar*"]
 
 [tool.setuptools.package-data]
 rdmo_radar = [
+  "schemas/*.xsd",
   "templates/**/*.html",
   "xml/**/*.xml",
 ]

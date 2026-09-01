@@ -16,6 +16,7 @@ from rdmo.services.providers import OauthProviderMixin
 from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.exports.renderers import RadarExportRenderer
+from rdmo_radar.exports.validation import get_radar_schema, validate_radar_xml
 
 
 def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
@@ -30,6 +31,25 @@ def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
     )
     provider.project = SimpleNamespace(id=1)
     return provider
+
+
+def make_valid_xml_dataset(**overrides):
+    dataset = {
+        'identifier': '10.1234/example',
+        'identifierType': 'DOI',
+        'creators': {'creator': [{'creatorName': 'Doe, Jane'}]},
+        'title': 'Dataset',
+        'publishers': {'publisher': ['Example Repository']},
+        'productionYear': '2026',
+        'language': 'eng',
+        'subjectAreas': {'subjectArea': [{'controlledSubjectAreaName': 'Chemistry'}]},
+        'resource': {'value': 'Research data', 'resourceType': 'Dataset'},
+        'rights': {'controlledRights': 'CC BY 4.0 Attribution'},
+        'rightsHolders': {'rightsHolder': ['Example University']},
+        'version': '1.0'
+    }
+    dataset.update(overrides)
+    return dataset
 
 
 def test_oauth_provider_uses_authorization_code_configuration():
@@ -393,7 +413,36 @@ def test_dataset_export_clears_bearer_token(monkeypatch):
     assert captured['url'].endswith('/radar/api/workspaces/workspace-1/datasets')
     assert captured['headers'] == {'Authorization': 'Bearer bearer-token'}
     assert captured['timeout'] == 30
+    assert '/metadata/validate' not in captured['url']
     assert provider.request.session == {}
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+def test_direct_export_uses_rddm_9_3_and_millisecond_timestamps(monkeypatch, provider_class):
+    provider = make_provider(provider_class=provider_class)
+    monkeypatch.setattr('rdmo_radar.exports.providers.time.time', lambda: 1_725_000_000.123)
+    monkeypatch.setattr(provider, 'get_dataset', lambda set_index: {'title': 'Draft dataset'})
+
+    payload = provider.get_post_data(0)
+
+    assert payload['technicalMetadata']['schema'] == {'key': 'RDDM', 'version': '9.3'}
+    assert payload['technicalMetadata']['archiveDate'] == 1_725_000_000_123
+    assert payload['technicalMetadata']['publishDate'] == 1_725_000_000_123
+    assert payload['descriptiveMetadata'] == {'title': 'Draft dataset'}
+
+
+def test_direct_draft_omits_unavailable_descriptive_metadata():
+    provider = make_provider()
+    provider.get_set = lambda *args, **kwargs: []
+    provider.get_values = lambda *args, **kwargs: []
+    provider.get_list = lambda *args, **kwargs: []
+    provider.get_year = lambda *args, **kwargs: None
+    provider.get_text = lambda *args, **kwargs: None
+    provider.get_option = lambda *args, **kwargs: None
+
+    dataset = provider.get_dataset(0)
+
+    assert dataset == {'title': 'Dataset #1'}
 
 
 def test_provider_form_validates_choices_and_escapes_export_link():
@@ -440,6 +489,26 @@ def test_dataset_resource_type_uses_standard_mapping():
     assert export.data_source_options['radar_data_source/trial'] == 'Trial'
     assert export.data_source_options['radar_data_source/organism'] == 'Organism'
     assert export.data_source_options['radar_data_source/tissue'] == 'Tissue'
+    assert export.data_source_options['radar_data_source/survey'] == 'Survey'
+    assert export.resource_type_general_options['resource_type_general/computational_notebook'] == \
+        'ComputationalNotebook'
+    assert export.description_type_options['description_type/version_notes'] == 'VersionNotes'
+    assert export.contributor_type_options['contributor_type/translator'] == 'Translator'
+    assert export.related_identifier_type_options['identifier_type/raid'] == 'RAiD'
+    assert export.related_identifier_type_options['identifier_type/swhid'] == 'SWHID'
+    assert export.relation_type_options['relation_type/is_translation_of'] == 'IsTranslationOf'
+
+
+def test_api_and_xml_mappings_are_kept_separate():
+    xml_export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    api_export = make_provider()
+
+    assert xml_export.language_options['language/en'] == 'eng'
+    assert api_export.language_options['language/en'] == 'ENG'
+    assert xml_export.resource_type_general_options['resource_type_general/dataset'] == 'Dataset'
+    assert api_export.resource_type_general_options['resource_type_general/dataset'] == 'DATASET'
+    assert xml_export.funder_identifier_scheme_options['name_identifier_scheme/insi'] == 'ISNI'
+    assert xml_export.name_identifier_scheme_options['name_identifier_scheme/insi'] == 'Other'
 
 
 def test_structured_name_keeps_primary_name():
@@ -471,7 +540,7 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
             'contributorName': 'Smith, John',
             'givenName': 'John',
             'familyName': 'Smith',
-            'contributorType': 'DATA_MANAGER',
+            'contributorType': 'DataManager',
         }]},
     })
     root = ElementTree.fromstring(xml)
@@ -479,7 +548,7 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
 
     assert root.findtext('.//radar:creatorName', namespaces=namespace) == 'Doe, Jane'
     contributor = root.find('.//radar:contributor', namespace)
-    assert contributor.attrib['contributorType'] == 'DATA_MANAGER'
+    assert contributor.attrib['contributorType'] == 'DataManager'
     assert contributor.findtext('radar:contributorName', namespaces=namespace) == 'Smith, John'
     assert capsys.readouterr().out == ''
 
@@ -487,11 +556,86 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
 def test_zip_export_is_complete_and_readable():
     export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
     export.project = SimpleNamespace(title='Project')
-    export.get_set = lambda *args, **kwargs: [SimpleNamespace(set_index=0)]
-    export.get_text = lambda path, **kwargs: 'dataset-id' if path.endswith('/id') else None
-    export.get_dataset = lambda set_index: {'title': 'Dataset'}
+    export.get_set = lambda *args, **kwargs: [
+        SimpleNamespace(set_index=0),
+        SimpleNamespace(set_index=1)
+    ]
+    export.get_text = lambda path, set_index=0, **kwargs: \
+        f'dataset-{set_index + 1}' if path.endswith('/id') else None
+    export.get_dataset = lambda set_index: make_valid_xml_dataset(title=f'Dataset {set_index + 1}')
 
     response = export.render()
+    assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert archive.namelist() == ['dataset-id.xml']
-        assert b'<title>Dataset</title>' in archive.read('dataset-id.xml')
+        assert archive.namelist() == ['dataset-1.xml', 'dataset-2.xml']
+        assert b'<re:title>Dataset 1</re:title>' in archive.read('dataset-1.xml')
+        for file_name in archive.namelist():
+            assert validate_radar_xml(archive.read(file_name)) is None
+
+
+def test_renderer_output_validates_against_rddm_9_3_schema():
+    xml = RadarExportRenderer().render(make_valid_xml_dataset(
+        alternateIdentifiers={
+            'alternateIdentifier': [{'value': 'local-id', 'alternateIdentifierType': 'Local'}]
+        },
+        relatedIdentifiers={
+            'relatedIdentifier': [{
+                'value': 'https://example.test/software',
+                'relatedIdentifierType': 'SWHID',
+                'relationType': 'IsCollectedBy'
+            }]
+        },
+        contributors={'contributor': [{
+            'contributorName': 'Smith, John',
+            'contributorType': 'Translator'
+        }]},
+        descriptions={'description': [{'value': 'Version changes', 'descriptionType': 'VersionNotes'}]},
+        fundingReferences={'fundingReference': [{
+            'funderName': 'Example Funder',
+            'funderIdentifier': {'value': 'https://ror.org/123', 'type': 'ROR'}
+        }]}
+    ))
+
+    assert get_radar_schema().version == '9.3'
+    assert validate_radar_xml(xml) is None
+
+    root = ElementTree.fromstring(xml)
+    element_namespace = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert [element.tag for element in root] == [
+        f'{element_namespace}identifier',
+        f'{element_namespace}alternateIdentifiers',
+        f'{element_namespace}relatedIdentifiers',
+        f'{element_namespace}creators',
+        f'{element_namespace}contributors',
+        f'{element_namespace}title',
+        f'{element_namespace}descriptions',
+        f'{element_namespace}publishers',
+        f'{element_namespace}productionYear',
+        f'{element_namespace}language',
+        f'{element_namespace}subjectAreas',
+        f'{element_namespace}resource',
+        f'{element_namespace}rights',
+        f'{element_namespace}rightsHolders',
+        f'{element_namespace}fundingReferences',
+        f'{element_namespace}version'
+    ]
+
+
+def test_invalid_xml_export_returns_400_without_partial_zip():
+    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export.project = SimpleNamespace(title='Project')
+    export.get_set = lambda *args, **kwargs: [
+        SimpleNamespace(set_index=0),
+        SimpleNamespace(set_index=1)
+    ]
+    export.get_text = lambda path, set_index=0, **kwargs: \
+        f'dataset-{set_index + 1}' if path.endswith('/id') else None
+    export.get_dataset = lambda set_index: \
+        make_valid_xml_dataset() if set_index == 0 else {'title': 'Incomplete dataset'}
+
+    response = export.render()
+
+    assert response.status_code == 400
+    assert response['Content-Type'].startswith('text/plain')
+    assert b'RADAR XML validation failed for "dataset-2.xml"' in response.content
+    assert not response.content.startswith(b'PK')

@@ -25,11 +25,52 @@ class RadarExportProviderBase(RadarExport):
 
     abstract = 'ABSTRACT'
 
+    description_type_options = {
+        'description_type/abstract': 'ABSTRACT',
+        'description_type/object': 'OBJECT',
+        'description_type/method': 'METHOD',
+        'description_type/table_of_contents': 'TABLE_OF_CONTENTS',
+        'description_type/technical_info': 'TECHNICAL_INFO',
+        'description_type/technical_remarks': 'TECHNICAL_REMARKS',
+        'description_type/version_notes': 'VERSION_NOTES',
+        'description_type/other': 'OTHER'
+    }
+
     identifier_type_options = {
         'identifier_type/doi': 'DOI',
         'identifier_type/url': 'URL',
         'identifier_type/handle': 'HANDLE',
+        'identifier_type/radar': 'RADAR',
         'identifier_type/other': 'OTHER'
+    }
+
+    primary_identifier_types = {'DOI', 'HANDLE', 'RADAR'}
+
+    related_identifier_type_options = {
+        'identifier_type/ark': 'ARK',
+        'identifier_type/arxiv': 'ARXIV',
+        'identifier_type/bibcode': 'BIBCODE',
+        'identifier_type/cstr': 'CSTR',
+        'identifier_type/doi': 'DOI',
+        'identifier_type/ean13': 'EAN13',
+        'identifier_type/eissn': 'EISSN',
+        'identifier_type/handle': 'HANDLE',
+        'identifier_type/epic': 'EPIC',
+        'identifier_type/igsn': 'IGSN',
+        'identifier_type/isbn': 'ISBN',
+        'identifier_type/issn': 'ISSN',
+        'identifier_type/istc': 'ISTC',
+        'identifier_type/lissn': 'LISSN',
+        'identifier_type/lsid': 'LSID',
+        'identifier_type/pmid': 'PMID',
+        'identifier_type/purl': 'PURL',
+        'identifier_type/raid': 'RAID',
+        'identifier_type/rrid': 'RRID',
+        'identifier_type/swhid': 'SWHID',
+        'identifier_type/upc': 'UPC',
+        'identifier_type/url': 'URL',
+        'identifier_type/urn': 'URN',
+        'identifier_type/w3id': 'W3ID'
     }
 
     language_options = {
@@ -44,12 +85,24 @@ class RadarExportProviderBase(RadarExport):
 
     name_identifier_scheme_options = {
         'name_identifier_scheme/orcid': 'ORCID',
-        'name_identifier_scheme/insi': 'INSI',
         'name_identifier_scheme/ror': 'ROR',
-        'name_identifier_scheme/grid': 'GRID'
+        'name_identifier_scheme/isni': 'OTHER',
+        'name_identifier_scheme/insi': 'OTHER',
+        'name_identifier_scheme/grid': 'OTHER',
+        'name_identifier_scheme/other': 'OTHER'
+    }
+
+    funder_identifier_scheme_options = {
+        'name_identifier_scheme/crossref_funder': 'CROSS_REF_FUNDER',
+        'name_identifier_scheme/grid': 'GRID',
+        'name_identifier_scheme/isni': 'ISNI',
+        'name_identifier_scheme/insi': 'ISNI',
+        'name_identifier_scheme/ror': 'ROR',
+        'name_identifier_scheme/other': 'OTHER'
     }
 
     contributor_type_options = {
+        'contributor_type/contact_person': 'CONTACT_PERSON',
         'contributor_type/contact_persion': 'CONTACT_PERSON',
         'contributor_type/data_collector': 'DATA_COLLECTOR',
         'contributor_type/data_curator': 'DATA_CURATOR',
@@ -68,23 +121,28 @@ class RadarExportProviderBase(RadarExport):
         'contributor_type/research_group': 'RESEARCH_GROUP',
         'contributor_type/sponsor': 'SPONSOR',
         'contributor_type/supervisor': 'SUPERVISOR',
+        'contributor_type/translator': 'TRANSLATOR',
         'contributor_type/work_package_leader': 'WORK_PACKAGE_LEADER',
         'contributor_type/other': 'OTHER'
     }
 
-    resource_type_options = {
+    resource_type_general_options = {
         'resource_type_general/audiovisual': 'AUDIOVISUAL',
         'resource_type_general/collection': 'COLLECTION',
+        'resource_type_general/computational_notebook': 'COMPUTATIONAL_NOTEBOOK',
         'resource_type_general/data_paper': 'DATA_PAPER',
         'resource_type_general/dataset': 'DATASET',
         'resource_type_general/event': 'EVENT',
         'resource_type_general/image': 'IMAGE',
         'resource_type_general/interactive_resource': 'INTERACTIVE_RESOURCE',
+        'resource_type_general/instrument': 'INSTRUMENT',
         'resource_type_general/model': 'MODEL',
         'resource_type_general/physical_object': 'PHYSICAL_OBJECT',
+        'resource_type_general/project': 'PROJECT',
         'resource_type_general/service': 'SERVICE',
         'resource_type_general/software': 'SOFTWARE',
         'resource_type_general/sound': 'SOUND',
+        'resource_type_general/standard': 'STANDARD',
         'resource_type_general/text': 'TEXT',
         'resource_type_general/workflow': 'WORKFLOW',
         'resource_type_general/other': 'OTHER'
@@ -129,6 +187,7 @@ class RadarExportProviderBase(RadarExport):
         'radar_data_source/instrument': 'INSTRUMENT',
         'radar_data_source/media': 'MEDIA',
         'radar_data_source/observation': 'OBSERVATION',
+        'radar_data_source/survey': 'SURVEY',
         'radar_data_source/trial': 'TRIAL',
         'radar_data_source/organism': 'ORGANISM',
         'radar_data_source/tissue': 'TISSUE',
@@ -177,6 +236,7 @@ class RadarExportProviderBase(RadarExport):
         'relation_type/is_documented_by': 'IS_DOCUMENTED_BY',
         'relation_type/documents': 'DOCUMENTS',
         'relation_type/is_compiled_by': 'IS_COMPILED_BY',
+        'relation_type/compiles': 'COMPILES',
         'relation_type/Compiles': 'COMPILES',
         'relation_type/is_variant_form_of': 'IS_VARIANT_FORM_OF',
         'relation_type/is_original_form_of': 'IS_ORIGINAL_FORM_OF',
@@ -188,7 +248,11 @@ class RadarExportProviderBase(RadarExport):
         'relation_type/requires': 'REQUIRES',
         'relation_type/is_required_by': 'IS_REQUIRED_BY',
         'relation_type/obsoletes': 'OBSOLETES',
-        'relation_type/is_obsoleted_by': 'IS_OBSOLETED_BY'
+        'relation_type/is_obsoleted_by': 'IS_OBSOLETED_BY',
+        'relation_type/is_collected_by': 'IS_COLLECTED_BY',
+        'relation_type/collects': 'COLLECTS',
+        'relation_type/has_translation': 'HAS_TRANSLATION',
+        'relation_type/is_translation_of': 'IS_TRANSLATION_OF'
     }
 
     class Form(forms.Form):
@@ -276,7 +340,7 @@ class RadarExportProviderBase(RadarExport):
         return f'{self.radar_url}/radar/api/workspaces/{workspace_id}/datasets'
 
     def get_post_data(self, set_index):
-        now = int(time.time())
+        now = int(time.time() * 1000)
         email = self.request.user.email
         dataset = self.get_dataset(set_index)
 
@@ -288,7 +352,7 @@ class RadarExportProviderBase(RadarExport):
                 "responsibleEmail": email,
                 "schema": {
                     "key": "RDDM",
-                    "version": "9.1"
+                    "version": "9.3"
                 }
             },
             'descriptiveMetadata': dataset
