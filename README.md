@@ -35,6 +35,7 @@ RADAR from this value:
 ```python
 RADAR_PROVIDER = {
     'authentication_mode': 'oauth',
+    'oauth_token_auth_method': 'client_secret_basic',
     'radar_url': 'https://test.radar-service.eu',
     'client_id': '',
     'client_secret': '',
@@ -49,6 +50,15 @@ The modes are:
 * `credentials`: use `RadarCredentialsExportProvider`. Users enter a local RADAR username and password. RDMO sends
   them directly to the RADAR token endpoint, does not store them, and retains the bearer token only for that single
   export. The token request derives `https://rdmo.example.com/` from `redirect_uri`.
+
+For OAuth, `oauth_token_auth_method` controls how RDMO authenticates the client at RADAR's token endpoint:
+
+* `client_secret_basic` sends the client ID and secret using HTTP Basic authentication and remains the default when
+  the setting is omitted.
+* `client_secret_post` sends the client ID, secret, authorization code, grant type, and redirect URI together as
+  form-encoded POST data.
+
+Only select `client_secret_post` when it matches the RADAR client registration. Never log either request body.
 
 Select the provider class from the setting when adding it to `PROJECT_EXPORTS`:
 

@@ -4,6 +4,9 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
+import pytest
+
+from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
 import requests
@@ -42,6 +45,7 @@ def test_oauth_provider_uses_authorization_code_configuration():
         'state': 'state'
     }
     assert provider.get_callback_auth(None) == ('configured-client-id', 'client-secret')
+    assert provider.get_callback_data(None) == {}
 
 
 def test_oauth_render_redirects_and_preserves_workspace_request():
@@ -88,6 +92,66 @@ def test_oauth_callback_exchanges_code_and_resumes_request(monkeypatch):
     assert captured['url'].startswith('https://radar.example.test/radar-backend/oauth/token?')
     assert captured['auth'] == ('configured-client-id', 'client-secret')
     assert provider.get_from_session(provider.request, 'access_token') == 'oauth-token'
+
+
+@override_settings(RADAR_PROVIDER={
+    'radar_url': 'https://radar.example.test',
+    'client_id': 'configured-client-id',
+    'client_secret': 'client-secret',
+    'redirect_uri': 'https://rdmo.example.test/services/oauth/radar/callback/',
+    'oauth_token_auth_method': 'client_secret_post',
+})
+def test_oauth_callback_uses_client_secret_post(monkeypatch):
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
+    provider.store_in_session(provider.request, 'state', 'expected-state')
+    provider.store_in_session(provider.request, 'request', ('get', provider.get_get_url()))
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {'access_token': 'oauth-token'}
+
+    def post(url, data, **kwargs):
+        captured['url'] = url
+        captured['data'] = data
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr('rdmo.services.providers.requests.post', post)
+    monkeypatch.setattr(provider, 'get', lambda request, url: ('resumed', url))
+
+    result = provider.callback(provider.request)
+
+    assert result == ('resumed', provider.get_get_url())
+    assert captured['url'].rstrip('?') == 'https://radar.example.test/radar-backend/oauth/token'
+    assert 'authorization-code' not in captured['url']
+    assert captured['data'] == {
+        'grant_type': 'authorization_code',
+        'redirect_uri': 'https://rdmo.example.test/services/oauth/radar/callback/',
+        'code': 'authorization-code',
+        'client_id': 'configured-client-id',
+        'client_secret': 'client-secret'
+    }
+    assert captured['auth'] is None
+    assert captured['headers'] == {'Accept': 'application/json'}
+
+
+@override_settings(RADAR_PROVIDER={
+    'radar_url': 'https://radar.example.test',
+    'client_id': 'configured-client-id',
+    'client_secret': 'client-secret',
+    'redirect_uri': 'https://rdmo.example.test/services/oauth/radar/callback/',
+    'oauth_token_auth_method': 'unsupported',
+})
+def test_oauth_token_auth_method_rejects_unsupported_value():
+    provider = make_provider(provider_class=RadarExportProvider)
+
+    with pytest.raises(ImproperlyConfigured):
+        provider.get_callback_auth(provider.request)
 
 
 def test_oauth_callback_renders_invalid_client_error(monkeypatch, caplog):

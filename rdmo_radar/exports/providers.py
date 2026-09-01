@@ -3,6 +3,7 @@ import time
 
 from django import forms
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.shortcuts import redirect, render
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
@@ -354,6 +355,8 @@ class RadarExportProviderBase(RadarExport):
 
 class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
+    oauth_token_auth_methods = ('client_secret_basic', 'client_secret_post')
+
     def callback(self, request):
         try:
             return super().callback(request)
@@ -437,6 +440,19 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
     def redirect_uri(self):
         return settings.RADAR_PROVIDER['redirect_uri']
 
+    @property
+    def oauth_token_auth_method(self):
+        auth_method = settings.RADAR_PROVIDER.get(
+            'oauth_token_auth_method',
+            'client_secret_basic'
+        )
+        if auth_method not in self.oauth_token_auth_methods:
+            raise ImproperlyConfigured(
+                'RADAR_PROVIDER["oauth_token_auth_method"] must be '
+                '"client_secret_basic" or "client_secret_post".'
+            )
+        return auth_method
+
     def get_authorize_params(self, request, state):
         return {
             'response_type': 'code',
@@ -446,6 +462,20 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         }
 
     def get_callback_params(self, request):
+        if self.oauth_token_auth_method == 'client_secret_post':
+            return {}
+        return self.get_callback_token_data(request)
+
+    def get_callback_data(self, request):
+        if self.oauth_token_auth_method == 'client_secret_basic':
+            return {}
+        return {
+            **self.get_callback_token_data(request),
+            'client_id': self.client_id,
+            'client_secret': self.client_secret
+        }
+
+    def get_callback_token_data(self, request):
         return {
             'grant_type': 'authorization_code',
             'redirect_uri': self.redirect_uri,
@@ -453,7 +483,9 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         }
 
     def get_callback_auth(self, request):
-        return (self.client_id, self.client_secret)
+        if self.oauth_token_auth_method == 'client_secret_basic':
+            return (self.client_id, self.client_secret)
+        return None
 
     def get_error_message(self, response):
         response_data = response.json()
