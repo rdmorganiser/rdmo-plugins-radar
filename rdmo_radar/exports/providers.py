@@ -1,3 +1,4 @@
+import logging
 import time
 
 from django import forms
@@ -6,11 +7,15 @@ from django.shortcuts import redirect, render
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+import requests
+
 from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
 from rdmo.services.providers import OauthProviderMixin
 
 from .exports import RadarExport
+
+logger = logging.getLogger(__name__)
 
 
 class RadarExportProviderBase(RadarExport):
@@ -349,6 +354,45 @@ class RadarExportProviderBase(RadarExport):
 
 class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
+    def callback(self, request):
+        try:
+            return super().callback(request)
+        except requests.HTTPError as error:
+            response = error.response
+            status_code = response.status_code if response is not None else None
+
+            try:
+                error_code = response.json().get('error') if response is not None else None
+            except (AttributeError, ValueError):
+                error_code = None
+
+            logger.error(
+                'RADAR OAuth token exchange failed: status=%s error=%s',
+                status_code,
+                error_code or 'unknown'
+            )
+
+            if error_code == 'invalid_client':
+                message = _(
+                    'RADAR rejected the configured OAuth client. '
+                    'Please contact an administrator.'
+                )
+            elif error_code == 'invalid_grant':
+                message = _(
+                    'RADAR rejected the authorization code or redirect URI. '
+                    'Please try again or contact an administrator.'
+                )
+            else:
+                message = _(
+                    'RADAR OAuth authorization could not be completed. '
+                    'Please try again or contact an administrator.'
+                )
+
+            return render(request, 'core/error.html', {
+                'title': _('RADAR OAuth error'),
+                'errors': [message]
+            }, status=200)
+
     def render(self):
         self.prepare_export_session()
 
@@ -412,4 +456,5 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         return (self.client_id, self.client_secret)
 
     def get_error_message(self, response):
-        return response.json().get('exception')
+        response_data = response.json()
+        return response_data.get('exception') or response_data.get('error')

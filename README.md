@@ -80,3 +80,22 @@ The plugins appear as export/import options on the RDMO project overview.
 The export provider fetches the available RADAR workspaces, and then lets the user choose
 which dateset should be archived in which workspace. The plugin creates a RADAR datasets.
 The actual data can be uploaded through the RADAR interface.
+
+
+OAuth troubleshooting
+---------------------
+
+If the browser login returns to RDMO but the token exchange fails with `invalid_client`, verify with RADAR support
+that the client is enabled for the authorization-code endpoints below `/radar-backend/oauth/`, that the token
+endpoint expects HTTP Basic client authentication, and that the configured secret belongs to that OAuth client.
+Successful use of the separate `/radar/api/tokens` endpoint does not by itself confirm the OAuth registration.
+
+RADAR must register the complete callback URL for every tenant, including the callback path and trailing slash:
+
+```text
+https://rdmo.example.com/services/oauth/radar/callback/
+```
+
+Do not replace this callback with the tenant root URL. The callback view validates the OAuth state, exchanges the
+authorization code, and resumes the pending export. When checking a deployed secret, compare its length and a
+fingerprint rather than writing the secret itself to logs or command output.

@@ -90,6 +90,65 @@ def test_oauth_callback_exchanges_code_and_resumes_request(monkeypatch):
     assert provider.get_from_session(provider.request, 'access_token') == 'oauth-token'
 
 
+def test_oauth_callback_renders_invalid_client_error(monkeypatch, caplog):
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
+    provider.store_in_session(provider.request, 'state', 'expected-state')
+    provider.store_in_session(provider.request, 'request', ('get', provider.get_get_url()))
+
+    class Response:
+        status_code = 401
+        content = b'{"error":"invalid_client"}'
+
+        def raise_for_status(self):
+            raise requests.HTTPError(response=self)
+
+        def json(self):
+            return {'error': 'invalid_client'}
+
+    monkeypatch.setattr('rdmo.services.providers.requests.post', lambda *args, **kwargs: Response())
+    monkeypatch.setattr(
+        'rdmo_radar.exports.providers.render',
+        lambda request, template, context, status: (template, context, status)
+    )
+
+    template, context, status = provider.callback(provider.request)
+
+    assert template == 'core/error.html'
+    assert status == 200
+    assert context['title'] == 'RADAR OAuth error'
+    assert 'configured OAuth client' in str(context['errors'][0])
+    assert 'status=401 error=invalid_client' in caplog.text
+    assert 'client-secret' not in caplog.text
+    assert 'authorization-code' not in caplog.text
+
+
+def test_oauth_callback_renders_invalid_grant_error(monkeypatch):
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
+    provider.store_in_session(provider.request, 'state', 'expected-state')
+
+    class Response:
+        status_code = 400
+        content = b'{"error":"invalid_grant"}'
+
+        def raise_for_status(self):
+            raise requests.HTTPError(response=self)
+
+        def json(self):
+            return {'error': 'invalid_grant'}
+
+    monkeypatch.setattr('rdmo.services.providers.requests.post', lambda *args, **kwargs: Response())
+    monkeypatch.setattr(
+        'rdmo_radar.exports.providers.render',
+        lambda request, template, context, status: context
+    )
+
+    context = provider.callback(provider.request)
+
+    assert 'authorization code or redirect URI' in str(context['errors'][0])
+
+
 def test_credentials_provider_uses_json_api_and_registered_url():
     provider = make_provider()
 
