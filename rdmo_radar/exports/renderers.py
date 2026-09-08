@@ -29,6 +29,7 @@ class RadarExportRenderer(BaseXMLRenderer):
         self.render_optional_text(xml, 'language', dataset.get('language'))
         self.render_subject_areas(xml, dataset)
         self.render_resource(xml, dataset)
+        self.render_geo_locations(xml, dataset)
         self.render_data_sources(xml, dataset)
         self.render_software(xml, dataset)
         self.render_processing(xml, dataset)
@@ -41,8 +42,13 @@ class RadarExportRenderer(BaseXMLRenderer):
         xml.endElement('radar:radarDataset')
 
     def render_optional_text(self, xml, tag, value, attrs=None):
-        if value is not None:
-            self.render_text_element(xml, f're:{tag}', attrs or {}, value)
+        if value not in (None, ''):
+            self.render_text_element(
+                xml,
+                f're:{tag}',
+                {key: item for key, item in (attrs or {}).items() if item not in (None, '')},
+                value
+            )
 
     def render_identifier(self, xml, dataset):
         if dataset.get('identifier') is not None:
@@ -91,7 +97,15 @@ class RadarExportRenderer(BaseXMLRenderer):
                     'schemeURI': self.scheme_uri.get(scheme)
                 })
 
-            self.render_optional_text(xml, f'{prefix}Affiliation', name.get(f'{prefix}Affiliation'))
+            affiliation = name.get(f'{prefix}Affiliation')
+            if isinstance(affiliation, dict):
+                self.render_optional_text(xml, f'{prefix}Affiliation', affiliation.get('value'), {
+                    'affiliationIdentifier': affiliation.get('affiliationIdentifier'),
+                    'affiliationIdentifierScheme': affiliation.get('affiliationIdentifierScheme'),
+                    'schemeURI': self.scheme_uri.get(affiliation.get('affiliationIdentifierScheme'))
+                })
+            else:
+                self.render_optional_text(xml, f'{prefix}Affiliation', affiliation)
             xml.endElement(f're:{prefix}')
         xml.endElement(f're:{container}')
 
@@ -159,6 +173,23 @@ class RadarExportRenderer(BaseXMLRenderer):
             self.render_optional_text(xml, 'resource', resource.get('value'), {
                 'resourceType': resource.get('resourceType')
             })
+
+    def render_geo_locations(self, xml, dataset):
+        locations = dataset.get('geoLocations', {}).get('geoLocation')
+        if locations:
+            xml.startElement('re:geoLocations', {})
+            for location in locations:
+                xml.startElement('re:geoLocation', {})
+                self.render_optional_text(xml, 'geoLocationCountry', location.get('geoLocationCountry'))
+                self.render_optional_text(xml, 'geoLocationRegion', location.get('geoLocationRegion'))
+                point = location.get('geoLocationPoint')
+                if point:
+                    xml.startElement('re:geoLocationPoint', {})
+                    self.render_optional_text(xml, 'latitude', point.get('latitude'))
+                    self.render_optional_text(xml, 'longitude', point.get('longitude'))
+                    xml.endElement('re:geoLocationPoint')
+                xml.endElement('re:geoLocation')
+            xml.endElement('re:geoLocations')
 
     def render_data_sources(self, xml, dataset):
         data_sources = dataset.get('dataSources', {}).get('dataSource')

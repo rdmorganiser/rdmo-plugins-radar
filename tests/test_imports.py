@@ -2,55 +2,77 @@ from types import SimpleNamespace
 from xml.etree import ElementTree
 
 from rdmo.domain.models import Attribute
-from rdmo.options.models import Option
 
-from rdmo_radar.imports.imports import RadarImport
+from rdmo_radar.metadata.funding import merge_funding
+from rdmo_radar.metadata.rdmo import RDMOWriteContext
+from rdmo_radar.metadata.types import FundingReference, Identifier
+from rdmo_radar.metadata.xml import parse_xml
 
 
-def test_import_funder_identifier_uses_type_attribute():
-    radar_import = RadarImport.__new__(RadarImport)
-    radar_import.current_project = SimpleNamespace(values=SimpleNamespace(filter=lambda **kwargs: []))
-    radar_import.root = ElementTree.fromstring('''
+def make_context(existing=None):
+    existing = existing or []
+    project = SimpleNamespace(values=SimpleNamespace(
+        filter=lambda **kwargs: [
+            value for value in existing if value.attribute.path == kwargs['attribute__path']
+        ]
+    ))
+    paths = {
+        'project/funder/id',
+        'project/funder/name',
+        'project/funder/grant_nr',
+        'project/funder/programme/url',
+        'project/funder/programme/title',
+        'project/funder/name_identifier',
+    }
+    plugin = SimpleNamespace(
+        current_project=project,
+        values=[],
+        _attributes={path: Attribute(path=path) for path in paths},
+        _options={},
+        get_attribute=lambda uri: None,
+        get_option=lambda uri: None,
+    )
+    return RDMOWriteContext(plugin, dataset_index=0)
+
+
+def test_funder_identifier_uses_rddm_type_attribute():
+    root = ElementTree.fromstring('''
         <radarDataset xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements">
-          <fundingReferences>
-            <fundingReference>
-              <funderName>Example Funder</funderName>
-              <funderIdentifier type="ROR">https://ror.org/123</funderIdentifier>
-            </fundingReference>
-          </fundingReferences>
+          <fundingReferences><fundingReference>
+            <funderName>Example Funder</funderName>
+            <funderIdentifier type="ROR">https://ror.org/123</funderIdentifier>
+          </fundingReference></fundingReferences>
         </radarDataset>
     ''')
-    radar_import.ns_map = {'ns1': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements'}
-    radar_import.values = []
-    radar_import.get_attribute = lambda uri: Attribute(path=uri)
-    ror_option = Option()
-    radar_import.get_option = lambda uri: ror_option
 
-    radar_import.process_funders()
+    reference = parse_xml(root).funding_references[0]
 
-    scheme_values = [value for value in radar_import.values if value.attribute.path.endswith('name_identifier_scheme')]
-    assert len(scheme_values) == 1
-    assert scheme_values[0].option is ror_option
+    assert reference.funder_identifier == Identifier('https://ror.org/123', 'ROR')
 
 
-def test_import_funder_identifier_without_type_does_not_default_to_orcid():
-    radar_import = RadarImport.__new__(RadarImport)
-    radar_import.current_project = SimpleNamespace(values=SimpleNamespace(filter=lambda **kwargs: []))
-    radar_import.root = ElementTree.fromstring('''
-        <radarDataset xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements">
-          <fundingReferences>
-            <fundingReference>
-              <funderName>Example Funder</funderName>
-              <funderIdentifier>https://example.test/funder</funderIdentifier>
-            </fundingReference>
-          </fundingReferences>
-        </radarDataset>
-    ''')
-    radar_import.ns_map = {'ns1': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements'}
-    radar_import.values = []
-    radar_import.get_attribute = lambda uri: Attribute(path=uri)
-    radar_import.get_option = lambda uri: Option()
+def test_funder_identifier_is_reported_instead_of_written_to_set_marker():
+    context = make_context()
+    reference = FundingReference(
+        funder_name='Example Funder',
+        funder_identifier=Identifier('https://ror.org/123', 'ROR'),
+    )
 
-    radar_import.process_funders()
+    merge_funding(context, [reference])
 
-    assert not any(value.attribute.path.endswith('name_identifier_scheme') for value in radar_import.values)
+    marker = next(value for value in context.import_plugin.values if value.attribute.path == 'project/funder/id')
+    assert marker.text == 'Example Funder'
+    assert not any(value.attribute.path == 'project/funder/name_identifier' for value in context.import_plugin.values)
+    assert context.issues[0].field == 'funderIdentifier'
+
+
+def test_conflicting_existing_funding_value_is_preserved_with_warning():
+    context = make_context()
+    merge_funding(context, [FundingReference(funder_name='Example Funder', award_number='ABC-123')])
+    merge_funding(context, [FundingReference(funder_name='Example Funder', award_number='DIFFERENT')])
+
+    awards = [
+        value.text for value in context.import_plugin.values
+        if value.attribute.path == 'project/funder/grant_nr'
+    ]
+    assert awards == ['ABC-123']
+    assert any(issue.field == 'project/funder/grant_nr' for issue in context.issues)

@@ -12,21 +12,21 @@ maintainers = [
 ]
 description = "Plugins to connect RDMO with RADAR"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 classifiers = [
     'Development Status :: 5 - Production/Stable',
     'Environment :: Web Environment',
-    'Framework :: Django :: 2.2',
+    'Framework :: Django :: 5.2',
     'Intended Audience :: Science/Research',
     'License :: OSI Approved :: Apache Software License',
     'Operating System :: OS Independent',
     "Programming Language :: Python :: 3 :: Only",
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 dependencies = [
     "rdmo",
@@ -65,7 +65,7 @@ rdmo_radar = [
 version = {attr = "rdmo_radar.__version__"}
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py311"
 line-length = 120
 select = [
   "B",    # flake8-bugbear

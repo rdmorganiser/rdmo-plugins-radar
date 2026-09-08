@@ -14,246 +14,20 @@ from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
 from rdmo.services.providers import OauthProviderMixin
 
+from rdmo_radar.metadata.api import to_api_payload
+from rdmo_radar.metadata.constants import APIVocabulary
+
 from .exports import RadarExport
 
 logger = logging.getLogger(__name__)
 
 
-class RadarExportProviderBase(RadarExport):
-
-    other = 'OTHER'
-
-    abstract = 'ABSTRACT'
-
-    description_type_options = {
-        'description_type/abstract': 'ABSTRACT',
-        'description_type/object': 'OBJECT',
-        'description_type/method': 'METHOD',
-        'description_type/table_of_contents': 'TABLE_OF_CONTENTS',
-        'description_type/technical_info': 'TECHNICAL_INFO',
-        'description_type/technical_remarks': 'TECHNICAL_REMARKS',
-        'description_type/version_notes': 'VERSION_NOTES',
-        'description_type/other': 'OTHER'
-    }
-
-    identifier_type_options = {
-        'identifier_type/doi': 'DOI',
-        'identifier_type/url': 'URL',
-        'identifier_type/handle': 'HANDLE',
-        'identifier_type/radar': 'RADAR',
-        'identifier_type/other': 'OTHER'
-    }
-
-    primary_identifier_types = {'DOI', 'HANDLE', 'RADAR'}
-
-    related_identifier_type_options = {
-        'identifier_type/ark': 'ARK',
-        'identifier_type/arxiv': 'ARXIV',
-        'identifier_type/bibcode': 'BIBCODE',
-        'identifier_type/cstr': 'CSTR',
-        'identifier_type/doi': 'DOI',
-        'identifier_type/ean13': 'EAN13',
-        'identifier_type/eissn': 'EISSN',
-        'identifier_type/handle': 'HANDLE',
-        'identifier_type/epic': 'EPIC',
-        'identifier_type/igsn': 'IGSN',
-        'identifier_type/isbn': 'ISBN',
-        'identifier_type/issn': 'ISSN',
-        'identifier_type/istc': 'ISTC',
-        'identifier_type/lissn': 'LISSN',
-        'identifier_type/lsid': 'LSID',
-        'identifier_type/pmid': 'PMID',
-        'identifier_type/purl': 'PURL',
-        'identifier_type/raid': 'RAID',
-        'identifier_type/rrid': 'RRID',
-        'identifier_type/swhid': 'SWHID',
-        'identifier_type/upc': 'UPC',
-        'identifier_type/url': 'URL',
-        'identifier_type/urn': 'URN',
-        'identifier_type/w3id': 'W3ID'
-    }
-
-    language_options = {
-        'language/en': 'ENG',
-        'language/de': 'DEU'
-    }
-
-    name_type_options = {
-        'name_type/personal': 'Personal',
-        'name_type/organizational': 'Organizational'
-    }
-
-    name_identifier_scheme_options = {
-        'name_identifier_scheme/orcid': 'ORCID',
-        'name_identifier_scheme/ror': 'ROR',
-        'name_identifier_scheme/isni': 'OTHER',
-        'name_identifier_scheme/insi': 'OTHER',
-        'name_identifier_scheme/grid': 'OTHER',
-        'name_identifier_scheme/other': 'OTHER'
-    }
-
-    funder_identifier_scheme_options = {
-        'name_identifier_scheme/crossref_funder': 'CROSS_REF_FUNDER',
-        'name_identifier_scheme/grid': 'GRID',
-        'name_identifier_scheme/isni': 'ISNI',
-        'name_identifier_scheme/insi': 'ISNI',
-        'name_identifier_scheme/ror': 'ROR',
-        'name_identifier_scheme/other': 'OTHER'
-    }
-
-    contributor_type_options = {
-        'contributor_type/contact_person': 'CONTACT_PERSON',
-        'contributor_type/contact_persion': 'CONTACT_PERSON',
-        'contributor_type/data_collector': 'DATA_COLLECTOR',
-        'contributor_type/data_curator': 'DATA_CURATOR',
-        'contributor_type/data_manager': 'DATA_MANAGER',
-        'contributor_type/distributor': 'DISTRIBUTOR',
-        'contributor_type/editor': 'EDITOR',
-        'contributor_type/hosting_institution': 'HOSTING_INSTITUTION',
-        'contributor_type/producer': 'PRODUCER',
-        'contributor_type/project_leader': 'PROJECT_LEADER',
-        'contributor_type/project_manager': 'PROJECT_MANAGER',
-        'contributor_type/project_member': 'PROJECT_MEMBER',
-        'contributor_type/registration_agency': 'REGISTRATION_AGENCY',
-        'contributor_type/registration_authority': 'REGISTRATION_AUTHORITY',
-        'contributor_type/related_person': 'RELATED_PERSON',
-        'contributor_type/researcher': 'RESEARCHER',
-        'contributor_type/research_group': 'RESEARCH_GROUP',
-        'contributor_type/sponsor': 'SPONSOR',
-        'contributor_type/supervisor': 'SUPERVISOR',
-        'contributor_type/translator': 'TRANSLATOR',
-        'contributor_type/work_package_leader': 'WORK_PACKAGE_LEADER',
-        'contributor_type/other': 'OTHER'
-    }
-
-    resource_type_general_options = {
-        'resource_type_general/audiovisual': 'AUDIOVISUAL',
-        'resource_type_general/collection': 'COLLECTION',
-        'resource_type_general/computational_notebook': 'COMPUTATIONAL_NOTEBOOK',
-        'resource_type_general/data_paper': 'DATA_PAPER',
-        'resource_type_general/dataset': 'DATASET',
-        'resource_type_general/event': 'EVENT',
-        'resource_type_general/image': 'IMAGE',
-        'resource_type_general/interactive_resource': 'INTERACTIVE_RESOURCE',
-        'resource_type_general/instrument': 'INSTRUMENT',
-        'resource_type_general/model': 'MODEL',
-        'resource_type_general/physical_object': 'PHYSICAL_OBJECT',
-        'resource_type_general/project': 'PROJECT',
-        'resource_type_general/service': 'SERVICE',
-        'resource_type_general/software': 'SOFTWARE',
-        'resource_type_general/sound': 'SOUND',
-        'resource_type_general/standard': 'STANDARD',
-        'resource_type_general/text': 'TEXT',
-        'resource_type_general/workflow': 'WORKFLOW',
-        'resource_type_general/other': 'OTHER'
-    }
-
-    controlled_subject_area_options = {
-        'radar_controlled_subject_area/agriculture': 'AGRICULTURE',
-        'radar_controlled_subject_area/architecture': 'ARCHITECTURE',
-        'radar_controlled_subject_area/arts_and_media': 'ARTS_AND_MEDIA',
-        'radar_controlled_subject_area/astrophysics_and_astronomy': 'ASTROPHYSICS_AND_ASTRONOMY',
-        'radar_controlled_subject_area/biochemistry': 'BIOCHEMISTRY',
-        'radar_controlled_subject_area/biology': 'BIOLOGY',
-        'radar_controlled_subject_area/behavioural_sciences': 'BEHAVIOURAL_SCIENCES',
-        'radar_controlled_subject_area/chemistry': 'CHEMISTRY',
-        'radar_controlled_subject_area/computer_science': 'COMPUTER_SCIENCE',
-        'radar_controlled_subject_area/economics': 'ECONOMICS',
-        'radar_controlled_subject_area/engineering': 'ENGINEERING',
-        'radar_controlled_subject_area/environmental_science_and_ecology': 'ENVIRONMENTAL_SCIENCE_AND_ECOLOGY',
-        'radar_controlled_subject_area/ethnology': 'ETHNOLOGY',
-        'radar_controlled_subject_area/geological_science': 'GEOLOGICAL_SCIENCE',
-        'radar_controlled_subject_area/geography': 'GEOGRAPHY',
-        'radar_controlled_subject_area/history': 'HISTORY',
-        'radar_controlled_subject_area/horticulture': 'HORTICULTURE',
-        'radar_controlled_subject_area/information_technology': 'INFORMATION_TECHNOLOGY',
-        'radar_controlled_subject_area/life_science': 'LIFE_SCIENCE',
-        'radar_controlled_subject_area/linguistics': 'LINGUISTICS',
-        'radar_controlled_subject_area/materials_science': 'MATERIALS_SCIENCE',
-        'radar_controlled_subject_area/mathematics': 'MATHEMATICS',
-        'radar_controlled_subject_area/medicine': 'MEDICINE',
-        'radar_controlled_subject_area/philosophy': 'PHILOSOPHY',
-        'radar_controlled_subject_area/physics': 'PHYSICS',
-        'radar_controlled_subject_area/psychology': 'PSYCHOLOGY',
-        'radar_controlled_subject_area/social_sciences': 'SOCIAL_SCIENCES',
-        'radar_controlled_subject_area/software_technology': 'SOFTWARE_TECHNOLOGY',
-        'radar_controlled_subject_area/sports': 'SPORTS',
-        'radar_controlled_subject_area/theology': 'THEOLOGY',
-        'radar_controlled_subject_area/veterinary_medicine': 'VETERINARY_MEDICINE',
-        'radar_controlled_subject_area/other': 'OTHER'
-    }
-
-    data_source_options = {
-        'radar_data_source/instrument': 'INSTRUMENT',
-        'radar_data_source/media': 'MEDIA',
-        'radar_data_source/observation': 'OBSERVATION',
-        'radar_data_source/survey': 'SURVEY',
-        'radar_data_source/trial': 'TRIAL',
-        'radar_data_source/organism': 'ORGANISM',
-        'radar_data_source/tissue': 'TISSUE',
-        'radar_data_source/other': 'OTHER'
-    }
-
-    software_type_options = {
-        'radar_software_type/resource_production': 'RESOURCE_PRODUCTION',
-        'radar_software_type/resource_processing': 'RESOURCE_PROCESSING',
-        'radar_software_type/resource_viewing': 'RESOURCE_VIEWING',
-        'radar_software_type/other': 'OTHER'
-    }
-
-    controlled_rights_options = {
-        'dataset_license_types/71': 'CC_BY_4_0_ATTRIBUTION',
-        'dataset_license_types/74': 'CC_BY_ND_4_0_ATTRIBUTION_NO_DERIVS',
-        'dataset_license_types/75': 'CC_BY_SA_4_0_ATTRIBUTION_SHARE_ALIKE',
-        'dataset_license_types/73': 'CC_BY_NC_4_0_ATTRIBUTION_NON_COMMERCIAL',
-        # '': 'CC_BY_NC_SA_4_0_ATTRIBUTION_NON_COMMERCIAL_SHARE_ALIKE',
-        # '': 'CC_BY_NC_ND_4_0_ATTRIBUTION_NON_COMMERCIAL_NO_DERIVS',
-        'dataset_license_types/cc0': 'CC_0_1_0_UNIVERSAL_PUBLIC_DOMAIN_DEDICATION',
-        # '': 'ALL_RIGHTS_RESERVED',
-        'dataset_license_types/233': 'OTHER'
-    }
-
-    relation_type_options = {
-        'relation_type/is_cited_by': 'IS_CITED_BY',
-        'relation_type/cites': 'CITES',
-        'relation_type/is_supplement_to': 'IS_SUPPLEMENT_TO',
-        'relation_type/is_supplemented_by': 'IS_SUPPLEMENTED_BY',
-        'relation_type/is_continued_by': 'IS_CONTINUED_BY',
-        'relation_type/continues': 'CONTINUES',
-        'relation_type/describes': 'DESCRIBES',
-        'relation_type/is_described_by': 'IS_DESCRIBED_BY',
-        'relation_type/has_metadata': 'HAS_METADATA',
-        'relation_type/is_metadata_for': 'IS_METADATA_FOR',
-        'relation_type/has_version': 'HAS_VERSION',
-        'relation_type/is_version_of': 'IS_VERSION_OF',
-        'relation_type/is_new_version_of': 'IS_NEW_VERSION_OF',
-        'relation_type/is_previous_version_of': 'IS_PREVIOUS_VERSION_OF',
-        'relation_type/is_part_of': 'IS_PART_OF',
-        'relation_type/has_part': 'HAS_PART',
-        'relation_type/is_published_in': 'IS_PUBLISHED_IN',
-        'relation_type/is_referenced_by': 'IS_REFERENCED_BY',
-        'relation_type/references': 'REFERENCES',
-        'relation_type/is_documented_by': 'IS_DOCUMENTED_BY',
-        'relation_type/documents': 'DOCUMENTS',
-        'relation_type/is_compiled_by': 'IS_COMPILED_BY',
-        'relation_type/compiles': 'COMPILES',
-        'relation_type/Compiles': 'COMPILES',
-        'relation_type/is_variant_form_of': 'IS_VARIANT_FORM_OF',
-        'relation_type/is_original_form_of': 'IS_ORIGINAL_FORM_OF',
-        'relation_type/is_identical_to': 'IS_IDENTICAL_TO',
-        'relation_type/is_reviewed_by': 'IS_REVIEWED_BY',
-        'relation_type/reviews': 'REVIEWS',
-        'relation_type/is_derived_from': 'IS_DERIVED_FROM',
-        'relation_type/is_source_of': 'IS_SOURCE_OF',
-        'relation_type/requires': 'REQUIRES',
-        'relation_type/is_required_by': 'IS_REQUIRED_BY',
-        'relation_type/obsoletes': 'OBSOLETES',
-        'relation_type/is_obsoleted_by': 'IS_OBSOLETED_BY',
-        'relation_type/is_collected_by': 'IS_COLLECTED_BY',
-        'relation_type/collects': 'COLLECTS',
-        'relation_type/has_translation': 'HAS_TRANSLATION',
-        'relation_type/is_translation_of': 'IS_TRANSLATION_OF'
-    }
+class RadarExportProviderBase(APIVocabulary, RadarExport):
+    def get_dataset(self, set_index):
+        metadata = self.compute_metadata(set_index)
+        if not metadata.title:
+            metadata.title = f'Dataset #{set_index + 1}'
+        return to_api_payload(metadata)
 
     class Form(forms.Form):
         dataset = forms.ChoiceField(label=_('Select dataset of your project'))
@@ -267,7 +41,7 @@ class RadarExportProviderBase(RadarExport):
             super().__init__(*args, **kwargs)
 
             dataset_choices_with_radar_urls = []
-            for dataset, radar_url in zip(dataset_choices, radar_urls):
+            for dataset, radar_url in zip(dataset_choices, radar_urls, strict=False):
                 set_index, label = dataset
                 if radar_url is not None:
                     label = format_html(
@@ -285,7 +59,7 @@ class RadarExportProviderBase(RadarExport):
             self.fields['workspace'].choices = workspace_choices
 
     def prepare_export_session(self):
-        datasets = self.get_set('project/dataset/id')
+        datasets = self.get_set('project/dataset/title')
         dataset_choices = [(dataset.set_index, dataset.value) for dataset in datasets]
         radar_urls = [self.get_text('project/dataset/radar_url', set_index=dataset.set_index) for dataset in datasets]
 

@@ -1,0 +1,44 @@
+{% extends 'core/page.html' %}
+{% load i18n %}
+
+{% block page %}
+
+    <h1>{% trans 'RADAR XML validation warnings' %}</h1>
+
+    <div class="alert alert-warning" role="alert">
+        {% blocktrans trimmed %}
+        An XML file for each dataset was generated. You can review the warnings and download the
+        files to test them with RADAR, but RADAR may reject some of them.
+        {% endblocktrans %}
+    </div>
+
+    {% for file in files %}
+        {% if file.has_warnings %}
+        <h2>{{ file.file_name }}</h2>
+
+        {% if file.missing_fields %}
+        <h3>{% trans 'Missing required metadata' %}</h3>
+        <ul>
+            {% for field in file.missing_fields %}
+            <li>{{ field.label }} (<code>{{ field.path }}</code>)</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if file.validation_errors %}
+        <h3>{% trans 'RDDM schema warnings' %}</h3>
+        <ul>
+            {% for error in file.validation_errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endif %}
+    {% endfor %}
+
+    <p>
+        <a class="btn btn-primary" href="?download=1">{% trans 'Download anyway' %}</a>
+        <a class="btn btn-default" href="{{ project_url }}">{% trans 'Back to project' %}</a>
+    </p>
+
+{% endblock %}

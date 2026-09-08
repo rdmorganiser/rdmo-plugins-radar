@@ -7,7 +7,7 @@ from xml.etree import ElementTree
 import pytest
 
 from django.core.exceptions import ImproperlyConfigured
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 
 import requests
 
@@ -16,7 +16,11 @@ from rdmo.services.providers import OauthProviderMixin
 from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.exports.renderers import RadarExportRenderer
-from rdmo_radar.exports.validation import get_radar_schema, validate_radar_xml
+from rdmo_radar.exports.validation import (
+    get_radar_schema,
+    get_radar_validation_errors,
+    validate_radar_xml,
+)
 
 
 def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
@@ -474,7 +478,7 @@ def test_dataset_resource_type_uses_standard_mapping():
     export.get_values = lambda *args, **kwargs: []
     export.get_list = lambda *args, **kwargs: []
     export.get_year = lambda *args, **kwargs: None
-    export.get_text = lambda path, **kwargs: 'Resource' if path.endswith('/resource_type') else None
+    export.get_text = lambda path, **kwargs: 'Resource' if path == 'project/dataset/description' else None
 
     def get_option(options, path, **kwargs):
         option_mappings.append(options)
@@ -511,7 +515,7 @@ def test_api_and_xml_mappings_are_kept_separate():
     assert xml_export.name_identifier_scheme_options['name_identifier_scheme/insi'] == 'Other'
 
 
-def test_structured_name_keeps_primary_name():
+def test_compute_metadata_keeps_primary_structured_name():
     export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
     values = {
         'project/dataset/creator/name': 'Doe, Jane',
@@ -519,14 +523,17 @@ def test_structured_name_keeps_primary_name():
         'project/dataset/creator/family_name': 'Doe',
     }
     export.get_text = lambda path, **kwargs: values.get(path)
+    export.get_set = lambda path, **kwargs: [SimpleNamespace(set_prefix='0', set_index=0)] \
+        if path == 'project/dataset/creator/name' else []
+    export.get_values = lambda *args, **kwargs: []
     export.get_list = lambda *args, **kwargs: []
     export.get_option = lambda *args, **kwargs: None
 
-    name = export.get_name('creator', 'project/dataset/creator')
+    name = export.compute_metadata(0).creators[0]
 
-    assert name['creatorName'] == 'Doe, Jane'
-    assert name['givenName'] == 'Jane'
-    assert name['familyName'] == 'Doe'
+    assert name.name == 'Doe, Jane'
+    assert name.given_name == 'Jane'
+    assert name.family_name == 'Doe'
 
 
 def test_renderer_preserves_structured_names_and_contributor_type(capsys):
@@ -561,7 +568,7 @@ def test_zip_export_is_complete_and_readable():
         SimpleNamespace(set_index=1)
     ]
     export.get_text = lambda path, set_index=0, **kwargs: \
-        f'dataset-{set_index + 1}' if path.endswith('/id') else None
+        f'dataset-{set_index + 1}' if path == 'project/dataset/title' else None
     export.get_dataset = lambda set_index: make_valid_xml_dataset(title=f'Dataset {set_index + 1}')
 
     response = export.render()
@@ -621,21 +628,107 @@ def test_renderer_output_validates_against_rddm_9_3_schema():
     ]
 
 
-def test_invalid_xml_export_returns_400_without_partial_zip():
+def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
     export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
-    export.project = SimpleNamespace(title='Project')
+    export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
+    export.request = RequestFactory().get('/projects/1/export/radar-xml/')
     export.get_set = lambda *args, **kwargs: [
         SimpleNamespace(set_index=0),
         SimpleNamespace(set_index=1)
     ]
     export.get_text = lambda path, set_index=0, **kwargs: \
-        f'dataset-{set_index + 1}' if path.endswith('/id') else None
+        f'dataset-{set_index + 1}' if path == 'project/dataset/title' else None
     export.get_dataset = lambda set_index: \
         make_valid_xml_dataset() if set_index == 0 else {'title': 'Incomplete dataset'}
+    monkeypatch.setattr(
+        'rdmo_radar.exports.exports.render',
+        lambda request, template, context: SimpleNamespace(
+            status_code=200,
+            template=template,
+            context=context,
+        ),
+    )
+
+    response = export.render()
+
+    assert response.status_code == 200
+    assert response.template == 'plugins/exports_radar_xml_validation.html'
+    assert response.context['project_url'] == '/projects/1/'
+    assert [file.file_name for file in response.context['files']] == ['dataset-1.xml', 'dataset-2.xml']
+    assert not response.context['files'][0].has_warnings
+    assert response.context['files'][1].has_warnings
+    assert {field.path for field in response.context['files'][1].missing_fields} >= {'identifier', 'creators.creator'}
+
+
+def test_invalid_xml_export_can_be_downloaded_after_confirmation():
+    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
+    export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
+    export.get_set = lambda *args, **kwargs: [SimpleNamespace(set_index=0)]
+    export.get_text = lambda path, **kwargs: 'incomplete' if path == 'project/dataset/title' else None
+    export.get_dataset = lambda set_index: {'title': 'Incomplete dataset'}
+
+    response = export.render()
+
+    assert response.status_code == 200
+    assert response['Content-Type'] == 'application/zip'
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.namelist() == ['incomplete.xml']
+        xml_data = archive.read('incomplete.xml')
+        assert b'<re:title>Incomplete dataset</re:title>' in xml_data
+        assert validate_radar_xml(xml_data) is not None
+
+
+def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch):
+    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
+    export.request = RequestFactory().get('/projects/1/export/radar-xml/')
+    export.get_set = lambda path, **kwargs: [SimpleNamespace(set_index=0)] \
+        if path == 'project/dataset/id' else []
+    export.get_text = lambda *args, **kwargs: None
+    export.get_dataset = lambda set_index: {}
+    monkeypatch.setattr(
+        'rdmo_radar.exports.exports.render',
+        lambda request, template, context: SimpleNamespace(status_code=200, context=context),
+    )
+
+    response = export.render()
+
+    assert response.status_code == 200
+    missing = response.context['files'][0].missing_fields
+    assert ('Identifier type', 'identifier.identifierType') in {
+        (str(field.label), field.path) for field in missing
+    }
+    assert any(field.path == 'title' for field in missing)
+
+
+def test_validation_returns_all_unique_schema_errors(monkeypatch):
+    errors_from_schema = [
+        SimpleNamespace(reason='First problem'),
+        SimpleNamespace(reason='Second problem'),
+        SimpleNamespace(reason='First problem'),
+    ]
+    schema = SimpleNamespace(iter_errors=lambda xml_data: errors_from_schema)
+    monkeypatch.setattr('rdmo_radar.exports.validation.get_radar_schema', lambda: schema)
+
+    errors = get_radar_validation_errors(b'<xml/>')
+
+    assert errors == ('First problem', 'Second problem')
+    assert validate_radar_xml(b'<xml/>') == 'First problem'
+
+
+def test_xml_generation_failure_still_blocks_export(caplog):
+    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export.project = SimpleNamespace(pk=1, title='Project')
+    export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
+    export.get_set = lambda *args, **kwargs: [SimpleNamespace(set_index=0)]
+    export.get_text = lambda path, **kwargs: 'broken' if path == 'project/dataset/title' else None
+    export.get_dataset = lambda set_index: (_ for _ in ()).throw(ValueError('internal details'))
 
     response = export.render()
 
     assert response.status_code == 400
     assert response['Content-Type'].startswith('text/plain')
-    assert b'RADAR XML validation failed for "dataset-2.xml"' in response.content
-    assert not response.content.startswith(b'PK')
+    assert response.content == b'RADAR XML export could not generate "broken.xml".'
+    assert b'internal details' not in response.content
+    assert 'internal details' in caplog.text

@@ -20,6 +20,12 @@ Install the plugin in your RDMO virtual environment using pip (directly from Git
 pip install git+https://github.com/rdmorganiser/rdmo-plugins-radar
 ```
 
+Add the plugin package to `INSTALLED_APPS` so Django can discover its templates:
+
+```python
+INSTALLED_APPS += ['rdmo_radar']
+```
+
 For the `RadarExport`, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
 
 ```python
@@ -92,9 +98,10 @@ which dataset should be created in which workspace. The plugin creates a PENDING
 Incomplete descriptive metadata is accepted at this stage and can be completed in the RADAR interface before the
 dataset is archived or published. The actual data can also be uploaded through the RADAR interface.
 
-The downloadable RADAR XML export also targets RDDM 9.3. Unlike direct draft creation, every generated XML file is
-validated against the bundled official schema before the ZIP is returned. An incomplete dataset therefore produces
-an HTTP 400 response identifying the affected XML file instead of an invalid or partial archive.
+The downloadable RADAR XML export also targets RDDM 9.3. Every generated XML file is checked against the bundled
+official schema. Valid exports download immediately. If required metadata is missing or the XML violates the schema,
+RDMO shows the warnings per file and lets the user download the ZIP anyway for testing with RADAR. Only errors that
+prevent XML generation block the download.
 
 For diagnostics, RADAR administrators can use the API endpoints
 `GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does
