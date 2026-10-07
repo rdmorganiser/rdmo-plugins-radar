@@ -124,9 +124,7 @@ def test_xml_and_api_adapters_share_canonical_model_but_not_wire_values():
     assert xml_data['resource']['resourceType'] == 'Dataset'
     assert api_data['resource']['resourceType'] == 'DATASET'
     assert xml_data['creators']['creator'][0]['creatorAffiliation'] == 'First University'
-    assert api_data['creators']['creator'][0]['creatorAffiliation'] == [
-        'First University', 'Second University'
-    ]
+    assert api_data['creators']['creator'][0]['creatorAffiliation'] == {'value': 'First University'}
 
 
 def test_xml_parser_preserves_canonical_rddm_values():

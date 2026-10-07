@@ -402,8 +402,9 @@ def test_software_stays_in_both_adapters_without_a_version(prototype):
     xml = export_for(prototype).get_dataset(0)
     api = export_for(prototype, RadarExportProvider).get_dataset(0)
     assert xml['software'][0]['type'] == 'Resource Viewing'
-    assert api['software'][0]['type'] == 'RESOURCE_VIEWING'
-    assert xml['software'][0]['softwareName'] == api['software'][0]['softwareName'] == 'Shared Viewer'
+    assert api['software']['softwareType'][0]['type'] == 'RESOURCE_VIEWING'
+    assert xml['software'][0]['softwareName'] == 'Shared Viewer'
+    assert api['software']['softwareType'][0]['softwareName'] == [{'value': 'Shared Viewer'}]
 
 
 def test_sparse_keyword_indices_and_duplicate_text(prototype):
