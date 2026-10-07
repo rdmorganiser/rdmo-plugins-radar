@@ -470,7 +470,7 @@ def test_provider_form_validates_choices_and_escapes_export_link():
     assert not invalid_form.is_valid()
 
 
-def test_dataset_resource_type_uses_standard_mapping():
+def test_dataset_resource_type_does_not_use_file_format():
     export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
     option_mappings = []
 
@@ -488,8 +488,8 @@ def test_dataset_resource_type_uses_standard_mapping():
 
     dataset = export.get_dataset(0)
 
-    assert dataset['resource'] == {'value': 'Resource', 'resourceType': 'Dataset'}
-    assert export.resource_type_general_options in option_mappings
+    assert dataset['resource'] == {'value': 'Resource', 'resourceType': None}
+    assert export.resource_type_general_options not in option_mappings
     assert export.data_source_options['radar_data_source/trial'] == 'Trial'
     assert export.data_source_options['radar_data_source/organism'] == 'Organism'
     assert export.data_source_options['radar_data_source/tissue'] == 'Tissue'

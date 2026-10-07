@@ -1,8 +1,6 @@
-from django.utils.html import strip_tags
-
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
-from .rdmo import RDMOReadContext, RDMOWriteContext, get_option_path, normalize
+from .rdmo import RDMOReadContext, RDMOWriteContext, answer_label, get_option_path, normalize
 from .types import Agent, GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea
 
 
@@ -22,10 +20,7 @@ def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
         keywords=context.shared().get_texts('project/research_question/keywords'),
         language=context.get_option('project/dataset/language', XMLVocabulary.language_options),
         subject_areas=_read_subjects(context),
-        resource=Resource(
-            resource_value,
-            context.get_option('project/dataset/format', XMLVocabulary.resource_type_general_options),
-        ) if resource_value else None,
+        resource=Resource(resource_value) if resource_value else None,
         geo_locations=[GeoLocation(region=geo_location)] if geo_location else [],
         data_sources=_read_data_sources(context),
         software=_read_software(context),
@@ -54,11 +49,9 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
     context.add_option('project/dataset/language', metadata.language, XMLVocabulary.language_options)
     if metadata.resource:
         context.add('project/dataset/description', metadata.resource.value)
-        context.add_option(
-            'project/dataset/format',
-            metadata.resource.resource_type,
-            XMLVocabulary.resource_type_general_options,
-        )
+        if metadata.resource.resource_type:
+            context.warn('resource.resourceType', 'No confirmed RDMO resource type mapping',
+                         metadata.resource.resource_type)
     if metadata.rights:
         context.add_option(
             'project/dataset/sharing/conditions',
@@ -99,12 +92,12 @@ def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
             controlled = (known or 'Other',)
             if known is None:
                 context.warn('subjectAreas', 'project/research_field/title',
-                             'Unmapped subject preserved as Other', _answer_label(value))
+                             'Unmapped subject preserved as Other', answer_label(value))
         if option_path == 'research_fields/211':
             context.warn('subjectAreas', 'project/research_field/title',
-                         'Workbook mapping is uncertain; preserved as Other', _answer_label(value))
+                         'Workbook mapping is uncertain; preserved as Other', answer_label(value))
         for name in controlled:
-            subject = SubjectArea(name, _answer_label(value) if name == 'Other' else None)
+            subject = SubjectArea(name, answer_label(value) if name == 'Other' else None)
             if subject not in subjects:
                 subjects.append(subject)
     return subjects
@@ -113,7 +106,7 @@ def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
 def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
     sources = []
     for value in context.get_values('project/dataset/creation_methods'):
-        source = _answer_label(value)
+        source = answer_label(value)
         if not source:
             continue
         option_path = value.option.uri_path if value.option else None
@@ -135,22 +128,15 @@ def _read_rights(context: RDMOReadContext) -> Rights | None:
     for value in values:
         option_path = value.option.uri_path if value.option else None
         controlled = XMLVocabulary.controlled_rights_options.get(option_path, 'Other')
-        additional = value.text or (_answer_label(value) if controlled == 'Other' else None)
+        additional = value.text or (answer_label(value) if controlled == 'Other' else None)
         right = Rights(controlled, additional)
         if right not in rights:
             rights.append(right)
     if len(rights) > 1:
         context.warn('rights', path, 'Multiple licenses selected; choose the applicable license in RADAR',
-                     '; '.join(_answer_label(value) for value in values))
+                     '; '.join(answer_label(value) for value in values))
         return None
     return rights[0]
-
-
-def _answer_label(value):
-    """Read option labels without Value.value's rendered display HTML."""
-    label = strip_tags(str(value.option.text)) if value.option else ''
-    text = value.text.strip() if value.text else ''
-    return f'{label}: {text}' if label and text and label != text else text or label
 
 
 def _read_software(context):

@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from django.utils.html import strip_tags
+
 from rdmo.projects.exports import Export
 from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
@@ -17,7 +19,6 @@ SCALAR_TARGETS = {
     'project/dataset/title': 'title',
     'project/dataset/id': 'title',
     'project/dataset/description': 'resource',
-    'project/dataset/format': 'resource.resourceType',
     'project/dataset/pids/system': 'identifier.identifierType',
     'project/dataset/data_publication_pid': 'identifier',
     'project/dataset/language': 'language',
@@ -285,3 +286,10 @@ def get_option_path(options: dict[str, str], canonical_value: str) -> str | None
 
 def normalize(value: object) -> str:
     return ' '.join(str(value).split()).casefold()
+
+
+def answer_label(value: Value) -> str:
+    """Read option labels without Value.value's rendered display HTML."""
+    label = strip_tags(str(value.option.text)) if value.option else ''
+    text = value.text.strip() if value.text else ''
+    return f'{label}: {text}' if label and text and label != text else text or label

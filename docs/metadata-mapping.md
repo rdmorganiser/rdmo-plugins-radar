@@ -39,7 +39,7 @@ free text. Supported person identifiers prefer `external_id` over provider displ
 | Title | `project/dataset/title`, then the `project/dataset/id` collection label. |
 | Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options. No identifier is invented. |
 | Subject areas | `project/research_field/title`; all 48 catalog DFG options mapped using the subject sheet. Every explicitly listed category is emitted, with duplicate entries removed. `Other` retains the original label. The uncertain Materials Engineering entry stays `Other`; workbook “Veterinary” uses the schema spelling `Veterinary Medicine`. The stray Jurisprudence note on the Economics row does not override its explicit Economics mapping. |
-| Resource | `project/dataset/description`. Existing RADAR resource-type options on `project/dataset/format` remain supported; the catalog's file-format options do not imply a RADAR resource type. |
+| Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
 | Rights | `project/dataset/sharing/conditions`: CC-BY, CC-BY-NC, CC-BY-ND, CC-BY-SA, CC0, ODC-By, ODbL, and Other. Preserve additional text. Multiple distinct selections omit rights and report all selections for completion in RADAR. |
 | Funding | Discover populated name, grant-number, and programme fields without requiring a funder-ID marker. Keep fields grouped by their answer coordinates. `project/funder/id` remains a set marker, never a persistent funder identifier. Existing programme-URL support remains available. |
@@ -68,8 +68,9 @@ Completing missing metadata in RADAR remains necessary before archival or public
 
 ## Import compatibility and verification
 
-RADAR XML import retains its existing mappings, merge behavior, and warnings for unsupported
-fields. Export-only crosswalks are not reversed: a RADAR category can correspond to multiple DFG
+RADAR XML import retains its merge behavior and warnings for unsupported fields. Resource types
+are not imported into `project/dataset/format`; they produce an unsupported-mapping warning.
+Export-only crosswalks are not reversed: a RADAR category can correspond to multiple DFG
 subjects. Additional ODC license options are shared with the existing license vocabulary.
 
 Tests import the supplied catalog into an isolated database and load the prototype's values with

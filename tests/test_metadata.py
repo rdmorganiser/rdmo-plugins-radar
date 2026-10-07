@@ -84,7 +84,7 @@ def test_only_confirmed_dataset_paths_are_read():
 
     metadata = compute_metadata(export, 0)
 
-    assert metadata.resource == Resource('Canonical resource', 'Dataset')
+    assert metadata.resource == Resource('Canonical resource')
     assert metadata.title == 'Dataset title'
 
 
@@ -204,12 +204,12 @@ def test_import_uses_paths_and_option_uri_paths_not_host_specific_uris():
     option_paths = {value.option.uri_path for value in radar_import.values if value.option}
     assert 'project/dataset/data_publication_pid' in paths
     assert 'project/dataset/description' in paths
-    assert 'project/dataset/format' in paths
+    assert 'project/dataset/format' not in paths
     assert 'project/dataset/creation_methods' in paths
     assert 'project/funder/grant_nr' in paths
-    assert 'resource_type_general/dataset' in option_paths
+    assert 'resource_type_general/dataset' not in option_paths
     assert 'project/dataset/version' not in paths
-    assert {issue.field for issue in radar_import.mapping_issues} >= {'descriptions', 'version'}
+    assert {issue.field for issue in radar_import.mapping_issues} >= {'descriptions', 'version', 'resource.resourceType'}
 
 
 def test_project_level_imports_are_deduplicated_across_datasets():

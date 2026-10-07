@@ -111,6 +111,14 @@ def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
         assert metadata.creators == metadata.contributors == []
 
 
+def test_file_formats_never_become_resource_types_or_mapping_issues(prototype):
+    export = export_for(prototype)
+    metadata = export.compute_metadata(0)
+    assert metadata.resource.resource_type is None
+    assert not any(issue.source == 'project/dataset/format' for issue in metadata.mapping_issues)
+    assert 'resource.resourceType' not in {issue.field for issue in metadata.mapping_issues}
+
+
 @pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
 def test_both_providers_offer_collection_labels_and_shared_metadata(prototype, cls):
     provider = export_for(prototype, cls)
@@ -120,7 +128,8 @@ def test_both_providers_offer_collection_labels_and_shared_metadata(prototype, c
     ]
     form = provider.get_export_form(workspace_choices=[('workspace', 'Workspace')])
     assert len(form.mapping_warnings) == 2
-    assert form.mapping_warnings[0]['issues']
+    assert 'Resource type' in form.mapping_warnings[0]['missing']
+    assert not form.mapping_warnings[0]['issues']
     payload = provider.get_post_data('0')['descriptiveMetadata']
     assert payload['title'] == 'Radar Testdatensatz Nr 1'
     assert [source['dataSourceDetail'] for source in payload['dataSources']['dataSource']] == [
@@ -137,7 +146,7 @@ def test_prototype_xml_reports_gaps_and_downloads_both_files(prototype):
     files = export.prepare_files()
     assert [file.file_name for file in files] == ['Radar Testdatensatz Nr 1.xml', 'Radar Testdatensatz Nr 2.xml']
     first = files[0]
-    assert first.has_warnings and first.mapping_issues
+    assert first.has_warnings and not first.mapping_issues
     assert {'identifier', 'creators.creator', 'productionYear', 'resource.resourceType'} <= {
         field.path for field in first.missing_fields
     }
