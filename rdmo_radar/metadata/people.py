@@ -7,17 +7,25 @@ CONTRIBUTOR_NAME = 'project/partner/name'
 
 
 def read_creators(context: RDMOReadContext) -> list[Agent]:
+    if context.index is not None:
+        return [agent for group in context.groups(CREATOR_NAME, 'project/dataset/creator/given_name',
+                                                  'project/dataset/creator/family_name')
+                if (agent := _read_agent(group, 'project/dataset/creator')) is not None]
     sets = context.export.get_set(CREATOR_NAME, set_prefix=str(context.set_index))
     return [
         agent for value in sets
         if (agent := _read_agent(
-            RDMOReadContext(context.export, value.set_prefix, value.set_index),
+            context.group(value.set_prefix, value.set_index),
             'project/dataset/creator',
         )) is not None
     ]
 
 
 def read_contributors(context: RDMOReadContext) -> list[Agent]:
+    if context.index is not None:
+        return [agent for group in context.shared().groups(CONTRIBUTOR_NAME, 'project/partner/given_name',
+                                                           'project/partner/family_name')
+                if (agent := _read_partner(group)) is not None]
     return [
         agent for value in context.export.get_set(CONTRIBUTOR_NAME)
         if (agent := _read_partner(RDMOReadContext(context.export, set_index=value.set_index))) is not None
@@ -107,7 +115,7 @@ def _read_agent(context: RDMOReadContext, base: str) -> Agent | None:
         name = ', '.join(value for value in (family_name, given_name) if value)
     if not name:
         return None
-    identifier = context.get_text(f'{base}/name_identifier')
+    identifier = context.get_identifier(f'{base}/name_identifier')
     identifier_scheme = context.get_option(
         f'{base}/name_identifier_scheme',
         XMLVocabulary.name_identifier_scheme_options,
@@ -135,7 +143,7 @@ def _read_partner(context: RDMOReadContext) -> Agent | None:
         name = ', '.join(value for value in (family_name, given_name) if value)
     if not name:
         return None
-    identifier = context.get_text('project/partner/orcid')
+    identifier = context.get_identifier('project/partner/orcid')
     organization = context.get_text('project/partner/organization')
     return Agent(
         name=name,

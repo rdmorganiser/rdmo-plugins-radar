@@ -10,6 +10,23 @@
     <div class="alert alert-danger" role="alert">{{ error }}</div>
     {% endif %}
 
+    {% if form.mapping_warnings %}
+    <div class="alert alert-warning" role="alert">
+        <p>{% trans 'These datasets need metadata completed in RADAR. You can export them as drafts.' %}</p>
+        {% for warning in form.mapping_warnings %}
+        <h2>{{ warning.title }}</h2>
+        {% if warning.missing %}
+        <p>{% trans 'Missing required metadata:' %} {{ warning.missing|join:', ' }}</p>
+        {% endif %}
+        <ul>
+            {% for issue in warning.issues %}
+            <li>{{ issue }}</li>
+            {% endfor %}
+        </ul>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% bootstrap_form submit=_('Export to RADAR') %}
 
 {% endblock %}

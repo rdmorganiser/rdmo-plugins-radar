@@ -81,10 +81,12 @@ class MappingIssue:
     field: str
     reason: str
     value: str | None = None
+    source: str | None = None
 
     def __str__(self) -> str:
         suffix = f' ({self.value})' if self.value else ''
-        return f'{self.field}: {self.reason}{suffix}'
+        source = f' [{self.source}]' if self.source else ''
+        return f'{self.field}{source}: {self.reason}{suffix}'
 
 
 @dataclass
@@ -113,3 +115,4 @@ class RadarMetadata:
     related_information: list[str] = field(default_factory=list)
     funding_references: list[FundingReference] = field(default_factory=list)
     version: str | None = None
+    mapping_issues: list[MappingIssue] = field(default_factory=list)

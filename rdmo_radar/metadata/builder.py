@@ -13,4 +13,5 @@ def compute_metadata(export: Export, set_index: int) -> RadarMetadata:
     metadata.creators = read_creators(context)
     metadata.contributors = read_contributors(context)
     metadata.funding_references = read_funding(context)
+    metadata.mapping_issues = context.issues
     return metadata

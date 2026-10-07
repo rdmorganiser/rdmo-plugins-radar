@@ -103,6 +103,12 @@ official schema. Valid exports download immediately. If required metadata is mis
 RDMO shows the warnings per file and lets the user download the ZIP anyway for testing with RADAR. Only errors that
 prevent XML generation block the download.
 
+The exporter supports the DMP4NFDI 2.0.0 catalog and the 2026 Template Framework mapping, including
+dataset collection labels, nested answers, DFG subject areas, creation methods, licenses, and
+funding. An explicit dataset title takes precedence over its collection label. Mapping warnings
+identify answers that need completion in RADAR. See [the mapping documentation](docs/metadata-mapping.md)
+for supported fields and deferred decisions.
+
 For diagnostics, RADAR administrators can use the API endpoints
 `GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does
 not call either endpoint during a normal direct export because newly created drafts are intentionally allowed to be

@@ -14,6 +14,7 @@ INSTALLED_APPS = [
     'rdmo.services',
     'rdmo.tasks',
     'rdmo.views',
+    'rdmo_radar',
 ]
 
 DATABASES = {
@@ -24,6 +25,14 @@ DATABASES = {
 }
 
 USE_TZ = True
+SITE_ID = 1
+MULTISITE = False
+PROJECT_TASKS_SYNC = False
+PROJECT_VIEWS_SYNC = False
+DEFAULT_URI_PREFIX = 'https://example.test/terms'
+LANGUAGE_CODE = 'en'
+LANGUAGES = [('en', 'English'), ('de', 'Deutsch')]
+REPLACE_MISSING_TRANSLATION = True
 ROOT_URLCONF = 'tests.urls'
 
 RADAR_PROVIDER = {

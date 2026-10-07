@@ -1,6 +1,9 @@
+from django.utils.html import strip_tags
+
 from .constants import XMLVocabulary
+from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .rdmo import RDMOReadContext, RDMOWriteContext, get_option_path, normalize
-from .types import Agent, GeoLocation, Identifier, RadarMetadata, Resource, Rights, SubjectArea
+from .types import Agent, GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea
 
 
 def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
@@ -9,14 +12,14 @@ def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
         'project/dataset/pids/system',
         XMLVocabulary.identifier_type_options,
     )
-    acronym = context.export.get_text('project/acronym')
+    acronym = context.shared().get_text('project/acronym')
     resource_value = context.get_text('project/dataset/description')
     geo_location = context.get_text('project/dataset/usage_technology/geo_location')
     metadata = RadarMetadata(
         identifier=Identifier(identifier_value, identifier_type) if identifier_value else None,
-        title=context.get_text('project/dataset/title'),
+        title=context.get_text('project/dataset/title') or context.get_text('project/dataset/id'),
         additional_titles=[acronym] if acronym else [],
-        keywords=context.export.get_list('project/research_question/keywords'),
+        keywords=context.shared().get_texts('project/research_question/keywords'),
         language=context.get_option('project/dataset/language', XMLVocabulary.language_options),
         subject_areas=_read_subjects(context),
         resource=Resource(
@@ -25,6 +28,7 @@ def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
         ) if resource_value else None,
         geo_locations=[GeoLocation(region=geo_location)] if geo_location else [],
         data_sources=_read_data_sources(context),
+        software=_read_software(context),
         processing=context.get_texts('project/dataset/method'),
         rights=_read_rights(context),
         rights_holders=[
@@ -83,33 +87,80 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
 
 def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
     subjects = []
-    for value in context.export.get_set('project/research_field/title'):
+    values = (context.shared().get_values('project/research_field/title') if context.index is not None
+              else context.export.get_set('project/research_field/title'))
+    for value in values:
         if not value.is_true:
             continue
         option_path = value.option.uri_path if value.option else None
-        controlled = XMLVocabulary.controlled_subject_area_options.get(option_path, 'Other')
-        subjects.append(SubjectArea(controlled, value.text if controlled == 'Other' else None))
+        controlled = SUBJECT_OPTIONS.get(option_path)
+        if controlled is None:
+            known = XMLVocabulary.controlled_subject_area_options.get(option_path)
+            controlled = (known or 'Other',)
+            if known is None:
+                context.warn('subjectAreas', 'project/research_field/title',
+                             'Unmapped subject preserved as Other', _answer_label(value))
+        if option_path == 'research_fields/211':
+            context.warn('subjectAreas', 'project/research_field/title',
+                         'Workbook mapping is uncertain; preserved as Other', _answer_label(value))
+        for name in controlled:
+            subject = SubjectArea(name, _answer_label(value) if name == 'Other' else None)
+            if subject not in subjects:
+                subjects.append(subject)
     return subjects
 
 
 def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
     sources = []
     for value in context.get_values('project/dataset/creation_methods'):
-        source = value.text or value.value
+        source = _answer_label(value)
         if not source:
             continue
         option_path = value.option.uri_path if value.option else None
-        sources.append(Resource(source, XMLVocabulary.data_source_options.get(option_path)))
+        detail = CREATION_METHOD_OPTIONS.get(option_path) or XMLVocabulary.data_source_options.get(option_path)
+        if detail is None:
+            detail = 'Other'
+            context.warn('dataSources', 'project/dataset/creation_methods',
+                         'Unmapped creation method preserved as Other', source)
+        sources.append(Resource(source, detail))
     return sources
 
 
 def _read_rights(context: RDMOReadContext) -> Rights | None:
-    value = next((value for value in context.get_values('project/dataset/sharing/conditions') if value.is_true), None)
-    if value is None:
+    path = 'project/dataset/sharing/conditions'
+    values = [value for value in context.get_values(path) if value.is_true]
+    if not values:
         return None
-    option_path = value.option.uri_path if value.option else None
-    controlled = XMLVocabulary.controlled_rights_options.get(option_path, 'Other')
-    return Rights(controlled, value.text if controlled == 'Other' else None)
+    rights = []
+    for value in values:
+        option_path = value.option.uri_path if value.option else None
+        controlled = XMLVocabulary.controlled_rights_options.get(option_path, 'Other')
+        additional = value.text or (_answer_label(value) if controlled == 'Other' else None)
+        right = Rights(controlled, additional)
+        if right not in rights:
+            rights.append(right)
+    if len(rights) > 1:
+        context.warn('rights', path, 'Multiple licenses selected; choose the applicable license in RADAR',
+                     '; '.join(_answer_label(value) for value in values))
+        return None
+    return rights[0]
+
+
+def _answer_label(value):
+    """Read option labels without Value.value's rendered display HTML."""
+    label = strip_tags(str(value.option.text)) if value.option else ''
+    text = value.text.strip() if value.text else ''
+    return f'{label}: {text}' if label and text and label != text else text or label
+
+
+def _read_software(context):
+    software = []
+    path = 'project/dataset/usage_technology'
+    for value in context.get_values(path):
+        if value.option and value.option.uri_path == SOFTWARE_REQUIREMENT and value.text and value.text.strip():
+            software.append(Software(value.text.strip(), 'Resource Viewing'))
+            context.warn('software.softwareVersion', path, 'Software version is unavailable; complete it in RADAR')
+    return software
 
 
 def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
@@ -170,4 +221,4 @@ def _warn_unmapped_fields(context: RDMOWriteContext, metadata: RadarMetadata) ->
     }
     for field, value in populated.items():
         if value:
-            context.warn(field, 'No confirmed RDMO task-force mapping')
+            context.warn(field, 'No confirmed RDMO Template Framework mapping')

@@ -16,14 +16,17 @@ from rdmo.services.providers import OauthProviderMixin
 
 from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.constants import APIVocabulary
+from rdmo_radar.metadata.values import get_answer_index
+from rdmo_radar.metadata.xml import missing_required_fields, to_xml_payload
 
-from .exports import RadarExport
+from .exports import REQUIRED_FIELD_LABELS, RadarExport
 
 logger = logging.getLogger(__name__)
 
 
 class RadarExportProviderBase(APIVocabulary, RadarExport):
     def get_dataset(self, set_index):
+        set_index = int(set_index)
         metadata = self.compute_metadata(set_index)
         if not metadata.title:
             metadata.title = f'Dataset #{set_index + 1}'
@@ -37,6 +40,7 @@ class RadarExportProviderBase(APIVocabulary, RadarExport):
             dataset_choices = kwargs.pop('dataset_choices')
             workspace_choices = kwargs.pop('workspace_choices')
             radar_urls = kwargs.pop('radar_urls')
+            self.mapping_warnings = kwargs.pop('mapping_warnings', [])
 
             super().__init__(*args, **kwargs)
 
@@ -59,9 +63,9 @@ class RadarExportProviderBase(APIVocabulary, RadarExport):
             self.fields['workspace'].choices = workspace_choices
 
     def prepare_export_session(self):
-        datasets = self.get_set('project/dataset/title')
-        dataset_choices = [(dataset.set_index, dataset.value) for dataset in datasets]
-        radar_urls = [self.get_text('project/dataset/radar_url', set_index=dataset.set_index) for dataset in datasets]
+        indices = self.get_dataset_indices()
+        dataset_choices = [(index, self.get_dataset_title(index) or f'Dataset #{index + 1}') for index in indices]
+        radar_urls = [self.get_text('project/dataset/radar_url', set_index=index) for index in indices]
 
         self.store_in_session(self.request, 'dataset_choices', dataset_choices)
         self.store_in_session(self.request, 'radar_urls', radar_urls)
@@ -72,8 +76,24 @@ class RadarExportProviderBase(APIVocabulary, RadarExport):
             data,
             dataset_choices=self.get_from_session(self.request, 'dataset_choices') or [],
             workspace_choices=workspace_choices or self.get_from_session(self.request, 'workspace_choices') or [],
-            radar_urls=self.get_from_session(self.request, 'radar_urls') or []
+            radar_urls=self.get_from_session(self.request, 'radar_urls') or [],
+            mapping_warnings=self.get_mapping_warnings(),
         )
+
+    def get_mapping_warnings(self):
+        if get_answer_index(self) is None:
+            return []
+        warnings = []
+        for index in self.get_dataset_indices():
+            metadata = self.compute_metadata(index)
+            missing = missing_required_fields(to_xml_payload(metadata))
+            if missing or metadata.mapping_issues:
+                warnings.append({
+                    'title': metadata.title or f'Dataset #{index + 1}',
+                    'issues': metadata.mapping_issues,
+                    'missing': [REQUIRED_FIELD_LABELS.get(path, path) for path in missing],
+                })
+        return warnings
 
     def clear_session(self, request):
         for key in (

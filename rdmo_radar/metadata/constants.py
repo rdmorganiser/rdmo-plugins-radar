@@ -188,7 +188,9 @@ class XMLVocabulary:
         'dataset_license_types/75': 'CC BY-SA 4.0 Attribution-ShareAlike',
         'dataset_license_types/73': 'CC BY-NC 4.0 Attribution-NonCommercial',
         'dataset_license_types/cc0': 'CC0 1.0 Universal Public Domain Dedication',
-        'dataset_license_types/233': 'Other'
+        'dataset_license_types/233': 'Other',
+        'dataset_license_types/ODC-By': 'Attribution License (ODC-By)',
+        'dataset_license_types/ODbl': 'Open Database License (ODC-ODbL)',
     }
 
     relation_type_options = {

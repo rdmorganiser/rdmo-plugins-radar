@@ -5,12 +5,29 @@ from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
 
 from .types import MappingIssue
+from .values import get_answer_index
 
 TERMS_PREFIX = 'https://rdmorganiser.github.io/terms/domain/'
 OPTION_PREFIXES = (
     'https://rdmorganiser.github.io/terms/options/',
     'https://rdmo.jochenklar.dev/terms/options/',
 )
+
+SCALAR_TARGETS = {
+    'project/dataset/title': 'title',
+    'project/dataset/id': 'title',
+    'project/dataset/description': 'resource',
+    'project/dataset/format': 'resource.resourceType',
+    'project/dataset/pids/system': 'identifier.identifierType',
+    'project/dataset/data_publication_pid': 'identifier',
+    'project/dataset/language': 'language',
+    'project/dataset/usage_technology/geo_location': 'geoLocations',
+    'project/acronym': 'additionalTitles',
+    'project/funder/name': 'fundingReferences.funderName',
+    'project/funder/grant_nr': 'fundingReferences.awardNumber',
+    'project/funder/programme/title': 'fundingReferences.awardTitle',
+    'project/funder/programme/url': 'fundingReferences.awardURI',
+}
 
 
 @dataclass(frozen=True)
@@ -32,8 +49,40 @@ class RDMOReadContext:
     export: Export
     set_prefix: str = ''
     set_index: int = 0
+    scope: str = 'dataset'
+    issues: list[MappingIssue] = field(default_factory=list)
+
+    @property
+    def index(self):
+        return get_answer_index(self.export)
+
+    def shared(self):
+        return RDMOReadContext(self.export, scope='project', issues=self.issues)
+
+    def group(self, prefix, index):
+        return RDMOReadContext(self.export, prefix, index, scope='group', issues=self.issues)
+
+    def groups(self, *paths):
+        positions = {(value.set_prefix, value.set_index) for path in paths for value in self.get_values(path)}
+        return [self.group(prefix, index) for prefix, index in sorted(positions)]
+
+    def warn(self, target, source, reason, value=None):
+        issue = MappingIssue(SCALAR_TARGETS.get(target, target), reason, value, source)
+        if issue not in self.issues:
+            self.issues.append(issue)
 
     def get_text(self, attribute: AttributeRef | str, collection_index: int = 0) -> str | None:
+        if self.index is not None:
+            values = self.get_values(attribute)
+            texts = list(dict.fromkeys(value.text.strip() for value in values
+                                       if value.text and value.text.strip() and not value.option))
+            if collection_index:
+                return texts[collection_index] if collection_index < len(texts) else None
+            if len(texts) > 1:
+                path = self._paths(attribute)[0]
+                self.warn(path, path, 'Multiple answers for a scalar field', '; '.join(texts))
+                return None
+            return texts[0] if texts else None
         for path in self._paths(attribute):
             value = self.export.get_text(
                 path,
@@ -47,12 +96,21 @@ class RDMOReadContext:
 
     def get_values(self, attribute: AttributeRef | str) -> list[Value]:
         for path in self._paths(attribute):
-            values = list(self.export.get_values(path, set_prefix=self.set_prefix, set_index=self.set_index))
+            if self.index is not None:
+                values = self.index.rows(
+                    path, int(self.set_index) if self.scope == 'dataset' else None,
+                    (self.set_prefix, self.set_index) if self.scope == 'group' else None,
+                )
+            else:
+                values = list(self.export.get_values(path, set_prefix=self.set_prefix, set_index=self.set_index))
             if values:
                 return values
         return []
 
     def get_texts(self, attribute: AttributeRef | str) -> list[str]:
+        if self.index is not None:
+            return list(dict.fromkeys(value.text.strip() for value in self.get_values(attribute)
+                                      if value.text and value.text.strip() and not value.option))
         for path in self._paths(attribute):
             values = self.export.get_list(path, set_prefix=self.set_prefix, set_index=self.set_index)
             if values:
@@ -66,6 +124,15 @@ class RDMOReadContext:
         collection_index: int = 0,
         default: str | None = None,
     ) -> str | None:
+        if self.index is not None:
+            values = [value for value in self.get_values(attribute) if value.is_true]
+            mapped = list(dict.fromkeys(options.get(value.option.uri_path) if value.option else None
+                                        for value in values))
+            if values and (None in mapped or len(mapped) > 1):
+                path = self._paths(attribute)[0]
+                self.warn(path, path, 'Unmapped or conflicting controlled answers')
+                return default
+            return mapped[0] if mapped else default
         for path in self._paths(attribute):
             value = self.export.get_option(
                 options,
@@ -77,6 +144,17 @@ class RDMOReadContext:
             if value:
                 return value
         return default
+
+    def get_identifier(self, path):
+        if self.index is None:
+            return self.get_text(path)
+        identifiers = list(dict.fromkeys(value.external_id or value.text for value in self.get_values(path)
+                                         if value.external_id or value.text))
+        if len(identifiers) == 1 and '<' not in identifiers[0]:
+            return identifiers[0]
+        if identifiers:
+            self.warn('nameIdentifier', path, 'Identifier is ambiguous or contains display markup')
+        return None
 
     @staticmethod
     def _paths(attribute: AttributeRef | str) -> tuple[str, ...]:

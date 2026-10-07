@@ -16,6 +16,15 @@
         {% if file.has_warnings %}
         <h2>{{ file.file_name }}</h2>
 
+        {% if file.mapping_issues %}
+        <h3>{% trans 'Mapping warnings' %}</h3>
+        <ul>
+            {% for issue in file.mapping_issues %}
+            <li>{{ issue }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
         {% if file.missing_fields %}
         <h3>{% trans 'Missing required metadata' %}</h3>
         <ul>

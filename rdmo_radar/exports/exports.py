@@ -1,4 +1,5 @@
 import logging
+import re
 import zipfile
 from dataclasses import dataclass
 
@@ -11,6 +12,9 @@ from rdmo.projects.exports import Export
 
 from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.constants import XMLVocabulary
+from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.types import MappingIssue
+from rdmo_radar.metadata.values import get_answer_index
 from rdmo_radar.metadata.xml import missing_required_fields, to_xml_payload
 
 from .renderers import RadarExportRenderer
@@ -45,10 +49,11 @@ class RadarXmlExportFile:
     xml_data: bytes
     missing_fields: tuple[MissingMetadataField, ...]
     validation_errors: tuple[str, ...]
+    mapping_issues: tuple[MappingIssue, ...] = ()
 
     @property
     def has_warnings(self):
-        return bool(self.missing_fields or self.validation_errors)
+        return bool(self.missing_fields or self.validation_errors or self.mapping_issues)
 
 
 class RadarExport(XMLVocabulary, Export):
@@ -56,10 +61,19 @@ class RadarExport(XMLVocabulary, Export):
         return compute_metadata(self, set_index)
 
     def get_dataset(self, set_index):
-        return to_xml_payload(self.compute_metadata(set_index))
+        metadata = self.compute_metadata(set_index)
+        self.mapping_issues = metadata.mapping_issues
+        return to_xml_payload(metadata)
+
+    def get_dataset_title(self, set_index):
+        context = RDMOReadContext(self, set_index=int(set_index))
+        return context.get_text('project/dataset/title') or context.get_text('project/dataset/id')
 
     def get_dataset_indices(self):
-        """Return every dataset set, including pre-migration sets with only an id marker."""
+        """Discover datasets from collection labels and explicit titles."""
+        index = get_answer_index(self)
+        if index is not None:
+            return index.dataset_indices()
         indices = set()
         for attribute in ('project/dataset/title', 'project/dataset/id'):
             indices.update(value.set_index for value in self.get_set(attribute))
@@ -82,13 +96,18 @@ class RadarExport(XMLVocabulary, Export):
 
     def prepare_files(self):
         files = []
+        names = set()
         for set_index in self.get_dataset_indices():
-            file_name = '{}.xml'.format(
-                self.get_text('project/dataset/data_publication_pid', set_index=set_index)
-                or self.get_text('project/dataset/title', set_index=set_index)
-                or str(set_index + 1)
-            )
+            title = self.get_dataset_title(set_index) or str(set_index + 1)
+            stem = re.sub(r'[/\\\x00-\x1f\x7f]', '_', title).strip(' .')[:180] or str(set_index + 1)
+            file_name = f'{stem}.xml'
+            suffix = 2
+            while file_name.casefold() in names:
+                file_name = f'{stem}-{suffix}.xml'
+                suffix += 1
+            names.add(file_name.casefold())
             try:
+                self.mapping_issues = []
                 dataset = self.get_dataset(set_index)
                 xmldata = prettify_xml(RadarExportRenderer().render(dataset))
             except Exception as error:
@@ -112,6 +131,7 @@ class RadarExport(XMLVocabulary, Export):
                 xml_data=xmldata,
                 missing_fields=missing_fields,
                 validation_errors=validation_errors,
+                mapping_issues=tuple(self.mapping_issues),
             ))
         return files
 

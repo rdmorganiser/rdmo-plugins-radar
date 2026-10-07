@@ -7,8 +7,13 @@ FUNDER_NAME = 'project/funder/name'
 
 def read_funding(context: RDMOReadContext) -> list[FundingReference]:
     references = []
-    for value in context.export.get_set(FUNDER_ANCHOR):
-        funder = RDMOReadContext(context.export, set_index=value.set_index)
+    if context.index is not None:
+        funders = context.shared().groups(FUNDER_NAME, 'project/funder/grant_nr',
+                                         'project/funder/programme/title', 'project/funder/programme/url')
+    else:
+        funders = [context.group(value.set_prefix, value.set_index)
+                   for value in context.export.get_set(FUNDER_ANCHOR)]
+    for funder in funders:
         references.append(FundingReference(
             funder_name=funder.get_text(FUNDER_NAME),
             award_number=funder.get_text('project/funder/grant_nr'),
