@@ -6,8 +6,8 @@ from xml.etree import ElementTree
 
 import pytest
 
-from django.template import Context, Engine
-from django.test import RequestFactory
+from django.template import Context, Engine, RequestContext
+from django.test import RequestFactory, override_settings
 from django.utils.translation import override
 
 from rdmo.core.xml import parse_xml_to_elements
@@ -407,6 +407,11 @@ def test_sparse_keyword_indices_and_duplicate_text(prototype):
     ]
 
 
+@override_settings(TEMPLATES=[{
+    'BACKEND': 'django.template.backends.django.DjangoTemplates',
+    'APP_DIRS': True,
+    'OPTIONS': {'libraries': {'widget_tweaks': 'widget_tweaks.templatetags.widget_tweaks'}},
+}])
 def test_mapping_warnings_render_and_escape_answer_text(prototype):
     option = Option.objects.create(uri_prefix='https://example.test/terms', uri_path='unknown-method',
                                    text_lang1='Unknown method')
@@ -432,7 +437,8 @@ def test_mapping_warnings_render_and_escape_answer_text(prototype):
     provider = export_for(prototype, RadarCredentialsExportProvider)
     provider.prepare_export_session()
     form = provider.get_export_form(workspace_choices=[('workspace', 'Workspace')])
-    html = engine.get_template('plugins/exports_radar.html').render(Context({'form': form}))
+    request = RequestFactory().get('/')
+    html = engine.get_template('plugins/exports_radar.html').render(RequestContext(request, {'form': form}))
     assert 'You can export them as drafts' in html
     assert 'Radar Testdatensatz Nr 2' in html
     assert '&lt;script&gt;' in html
