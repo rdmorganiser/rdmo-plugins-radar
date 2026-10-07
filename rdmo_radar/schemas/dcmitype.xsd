@@ -12,7 +12,7 @@
 
       Created 2008-02-11
 
-      Created by 
+      Created by
 
       Tim Cole (t-cole3@uiuc.edu)
       Tom Habing (thabing@uiuc.edu)
@@ -24,7 +24,7 @@
       the allowable values for the DCMI Type Vocabulary.
     </xs:documentation>
 
- 
+
   </xs:annotation>
 
 
@@ -45,7 +45,7 @@
 		<xs:enumeration value="Text"/>
 		<xs:enumeration value="PhysicalObject"/>
             </xs:restriction>
-        </xs:simpleType> 
+        </xs:simpleType>
      </xs:union>
   </xs:simpleType>
 

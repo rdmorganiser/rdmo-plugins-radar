@@ -2638,7 +2638,7 @@ Unabhängig von Ihrer Auswahl werden Fragen zu verschiedenen Themen gestellt, di
 		<is_collection>False</is_collection>
 		<title lang="en">Intellectual Property Rights</title>
 		<short_title lang="en"/>
-		<help lang="en">Use, copyright and questions of ownership must be taken into account when &lt;b&gt;you use data from others&lt;/b&gt; or when &lt;b&gt;you generate data&lt;/b&gt;. 
+		<help lang="en">Use, copyright and questions of ownership must be taken into account when &lt;b&gt;you use data from others&lt;/b&gt; or when &lt;b&gt;you generate data&lt;/b&gt;.
 &lt;br/&gt;
 For later use, you should explain which legal rules apply and, if applicable, under which licenses you will make the data available (publication and sharing, long-term storage and/or digital preservation).</help>
 		<verbose_name lang="en"/>
@@ -4417,10 +4417,10 @@ Beispiele sind unter anderem:
 		<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/data_security/security_measures"/>
 		<is_collection>True</is_collection>
 		<is_optional>False</is_optional>
-		<help lang="en">Describe the measures taken to ensure data security (e.g., protection against unauthorized access, data recovery, transmission of sensitive data). 
+		<help lang="en">Describe the measures taken to ensure data security (e.g., protection against unauthorized access, data recovery, transmission of sensitive data).
 &lt;details&gt;
 &lt;summary style=&quot;color:blue; cursor:pointer;&quot;&gt;read more&lt;/summary&gt;
-In addition to checking the applicable boxes, provide further information wherever available. 
+In addition to checking the applicable boxes, provide further information wherever available.
 &lt;br/&gt;
 Measures for data security can be different for data in transit (e.g., while being exchanged with a project partner), stored data (data on a computer or server that can easily be accessed with proper authorization that can be used, modified and updated) and archived data (data in long-term preservation not in active use, e.g., to comply with project requirements).
 &lt;br/&gt;
@@ -4539,7 +4539,7 @@ Bitte erklären Sie außerdem die Umsetzung.
 		<text lang="en">Stored or exchanged data is encrypted by</text>
 		<help lang="en">&lt;details&gt;
 &lt;summary style=&quot;color:blue; cursor:pointer;&quot;&gt;&amp;#128161; Explanation:&lt;/summary&gt;
- Encrypting data can increase security of sensitive data by transforming readable data into a cipher which is unreadable without the correct description key.  Describe what procedures ensure protection of the data at rest and in transit, ensuring unauthorized users cannot access the information. 
+ Encrypting data can increase security of sensitive data by transforming readable data into a cipher which is unreadable without the correct description key.  Describe what procedures ensure protection of the data at rest and in transit, ensuring unauthorized users cannot access the information.
 &lt;br/&gt;
 Measures might include
 &lt;ul&gt;
@@ -6082,7 +6082,7 @@ The &lt;a href=&quot;https://www.dfg.de/en/research_funding/principles_dfg_fundi
 		<text lang="en">Are there any significant research codes or professional standards to be taken into account?</text>
 		<default_text lang="en"/>
 		<verbose_name lang="en"/>
-		<help lang="de">Neben allgemeinen wissenschaftlichen Kodizes kann es auch fachwissenschaftliche Kodizes geben. Falls Ihnen diese nicht bekannt sind, können Sie sich bei dem in Ihrer Disziplin entstandenen NFDI-Konsortium informieren. 
+		<help lang="de">Neben allgemeinen wissenschaftlichen Kodizes kann es auch fachwissenschaftliche Kodizes geben. Falls Ihnen diese nicht bekannt sind, können Sie sich bei dem in Ihrer Disziplin entstandenen NFDI-Konsortium informieren.
 Aufschluss gibt auch die Seite der &lt;a href=&quot;https://wissenschaftliche-integritaet.de/&quot; target=&quot;_blank&quot;&gt;DFG zur wissenschaftlichen Integrität&lt;/a&gt;. Hier finden sie Verweise auf Gesetze, fachspezifische Kommentierungen der Leitlinien und Erläuterungen, Fallbeispiele sowie &lt;a href=&quot;https://wissenschaftliche-integritaet.de/kommentare/links-rechtliche-ethische-rahmenbedingungen-nutzungsrechte/chapter/146/&quot; target=&quot;_blank&quot;&gt;weiterführende Links zu rechtlichen und ethischen Rahmenbedingungen&lt;/a&gt;.&lt;/p&gt;</help>
 		<text lang="de">Existieren wichtige wissenschaftliche Kodizes bzw. fachliche Normen, die Berücksichtigung finden sollten?</text>
 		<default_text lang="de"/>
@@ -7684,12 +7684,12 @@ Aufschluss gibt auch die Seite der &lt;a href=&quot;https://wissenschaftliche-in
 		<title lang="en">Dataset Description</title>
 		<short_title lang="en"/>
 		<help lang="en">The following questions serve to describe the data sets that are created and/or used in the project. The &lt;b&gt;definition of a data set&lt;/b&gt; is an important conceptual decision that must be made individually for each undertaking or project!
-&lt;br/&gt; 
+&lt;br/&gt;
 Choose a logical unit of your research data as the data set, for which the same information regarding methodology, technology, accessibility, etc. applies.</help>
 		<verbose_name lang="en">Dataset</verbose_name>
 		<title lang="de">Datensatzbeschreibung</title>
 		<short_title lang="de"/>
-		<help lang="de">Die folgenden Fragen dienen der Beschreibung der Datensätze, die im Projekt erzeugt und/oder verwendet werden. Die &lt;b&gt;Definition eines Datensatzes&lt;/b&gt; ist eine wichtige konzeptionelle Entscheidung, die für jedes Vorhaben bzw. Projekt individuell getroffen werden muss. 
+		<help lang="de">Die folgenden Fragen dienen der Beschreibung der Datensätze, die im Projekt erzeugt und/oder verwendet werden. Die &lt;b&gt;Definition eines Datensatzes&lt;/b&gt; ist eine wichtige konzeptionelle Entscheidung, die für jedes Vorhaben bzw. Projekt individuell getroffen werden muss.
 &lt;br/&gt;
 Wählen Sie als Datensatz eine logische Einheit Ihrer Forschungsdaten, für die gleiche Angaben bezüglich Methodik, Technik, Zugänglichkeit, usw. gelten.</help>
 		<verbose_name lang="de">Datensatz</verbose_name>
@@ -8344,12 +8344,12 @@ Other data, on the other hand, cannot be collected again per se. This is the cas
 		<default_text lang="en"/>
 		<verbose_name lang="en"/>
 		<help lang="de">Hier sind sowohl Daten aus vorherigen Projekten gemeint, die vielleicht nur intern auf Anfrage geteilt wurden, als auch öffentlich oder kommerziell verfügbare Daten.
-Soll z. B. ein Vergleich mit alten Messungen Teil des Projektes sein oder ein alter Datensatz unter neuen Aspekten ausgewertet werden, kann dies hier angegeben werden. 
+Soll z. B. ein Vergleich mit alten Messungen Teil des Projektes sein oder ein alter Datensatz unter neuen Aspekten ausgewertet werden, kann dies hier angegeben werden.
 Idealerweise geben Sie eine zitierfähige Quelle (z.B. über eine DOI) für die Daten an. Alternativ können Sie angeben, in welchem Projekt oder Kontext die Daten entstanden sind, falls Daten anderer Wissenschaftler nachgenutzt worden sein sollten.
 Ansonsten empfiehlt sich ein Hinweis, dass nach eigener Recherche keine geeigneten Daten zur Verfügung stehen. &lt;br/&gt;
 &lt;details&gt;
 &lt;summary style=&quot;color:blue; cursor:pointer;&quot;&gt;Erläuterung:&lt;/summary&gt;&lt;br/&gt;
-&lt;p&gt;Manche Daten können im Prinzip jederzeit neu erstellt werden. Beispiele hierfür sind etwa naturwissenschaftliche Experimentdaten oder auch Digitalisate analoger Objekte (solange die Originale nicht verlorengehen). Der Aufwand und die Kosten hierfür können natürlich durchaus beträchtlich sein. Im Hinblick auf die Frage der Notwendigkeit sollte in diesen Fällen der Aufwand einer erneuten Erstellung gegen den Aufwand der Erhaltung abgewogen werden. 
+&lt;p&gt;Manche Daten können im Prinzip jederzeit neu erstellt werden. Beispiele hierfür sind etwa naturwissenschaftliche Experimentdaten oder auch Digitalisate analoger Objekte (solange die Originale nicht verlorengehen). Der Aufwand und die Kosten hierfür können natürlich durchaus beträchtlich sein. Im Hinblick auf die Frage der Notwendigkeit sollte in diesen Fällen der Aufwand einer erneuten Erstellung gegen den Aufwand der Erhaltung abgewogen werden.
 Andere Daten wiederum lassen sich per se nicht erneut erheben. Dies ist etwa bei jeglicher Art von episodischer Beobachtungen, sei es sozialwissenschaftlicher oder naturwissenschaftlicher Art, der Fall, da diese ein bestimmtes Phänomen an einem bestimmten Zeitpunkt und/oder Ort abbilden und somit i.d.R. nicht wiederholbar sind. Ihr Wert für die spätere Verwendung durch andere sowie für eine nicht erfolgreiche oder unterlassene Veröffentlichung der Daten in einem vertrauenswürdigen Datenrepositorium oder die Übertragung in ein digitales Archiv zur digitalen Langzeitarchivierung ist ungleich höher als der von reproduzierbaren Daten.&lt;/p&gt;
 &lt;/details&gt;</help>
 		<text lang="de">Werden existierende Daten wiederverwendet?</text>
@@ -9559,13 +9559,13 @@ Das ist der Fall bei Digitalisaten analoger Objekte (falls die Originale noch vo
 		<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/conditions"/>
 		<is_collection>True</is_collection>
 		<is_optional>False</is_optional>
-		<help lang="en">Refer to the Creative Commons Licenses. Use the text field to specify licenses, including details like CC BY 4.0 International. For code refer to software licenses (&lt;a href=&quot;https://choosealicense.com/&quot; target=&quot;_blank&quot;&gt;https://choosealicense.com/&lt;/a&gt;). If not provided by the publication or sharing service, add machine readable URLs in the metadata, e .g. &lt;a href=&quot;https://creativecommons.org/licenses/by/4.0/&quot; target=&quot;_blank&quot;&gt;https://creativecommons.org/licenses/by/4.0/&lt;/a&gt; or &lt;a href=&quot;https://spdx.org/licenses/MIT.html&quot; target=&quot;_blank&quot;&gt;https://spdx.org/licenses/MIT.html&lt;/a&gt;, so that the legal situation regarding the handling of the data is permanently secured and accessible. 
+		<help lang="en">Refer to the Creative Commons Licenses. Use the text field to specify licenses, including details like CC BY 4.0 International. For code refer to software licenses (&lt;a href=&quot;https://choosealicense.com/&quot; target=&quot;_blank&quot;&gt;https://choosealicense.com/&lt;/a&gt;). If not provided by the publication or sharing service, add machine readable URLs in the metadata, e .g. &lt;a href=&quot;https://creativecommons.org/licenses/by/4.0/&quot; target=&quot;_blank&quot;&gt;https://creativecommons.org/licenses/by/4.0/&lt;/a&gt; or &lt;a href=&quot;https://spdx.org/licenses/MIT.html&quot; target=&quot;_blank&quot;&gt;https://spdx.org/licenses/MIT.html&lt;/a&gt;, so that the legal situation regarding the handling of the data is permanently secured and accessible.
 &lt;br/&gt;
 If use of general licenses is not possible, specify access rights (which group of persons or which personnel function is allowed to access data under which conditions?) and which usage rights apply (is copying and reuse in general or for research allowed. Be aware that every transfer to another system and many maintenance and preservation actions are inherently copying data).</help>
 		<text lang="en">Under which terms of use or license will the dataset be published or shared?</text>
 		<default_text lang="en"/>
 		<verbose_name lang="en"/>
-		<help lang="de">Verweisen Sie auf die Creative-Commons-Lizenzen. Nutzen Sie das Textfeld, um Lizenzen anzugeben – einschließlich spezifischer Details wie „CC BY 4.0 International“. Für Programmcode verweisen Sie bitte auf entsprechende Softwarelizenzen (&lt;a href=&quot;https://choosealicense.com/&quot; target=&quot;_blank&quot;&gt;https://choosealicense.com/&lt;/a&gt;). Sofern dies nicht bereits durch den Publikations- oder Sharing-Dienst bereitgestellt wird, fügen Sie den Metadaten maschinenlesbare URLs hinzu – z. B. &lt;a href=&quot;https://creativecommons.org/licenses/by/4.0/&quot; target=&quot;_blank&quot;&gt;https://creativecommons.org/licenses/by/4.0/&lt;/a&gt; oder &lt;a href=&quot;https://spdx.org/licenses/MIT.html&quot; target=&quot;_blank&quot;&gt;https://spdx.org/licenses/MIT.html&lt;/a&gt; –, um die rechtliche Situation bezüglich der Datennutzung dauerhaft abzusichern und zugänglich zu machen. 
+		<help lang="de">Verweisen Sie auf die Creative-Commons-Lizenzen. Nutzen Sie das Textfeld, um Lizenzen anzugeben – einschließlich spezifischer Details wie „CC BY 4.0 International“. Für Programmcode verweisen Sie bitte auf entsprechende Softwarelizenzen (&lt;a href=&quot;https://choosealicense.com/&quot; target=&quot;_blank&quot;&gt;https://choosealicense.com/&lt;/a&gt;). Sofern dies nicht bereits durch den Publikations- oder Sharing-Dienst bereitgestellt wird, fügen Sie den Metadaten maschinenlesbare URLs hinzu – z. B. &lt;a href=&quot;https://creativecommons.org/licenses/by/4.0/&quot; target=&quot;_blank&quot;&gt;https://creativecommons.org/licenses/by/4.0/&lt;/a&gt; oder &lt;a href=&quot;https://spdx.org/licenses/MIT.html&quot; target=&quot;_blank&quot;&gt;https://spdx.org/licenses/MIT.html&lt;/a&gt; –, um die rechtliche Situation bezüglich der Datennutzung dauerhaft abzusichern und zugänglich zu machen.
 &lt;br/&gt;
 Sollte die Verwendung allgemeiner Lizenzen nicht möglich sein, spezifizieren Sie bitte die Zugriffsrechte (welche Personengruppe oder welche personelle Funktion darf unter welchen Bedingungen auf die Daten zugreifen?) sowie die geltenden Nutzungsrechte (ist das Kopieren und die Wiederverwendung – allgemein oder speziell für Forschungszwecke – gestattet?). Bitte beachten Sie dabei, dass jede Übertragung in ein anderes System sowie zahlreiche Wartungs- und Archivierungsmaßnahmen zwangsläufig mit dem Kopieren von Daten verbunden sind.</help>
 		<text lang="de">Unter welchen Nutzungs- oder Lizenzbedingungen wird der Datensatz veröffentlicht oder weitergegeben?</text>
@@ -9754,7 +9754,7 @@ Please select the data to be archived, determine where it should be archived, an
 		<verbose_name lang="en">Dataset</verbose_name>
 		<title lang="de">Archivierung und Erhaltung</title>
 		<short_title lang="de"/>
-		<help lang="de">&lt;b&gt;Digitale Erhaltung&lt;/b&gt; (auch Langzeitarchivierung genannt) erleichtert den Zugang, die Authentizität und die Wiederverwendbarkeit von Daten über einen langen Zeitraum hinweg, insbesondere bei Veränderungen in Technologie, Hardware, Software und Standards. 
+		<help lang="de">&lt;b&gt;Digitale Erhaltung&lt;/b&gt; (auch Langzeitarchivierung genannt) erleichtert den Zugang, die Authentizität und die Wiederverwendbarkeit von Daten über einen langen Zeitraum hinweg, insbesondere bei Veränderungen in Technologie, Hardware, Software und Standards.
 &lt;details&gt;
 &lt;summary style=&quot;color:#4169E1; cursor:pointer;&quot;&gt;Weiterlesen&lt;/summary&gt;
 &lt;ul style=&quot;list-style:none; margin-left: -20px;&quot;&gt;

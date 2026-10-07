@@ -23,37 +23,37 @@ Addition of new element "version" with the type xs:string.
 	xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset"
 	targetNamespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset"
 	elementFormDefault="qualified" version="9.3">
-		
+
 	<xs:import namespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements"
 		schemaLocation="RadarElements.xsd"/>
-	
+
 	<xs:element name="radarDataset">
 		<xs:complexType>
 			<xs:sequence>
 				<xs:element ref="re:identifier"/>
 				<xs:element ref="re:alternateIdentifiers" minOccurs="0"/>
 				<xs:element ref="re:relatedIdentifiers" minOccurs="0"/>
-				
+
 				<xs:element ref="re:creators"/>
 				<xs:element ref="re:contributors" minOccurs="0"/>
-				
+
 				<xs:element ref="re:title"/>
 				<xs:element ref="re:additionalTitles" minOccurs="0"/>
 				<xs:element ref="re:descriptions" minOccurs="0"/>
 				<xs:element ref="re:keywords" minOccurs="0"/>
-				
+
 				<xs:element ref="re:publishers"/>
 				<xs:element ref="re:productionYear"/>
 				<xs:element ref="re:publicationYear" minOccurs="0"/>
 				<xs:element ref="re:language" minOccurs="0"/>
 				<xs:element ref="re:subjectAreas"/>
-				
+
 				<xs:element ref="re:resource"/>
 				<xs:element ref="re:geoLocations" minOccurs="0"/>
 				<xs:element ref="re:dataSources" minOccurs="0"/>
 				<xs:element ref="re:software" minOccurs="0"/>
 				<xs:element ref="re:processing" minOccurs="0"/>
-					
+
 				<xs:element ref="re:rights"/>
 				<xs:element ref="re:rightsHolders"/>
 

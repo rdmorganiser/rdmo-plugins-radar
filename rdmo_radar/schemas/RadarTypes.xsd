@@ -33,12 +33,12 @@ Addition of value "RAiD" and "SWHID" to the controlled list relatedIdentifierTyp
 Addition of value "VersionNotes" to the controlled list descriptionType.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-	xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types" xmlns:dc="http://purl.org/dc/elements/1.1/" 
+	xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types" xmlns:dc="http://purl.org/dc/elements/1.1/"
 	targetNamespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types"
 	elementFormDefault="unqualified" version="9.3">
 
 	<xs:import namespace="http://purl.org/dc/elements/1.1/" schemaLocation="https://www.radar-service.eu/schemas/dc.xsd"/>
-	
+
 	<!-- ********************** TYPE DECLARATIONS ********************** -->
 	<!-- define possible values for identifierType attribute -->
 	<xs:simpleType name="identifierType">
@@ -66,13 +66,13 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 						<xs:pattern value="\d{4}"/>
 					</xs:restriction>
 	</xs:simpleType>
-	
+
 	<xs:simpleType name="yearOrUnknown">
 					<xs:restriction base="xs:string">
 						<xs:pattern value="\d{4}|\d{4}-\d{4}|unknown"/>
 					</xs:restriction>
 	</xs:simpleType>
-	
+
 	<xs:simpleType name="softwareType">
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="Resource Production"></xs:enumeration>
@@ -81,7 +81,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"></xs:enumeration>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for subjectArea element -->
 	<xs:simpleType name="subjectArea">
 					<xs:restriction base="xs:string">
@@ -119,7 +119,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 						<xs:enumeration value="Other"/>
 					</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for rights element -->
 	<xs:simpleType name="rightsType">
 					<xs:restriction base="xs:string">
@@ -147,7 +147,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 						<xs:enumeration value="Other"/>
 					</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for data source detail element -->
 	<xs:simpleType name="dataSourceDetail">
 		<xs:restriction base="xs:string">
@@ -161,7 +161,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for additional title type element -->
 	<xs:simpleType name="additionalTitleType">
 		<xs:restriction base="xs:string">
@@ -171,7 +171,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for description type type element -->
 	<xs:simpleType name="descriptionType">
 		<xs:restriction base="xs:string">
@@ -185,7 +185,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for contributor type type element -->
 	<xs:simpleType name="contributorType">
 		<xs:restriction base="xs:string">
@@ -212,7 +212,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for related identifier type type element -->
 	<xs:simpleType name="relatedIdentifierType">
 		<xs:restriction base="xs:string">
@@ -242,7 +242,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="w3id"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<!-- define possible values for relation type type element -->
 	<xs:simpleType name="relationType">
 		<xs:restriction base="xs:string">
@@ -286,7 +286,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="IsTranslationOf"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
     <!-- define possible values for relation type type element -->
     <xs:simpleType name="funderIdentifierType">
       <xs:restriction base="xs:string">
@@ -297,7 +297,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
         <xs:enumeration value="Other"/>
       </xs:restriction>
     </xs:simpleType>
-    
+
 	<xs:simpleType name="nameIdentifierScheme">
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="Other"/>
@@ -312,7 +312,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="GND"/>
 		</xs:restriction>
 	</xs:simpleType>
-	
+
 	<xs:simpleType name="resourceType">
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="Audiovisual"/>
@@ -336,7 +336,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="Other"/>
 		</xs:restriction>
 	</xs:simpleType>
-  
+
 	<xs:simpleType name="language">
 		<xs:annotation>
 			<xs:documentation>Three letter codes from ISO 639-3 but only for languages that have also an ISO 639-1 code.</xs:documentation>
@@ -531,7 +531,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 					</xs:restriction>
 
 	</xs:simpleType>
-	
+
 	<xs:simpleType name="ISO3166-Country-Name">
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="ÅLAND ISLANDS"/>
@@ -785,7 +785,7 @@ Addition of value "VersionNotes" to the controlled list descriptionType.
 			<xs:enumeration value="ZIMBABWE"/>
 		</xs:restriction>
 	</xs:simpleType>
-						
+
 	<xs:simpleType name="ISO3166-Country-Code">
 		<xs:annotation>
 			<xs:documentation> Two-letter (alpha-2) ISO 3166-1 code for one of the 243 countries.

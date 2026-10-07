@@ -90,7 +90,7 @@ Added value for the attribute descriptionType: "VersionNotes".
       </xs:sequence>
     </xs:complexType>
   </xs:element>
-  
+
   <xs:element name="creatorAffiliation">
 	<xs:annotation>
 		<xs:documentation>The organizational or institutional affiliation of the creator.</xs:documentation>
@@ -648,7 +648,7 @@ Added value for the attribute descriptionType: "VersionNotes".
       </xs:element>
     </xs:all>
   </xs:complexType>
-  
+
   <xs:element name="fundingReferences">
     <xs:complexType>
       <xs:sequence>
@@ -668,7 +668,7 @@ Added value for the attribute descriptionType: "VersionNotes".
       </xs:sequence>
     </xs:complexType>
   </xs:element>
-  
+
   <xs:element name="funderIdentifier">
     <xs:complexType>
       <xs:simpleContent>
