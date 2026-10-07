@@ -78,10 +78,8 @@ class AnswerIndex:
 
 
 def get_answer_index(export):
-    """Cache only for this project/snapshot; lightweight Export doubles can use the old getters."""
-    project = getattr(export, 'project', None)
-    if not hasattr(getattr(project, 'values', None), 'select_related'):
-        return None
+    """Cache the single production read path for this project/snapshot."""
+    project = export.project
     key = (id(project), getattr(export, 'snapshot', None))
     cached = getattr(export, '_radar_answer_index', None)
     if cached is None or cached[0] != key:

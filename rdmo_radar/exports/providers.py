@@ -15,16 +15,15 @@ from rdmo.projects.models import Value
 from rdmo.services.providers import OauthProviderMixin
 
 from rdmo_radar.metadata.api import to_api_payload
-from rdmo_radar.metadata.constants import APIVocabulary
-from rdmo_radar.metadata.values import get_answer_index
-from rdmo_radar.metadata.xml import missing_required_fields, to_xml_payload
+from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.validation import missing_required_fields
 
-from .exports import REQUIRED_FIELD_LABELS, RadarExport
+from .base import REQUIRED_FIELD_LABELS, RadarProjectExportBase
 
 logger = logging.getLogger(__name__)
 
 
-class RadarExportProviderBase(APIVocabulary, RadarExport):
+class RadarExportProviderBase(RadarProjectExportBase):
     def get_dataset(self, set_index):
         set_index = int(set_index)
         metadata = self.compute_metadata(set_index)
@@ -65,7 +64,7 @@ class RadarExportProviderBase(APIVocabulary, RadarExport):
     def prepare_export_session(self):
         indices = self.get_dataset_indices()
         dataset_choices = [(index, self.get_dataset_title(index) or f'Dataset #{index + 1}') for index in indices]
-        radar_urls = [self.get_text('project/dataset/radar_url', set_index=index) for index in indices]
+        radar_urls = [RDMOReadContext(self, set_index=index).get_text('project/dataset/radar_url') for index in indices]
 
         self.store_in_session(self.request, 'dataset_choices', dataset_choices)
         self.store_in_session(self.request, 'radar_urls', radar_urls)
@@ -81,12 +80,10 @@ class RadarExportProviderBase(APIVocabulary, RadarExport):
         )
 
     def get_mapping_warnings(self):
-        if get_answer_index(self) is None:
-            return []
         warnings = []
         for index in self.get_dataset_indices():
             metadata = self.compute_metadata(index)
-            missing = missing_required_fields(to_xml_payload(metadata))
+            missing = missing_required_fields(metadata)
             if missing or metadata.mapping_issues:
                 warnings.append({
                     'title': metadata.title or f'Dataset #{index + 1}',

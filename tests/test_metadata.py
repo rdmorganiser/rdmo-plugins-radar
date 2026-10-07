@@ -4,7 +4,6 @@ from xml.etree import ElementTree
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 
-from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import validate_radar_xml
 from rdmo_radar.imports.imports import RadarImport
@@ -22,17 +21,10 @@ from rdmo_radar.metadata.types import (
     Rights,
     SubjectArea,
 )
-from rdmo_radar.metadata.xml import missing_required_fields, parse_xml, to_xml_payload
+from rdmo_radar.metadata.validation import missing_required_fields
+from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
-
-def make_export():
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
-    export.get_set = lambda *args, **kwargs: []
-    export.get_values = lambda *args, **kwargs: []
-    export.get_list = lambda *args, **kwargs: []
-    export.get_text = lambda *args, **kwargs: None
-    export.get_option = lambda *args, **kwargs: None
-    return export
+from .helpers import add_answer, make_export
 
 
 def make_import(xml):
@@ -60,46 +52,38 @@ def make_import(xml):
         'project/partner/organization',
         'project/partner/orcid',
     }
-    radar_import._attributes = {path: Attribute(path=path) for path in paths}
+    attributes = {path: Attribute(path=path) for path in paths}
     option_paths = {
         'identifier_type/doi',
         'resource_type_general/dataset',
         'radar_data_source/observation',
     }
-    radar_import._options = {path: Option(uri_path=path) for path in option_paths}
-    radar_import.get_attribute = lambda uri: None
-    radar_import.get_option = lambda uri: None
+    options = {path: Option(uri_path=path) for path in option_paths}
+    radar_import.get_attribute = lambda uri: attributes.get(uri.removeprefix(
+        'https://rdmorganiser.github.io/terms/domain/'))
+    radar_import.get_option = lambda uri: options.get(uri.removeprefix(
+        'https://rdmorganiser.github.io/terms/options/'))
     return radar_import
 
 
-def test_only_confirmed_dataset_paths_are_read():
-    export = make_export()
-    values = {
+def test_only_confirmed_dataset_paths_are_read(db):
+    export = make_export({
         'project/dataset/description': 'Canonical resource',
         'project/dataset/resource_type': 'Unconfirmed legacy resource',
         'project/dataset/title': 'Dataset title',
-    }
-    export.get_text = lambda path, **kwargs: values.get(path)
-    export.get_option = lambda options, path, **kwargs: 'Dataset' if path == 'project/dataset/format' else None
-
+        'project/dataset/format': 'text/csv',
+    })
     metadata = compute_metadata(export, 0)
-
     assert metadata.resource == Resource('Canonical resource')
     assert metadata.title == 'Dataset title'
+    assert not any(issue.source == 'project/dataset/format' for issue in metadata.mapping_issues)
 
 
-def test_creator_name_is_derived_from_structured_parts():
+def test_creator_name_is_derived_from_structured_parts(db):
     export = make_export()
-    export.get_set = lambda path, **kwargs: [SimpleNamespace(set_prefix='0', set_index=0)] \
-        if path == 'project/dataset/creator/name' else []
-    values = {
-        'project/dataset/creator/given_name': 'Jane',
-        'project/dataset/creator/family_name': 'Doe',
-    }
-    export.get_text = lambda path, **kwargs: values.get(path)
-
+    add_answer(export.project, 'project/dataset/creator/given_name', 'Jane', set_prefix='0')
+    add_answer(export.project, 'project/dataset/creator/family_name', 'Doe', set_prefix='0')
     metadata = compute_metadata(export, 0)
-
     assert metadata.creators[0].name == 'Doe, Jane'
     assert metadata.creators[0].given_name == 'Jane'
     assert metadata.creators[0].family_name == 'Doe'
@@ -173,11 +157,11 @@ def test_semantic_metadata_serializes_to_valid_rddm_9_3_xml():
     payload = to_xml_payload(metadata)
     xml = RadarExportRenderer().render(payload)
 
-    assert missing_required_fields(payload) == []
+    assert missing_required_fields(metadata) == ()
     assert validate_radar_xml(xml) is None
 
 
-def test_import_uses_paths_and_option_uri_paths_not_host_specific_uris():
+def test_import_uses_public_lookup_methods():
     radar_import = make_import('''
         <radar:radarDataset
             xmlns:radar="http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset"
@@ -207,10 +191,12 @@ def test_import_uses_paths_and_option_uri_paths_not_host_specific_uris():
     assert 'project/funder/grant_nr' in paths
     assert 'resource_type_general/dataset' not in option_paths
     assert 'project/dataset/version' not in paths
-    assert {issue.field for issue in radar_import.mapping_issues} >= {'descriptions', 'version', 'resource.resourceType'}
+    assert {issue.field for issue in radar_import.mapping_issues} >= {
+        'descriptions', 'version', 'resource.resourceType',
+    }
 
 
-def test_project_level_imports_are_deduplicated_across_datasets():
+def test_project_level_imports_are_deduplicated_across_datasets(db):
     radar_import = make_import('''
         <radarDataset xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements">
           <title>Dataset title</title>

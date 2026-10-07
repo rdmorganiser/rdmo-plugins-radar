@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 from django.utils.html import strip_tags
 
+from rdmo.domain.models import Attribute
+from rdmo.options.models import Option
 from rdmo.projects.exports import Export
 from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
@@ -73,50 +75,28 @@ class RDMOReadContext:
             self.issues.append(issue)
 
     def get_text(self, attribute: AttributeRef | str, collection_index: int = 0) -> str | None:
-        if self.index is not None:
-            values = self.get_values(attribute)
-            texts = list(dict.fromkeys(value.text.strip() for value in values
-                                       if value.text and value.text.strip() and not value.option))
-            if collection_index:
-                return texts[collection_index] if collection_index < len(texts) else None
-            if len(texts) > 1:
-                path = self._paths(attribute)[0]
-                self.warn(path, path, 'Multiple answers for a scalar field', '; '.join(texts))
-                return None
-            return texts[0] if texts else None
-        for path in self._paths(attribute):
-            value = self.export.get_text(
-                path,
-                set_prefix=self.set_prefix,
-                set_index=self.set_index,
-                collection_index=collection_index,
-            )
-            if value not in (None, ''):
-                return value
-        return None
+        texts = self.get_texts(attribute)
+        if collection_index:
+            return texts[collection_index] if collection_index < len(texts) else None
+        if len(texts) > 1:
+            path = self._paths(attribute)[0]
+            self.warn(path, path, 'Multiple answers for a scalar field', '; '.join(texts))
+            return None
+        return texts[0] if texts else None
 
     def get_values(self, attribute: AttributeRef | str) -> list[Value]:
         for path in self._paths(attribute):
-            if self.index is not None:
-                values = self.index.rows(
-                    path, int(self.set_index) if self.scope == 'dataset' else None,
-                    (self.set_prefix, self.set_index) if self.scope == 'group' else None,
-                )
-            else:
-                values = list(self.export.get_values(path, set_prefix=self.set_prefix, set_index=self.set_index))
+            values = self.index.rows(
+                path, int(self.set_index) if self.scope == 'dataset' else None,
+                (self.set_prefix, self.set_index) if self.scope == 'group' else None,
+            )
             if values:
                 return values
         return []
 
     def get_texts(self, attribute: AttributeRef | str) -> list[str]:
-        if self.index is not None:
-            return list(dict.fromkeys(value.text.strip() for value in self.get_values(attribute)
-                                      if value.text and value.text.strip() and not value.option))
-        for path in self._paths(attribute):
-            values = self.export.get_list(path, set_prefix=self.set_prefix, set_index=self.set_index)
-            if values:
-                return values
-        return []
+        return list(dict.fromkeys(value.text.strip() for value in self.get_values(attribute)
+                                  if value.text and value.text.strip() and not value.option))
 
     def get_option(
         self,
@@ -125,30 +105,16 @@ class RDMOReadContext:
         collection_index: int = 0,
         default: str | None = None,
     ) -> str | None:
-        if self.index is not None:
-            values = [value for value in self.get_values(attribute) if value.is_true]
-            mapped = list(dict.fromkeys(options.get(value.option.uri_path) if value.option else None
-                                        for value in values))
-            if values and (None in mapped or len(mapped) > 1):
-                path = self._paths(attribute)[0]
-                self.warn(path, path, 'Unmapped or conflicting controlled answers')
-                return default
-            return mapped[0] if mapped else default
-        for path in self._paths(attribute):
-            value = self.export.get_option(
-                options,
-                path,
-                set_prefix=self.set_prefix,
-                set_index=self.set_index,
-                collection_index=collection_index,
-            )
-            if value:
-                return value
-        return default
+        values = [value for value in self.get_values(attribute) if value.is_true]
+        mapped = list(dict.fromkeys(options.get(value.option.uri_path) if value.option else None
+                                    for value in values))
+        if values and (None in mapped or len(mapped) > 1):
+            path = self._paths(attribute)[0]
+            self.warn(path, path, 'Unmapped or conflicting controlled answers')
+            return default
+        return mapped[0] if mapped else default
 
     def get_identifier(self, path):
-        if self.index is None:
-            return self.get_text(path)
         identifiers = list(dict.fromkeys(value.external_id or value.text for value in self.get_values(path)
                                          if value.external_id or value.text))
         if len(identifiers) == 1 and '<' not in identifiers[0]:
@@ -259,17 +225,23 @@ class RDMOWriteContext:
         return max((value.collection_index for value in values), default=-1) + 1
 
     def get_attribute(self, path: str):
-        for attribute in getattr(self.import_plugin, '_attributes', {}).values():
-            if attribute.path == path:
+        attribute = self.import_plugin.get_attribute(TERMS_PREFIX + path)
+        if attribute is not None:
+            return attribute
+        # Preserve installed custom URI prefixes through the public import API.
+        for uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
+            attribute = self.import_plugin.get_attribute(uri)
+            if attribute is not None:
                 return attribute
-        return self.import_plugin.get_attribute(TERMS_PREFIX + path)
+        return None
 
     def get_option(self, path: str):
-        for option in getattr(self.import_plugin, '_options', {}).values():
-            if option.uri_path == path:
-                return option
         for prefix in OPTION_PREFIXES:
             option = self.import_plugin.get_option(prefix + path)
+            if option is not None:
+                return option
+        for uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
+            option = self.import_plugin.get_option(uri)
             if option is not None:
                 return option
         return None

@@ -24,12 +24,12 @@ def make_context(existing=None):
         'project/funder/programme/title',
         'project/funder/name_identifier',
     }
+    attributes = {path: Attribute(path=path) for path in paths}
     plugin = SimpleNamespace(
         current_project=project,
         values=[],
-        _attributes={path: Attribute(path=path) for path in paths},
-        _options={},
-        get_attribute=lambda uri: None,
+        get_attribute=lambda uri: attributes.get(uri.removeprefix(
+            'https://rdmorganiser.github.io/terms/domain/')),
         get_option=lambda uri: None,
     )
     return RDMOWriteContext(plugin, dataset_index=0)

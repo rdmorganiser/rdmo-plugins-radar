@@ -377,6 +377,27 @@ def test_answers_are_indexed_once_per_project_snapshot(prototype, django_assert_
         export.get_dataset_title(0)
 
 
+def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
+    from rdmo_radar.imports import RadarImport
+    from rdmo_radar.metadata.rdmo import RDMOWriteContext
+
+    attribute = Attribute.objects.get(path='project/dataset/description')
+    attribute.uri_prefix = 'https://custom.example.test/terms'
+    attribute.save()
+    option = Option.objects.get(uri_path='radar_data_source/survey') if Option.objects.filter(
+        uri_path='radar_data_source/survey').exists() else Option.objects.create(
+            uri_prefix='https://custom.example.test/terms', uri_path='radar_data_source/survey', text_lang1='Survey')
+    option.uri_prefix = 'https://custom.example.test/terms'
+    option.save()
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin.current_project = prototype
+    context = RDMOWriteContext(plugin, 2)
+    assert context.get_attribute('project/dataset/description') == attribute
+    assert context.get_option('radar_data_source/survey') == option
+    assert context.get_attribute('project/missing') is None
+    assert context.get_option('missing') is None
+
+
 def test_software_negative_choices_and_empty_details_are_not_exported(prototype):
     for index in range(5):
         add_value(prototype, 'project/dataset/usage_technology', '' if index == 0 else 'Display text',

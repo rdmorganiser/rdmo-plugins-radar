@@ -8,33 +8,16 @@ from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 
 from rdmo.core.exports import prettify_xml
-from rdmo.projects.exports import Export
 
-from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.constants import XMLVocabulary
-from rdmo_radar.metadata.rdmo import RDMOReadContext
 from rdmo_radar.metadata.types import MappingIssue
-from rdmo_radar.metadata.values import get_answer_index
-from rdmo_radar.metadata.xml import missing_required_fields, to_xml_payload
+from rdmo_radar.metadata.validation import missing_required_fields
+from rdmo_radar.metadata.xml import to_xml_payload
 
+from .base import REQUIRED_FIELD_LABELS, RadarProjectExportBase
 from .renderers import RadarExportRenderer
 from .validation import get_radar_validation_errors
 
 logger = logging.getLogger(__name__)
-
-REQUIRED_FIELD_LABELS = {
-    'identifier': _('Identifier'),
-    'identifier.identifierType': _('Identifier type'),
-    'creators.creator': _('Creator'),
-    'title': _('Title'),
-    'publishers.publisher': _('Publisher'),
-    'productionYear': _('Production year'),
-    'subjectAreas.subjectArea': _('Subject area'),
-    'resource.value': _('Resource description'),
-    'resource.resourceType': _('Resource type'),
-    'rights.controlledRights': _('Rights'),
-    'rightsHolders.rightsHolder': _('Rights holder'),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,28 +39,11 @@ class RadarXmlExportFile:
         return bool(self.missing_fields or self.validation_errors or self.mapping_issues)
 
 
-class RadarExport(XMLVocabulary, Export):
-    def compute_metadata(self, set_index):
-        return compute_metadata(self, set_index)
-
+class RadarExport(RadarProjectExportBase):
     def get_dataset(self, set_index):
         metadata = self.compute_metadata(set_index)
         self.mapping_issues = metadata.mapping_issues
         return to_xml_payload(metadata)
-
-    def get_dataset_title(self, set_index):
-        context = RDMOReadContext(self, set_index=int(set_index))
-        return context.get_text('project/dataset/title') or context.get_text('project/dataset/id')
-
-    def get_dataset_indices(self):
-        """Discover datasets from collection labels and explicit titles."""
-        index = get_answer_index(self)
-        if index is not None:
-            return index.dataset_indices()
-        indices = set()
-        for attribute in ('project/dataset/title', 'project/dataset/id'):
-            indices.update(value.set_index for value in self.get_set(attribute))
-        return sorted(indices)
 
     def render(self):
         try:
@@ -107,9 +73,8 @@ class RadarExport(XMLVocabulary, Export):
                 suffix += 1
             names.add(file_name.casefold())
             try:
-                self.mapping_issues = []
-                dataset = self.get_dataset(set_index)
-                xmldata = prettify_xml(RadarExportRenderer().render(dataset))
+                metadata = self.compute_metadata(set_index)
+                xmldata = prettify_xml(RadarExportRenderer().render(to_xml_payload(metadata)))
             except Exception as error:
                 logger.exception('Could not generate RADAR XML file %s', file_name)
                 raise RadarXmlGenerationError(
@@ -118,7 +83,7 @@ class RadarExport(XMLVocabulary, Export):
 
             missing_fields = tuple(
                 MissingMetadataField(path, REQUIRED_FIELD_LABELS.get(path, path))
-                for path in missing_required_fields(dataset)
+                for path in missing_required_fields(metadata)
             )
             try:
                 validation_errors = get_radar_validation_errors(xmldata)
@@ -131,7 +96,7 @@ class RadarExport(XMLVocabulary, Export):
                 xml_data=xmldata,
                 missing_fields=missing_fields,
                 validation_errors=validation_errors,
-                mapping_issues=tuple(self.mapping_issues),
+                mapping_issues=tuple(metadata.mapping_issues),
             ))
         return files
 

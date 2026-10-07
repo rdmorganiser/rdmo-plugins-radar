@@ -40,8 +40,8 @@ def to_xml_payload(metadata: RadarMetadata) -> dict:
             }
             for identifier in metadata.related_identifiers
         ]}
-    _serialize_agents(data, 'creators', 'creator', metadata.creators, api=False)
-    _serialize_agents(data, 'contributors', 'contributor', metadata.contributors, api=False)
+    _serialize_agents(data, 'creators', 'creator', metadata.creators)
+    _serialize_agents(data, 'contributors', 'contributor', metadata.contributors)
     if metadata.title:
         data['title'] = metadata.title
     if metadata.additional_titles:
@@ -161,33 +161,7 @@ def parse_xml(root: Element) -> RadarMetadata:
     return metadata
 
 
-def missing_required_fields(payload: dict) -> list[str]:
-    """Return required standalone XML fields absent from an RDDM payload."""
-    creators = payload.get('creators', {}).get('creator', [])
-    publishers = payload.get('publishers', {}).get('publisher', [])
-    subject_areas = payload.get('subjectAreas', {}).get('subjectArea', [])
-    rights_holders = payload.get('rightsHolders', {}).get('rightsHolder', [])
-    checks = {
-        'identifier': payload.get('identifier'),
-        'identifier.identifierType': payload.get('identifierType'),
-        'creators.creator': any(value.get('creatorName') for value in creators),
-        'title': payload.get('title'),
-        'publishers.publisher': any(_named_value(value) for value in publishers),
-        'productionYear': payload.get('productionYear'),
-        'subjectAreas.subjectArea': any(value.get('controlledSubjectAreaName') for value in subject_areas),
-        'resource.value': payload.get('resource', {}).get('value'),
-        'resource.resourceType': payload.get('resource', {}).get('resourceType'),
-        'rights.controlledRights': payload.get('rights', {}).get('controlledRights'),
-        'rightsHolders.rightsHolder': any(_named_value(value) for value in rights_holders),
-    }
-    return [field for field, value in checks.items() if value in (None, '', [], False)]
-
-
-def _named_value(value: str | dict) -> str | None:
-    return value.get('value') if isinstance(value, dict) else value
-
-
-def _serialize_agents(data: dict, container: str, prefix: str, agents: list[Agent], *, api: bool) -> None:
+def _serialize_agents(data: dict, container: str, prefix: str, agents: list[Agent]) -> None:
     if not agents:
         return
     data[container] = {prefix: []}
@@ -207,7 +181,7 @@ def _serialize_agents(data: dict, container: str, prefix: str, agents: list[Agen
             ]
         if agent.affiliations:
             affiliations = [_serialize_affiliation(value) for value in agent.affiliations]
-            item[f'{prefix}Affiliation'] = affiliations if api else affiliations[0]
+            item[f'{prefix}Affiliation'] = affiliations[0]
         data[container][prefix].append(item)
 
 

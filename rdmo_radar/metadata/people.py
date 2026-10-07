@@ -7,29 +7,15 @@ CONTRIBUTOR_NAME = 'project/partner/name'
 
 
 def read_creators(context: RDMOReadContext) -> list[Agent]:
-    if context.index is not None:
-        return [agent for group in context.groups(CREATOR_NAME, 'project/dataset/creator/given_name',
-                                                  'project/dataset/creator/family_name')
-                if (agent := _read_agent(group, 'project/dataset/creator')) is not None]
-    sets = context.export.get_set(CREATOR_NAME, set_prefix=str(context.set_index))
-    return [
-        agent for value in sets
-        if (agent := _read_agent(
-            context.group(value.set_prefix, value.set_index),
-            'project/dataset/creator',
-        )) is not None
-    ]
+    return [agent for group in context.groups(CREATOR_NAME, 'project/dataset/creator/given_name',
+                                              'project/dataset/creator/family_name')
+            if (agent := _read_agent(group, 'project/dataset/creator')) is not None]
 
 
 def read_contributors(context: RDMOReadContext) -> list[Agent]:
-    if context.index is not None:
-        return [agent for group in context.shared().groups(CONTRIBUTOR_NAME, 'project/partner/given_name',
-                                                           'project/partner/family_name')
-                if (agent := _read_partner(group)) is not None]
-    return [
-        agent for value in context.export.get_set(CONTRIBUTOR_NAME)
-        if (agent := _read_partner(RDMOReadContext(context.export, set_index=value.set_index))) is not None
-    ]
+    return [agent for group in context.shared().groups(CONTRIBUTOR_NAME, 'project/partner/given_name',
+                                                       'project/partner/family_name')
+            if (agent := _read_partner(group)) is not None]
 
 
 def write_creators(context: RDMOWriteContext, creators: list[Agent]) -> None:

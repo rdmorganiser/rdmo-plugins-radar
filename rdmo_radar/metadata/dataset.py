@@ -80,8 +80,7 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
 
 def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
     subjects = []
-    values = (context.shared().get_values('project/research_field/title') if context.index is not None
-              else context.export.get_set('project/research_field/title'))
+    values = context.shared().get_values('project/research_field/title')
     for value in values:
         if not value.is_true:
             continue
