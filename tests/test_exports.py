@@ -94,7 +94,10 @@ def test_oauth_render_redirects_and_preserves_workspace_request():
     assert response.status_code == 302
     assert query['client_id'] == ['configured-client-id']
     assert query['redirect_uri'] == ['https://rdmo.example.test/services/oauth/radar/callback/']
-    assert provider.get_from_session(provider.request, 'request') == ('get', provider.get_get_url())
+    assert provider.get_get_url() == 'https://radar.example.test/radar/api/workspaces'
+    assert provider.get_from_session(provider.request, 'request') == (
+        'get', 'https://radar.example.test/radar/api/workspaces',
+    )
     assert provider.get_from_session(provider.request, 'state') == query['state'][0]
 
 
@@ -268,6 +271,24 @@ def test_oauth_success_callback_handles_malformed_response(monkeypatch):
     response = SimpleNamespace(json=lambda: ['invalid'])
     assert 'existing draft' in str(provider.post_success(provider.request, response)['errors'][0])
     assert 'try again later' in str(provider.get_success(provider.request, response)['errors'][0])
+
+
+def test_oauth_workspace_callback_stores_locally_sorted_choices(monkeypatch):
+    provider = make_provider(provider_class=RadarExportProvider)
+    provider.store_in_session(provider.request, 'project_id', 1)
+    monkeypatch.setattr('rdmo_radar.exports.providers.redirect', lambda *args: args)
+    response = SimpleNamespace(json=lambda: {'data': [
+        {'id': 'z', 'descriptiveMetadata': {'title': 'zebra'}},
+        {'id': 'a1', 'descriptiveMetadata': {'title': 'Alpha'}},
+        {'id': 'b', 'descriptiveMetadata': {'title': 'Beta'}},
+        {'id': 'a2', 'descriptiveMetadata': {'title': 'alpha'}},
+    ]})
+
+    assert provider.get_success(provider.request, response) == ('project_export', 1, 'radar')
+    assert provider.get_from_session(provider.request, 'workspace_choices') == [
+        ('a1', 'Alpha'), ('a2', 'alpha'), ('b', 'Beta'), ('z', 'zebra'),
+    ]
+    assert provider.get_from_session(provider.request, 'get') is True
 
 
 def test_credentials_provider_uses_json_api_and_registered_url():

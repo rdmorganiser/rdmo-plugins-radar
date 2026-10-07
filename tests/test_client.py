@@ -51,9 +51,21 @@ def test_workspace_request_contract(client, monkeypatch):
 
     monkeypatch.setattr('rdmo_radar.exports.client.requests.get', get)
     assert client.get_workspaces('token') == [('workspace', 'Workspace')]
-    assert calls == [('https://radar.example.test/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title', {
+    assert calls == [('https://radar.example.test/radar/api/workspaces', {
         'timeout': 17, 'headers': {'Authorization': 'Bearer token'},
     })]
+
+
+def test_workspace_choices_are_sorted_locally_and_stably(client, monkeypatch):
+    workspaces = [
+        {'id': 'z', 'descriptiveMetadata': {'title': 'zebra'}},
+        {'id': 'a1', 'descriptiveMetadata': {'title': 'Alpha'}},
+        {'id': 'b', 'descriptiveMetadata': {'title': 'Beta'}},
+        {'id': 'a2', 'descriptiveMetadata': {'title': 'alpha'}},
+    ]
+    monkeypatch.setattr('rdmo_radar.exports.client.requests.get',
+                        lambda *args, **kwargs: response({'data': workspaces}))
+    assert client.get_workspaces('token') == [('a1', 'Alpha'), ('a2', 'alpha'), ('b', 'Beta'), ('z', 'zebra')]
 
 
 def test_dataset_creation_contract_and_no_followup_validation(client, monkeypatch):

@@ -73,11 +73,12 @@ def workspace_choices(data: dict) -> list[tuple[str, str]]:
         if not isinstance(title, str) or not title:
             raise RadarProtocolError('get_workspaces')
         choices.append((workspace['id'], title))
+    choices.sort(key=lambda choice: choice[1].casefold())
     return choices
 
 
 def workspaces_url(radar_url: str) -> str:
-    return f'{radar_url.rstrip("/")}/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title'
+    return f'{radar_url.rstrip("/")}/radar/api/workspaces'
 
 
 def dataset_url(radar_url: str, workspace_id: str) -> str:
