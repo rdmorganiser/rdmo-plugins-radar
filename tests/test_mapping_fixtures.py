@@ -398,6 +398,22 @@ def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     assert context.get_option('missing') is None
 
 
+@pytest.mark.parametrize(('language', 'url_language'), [('en', 'en'), ('de', 'de')])
+def test_completed_export_records_id_and_url_for_selected_dataset(prototype, language, url_language):
+    add_value(prototype, 'project/dataset/radar_id', 'existing-id', set_index=0)
+    add_value(prototype, 'project/dataset/radar_url', 'existing-url', set_index=0)
+    provider = export_for(prototype, RadarCredentialsExportProvider)
+    provider.request.LANGUAGE_CODE = language
+    provider.store_in_session(provider.request, 'project_id', prototype.pk)
+    provider.store_in_session(provider.request, 'set_index', '1')
+    response = provider.complete_export(provider.request, 'new-id')
+    expected_url = f'https://radar.example.test/radar/{url_language}/dataset/new-id'
+    assert response.url == expected_url
+    assert prototype.values.get(attribute__path='project/dataset/radar_id', set_index=1).text == 'new-id'
+    assert prototype.values.get(attribute__path='project/dataset/radar_url', set_index=1).text == expected_url
+    assert prototype.values.get(attribute__path='project/dataset/radar_id', set_index=0).text == 'existing-id'
+
+
 def test_software_negative_choices_and_empty_details_are_not_exported(prototype):
     for index in range(5):
         add_value(prototype, 'project/dataset/usage_technology', '' if index == 0 else 'Display text',

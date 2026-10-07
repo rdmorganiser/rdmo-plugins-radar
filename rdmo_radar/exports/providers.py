@@ -19,6 +19,17 @@ from rdmo_radar.metadata.rdmo import RDMOReadContext
 from rdmo_radar.metadata.validation import missing_required_fields
 
 from .base import REQUIRED_FIELD_LABELS, RadarProjectExportBase
+from .client import (
+    RadarAuthenticationError,
+    RadarAuthorizationError,
+    RadarClientError,
+    RadarMetadataRejected,
+    RadarProtocolError,
+    dataset_url,
+    error_for_response,
+    workspace_choices,
+    workspaces_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +110,8 @@ class RadarExportProviderBase(RadarProjectExportBase):
             'workspace_choices',
             'radar_urls',
             'project_id',
-            'set_index'
+            'set_index',
+            'operation',
         ):
             self.pop_from_session(request, key)
 
@@ -119,16 +131,19 @@ class RadarExportProviderBase(RadarProjectExportBase):
         return {'Authorization': f'Bearer {access_token}'}
 
     def get_workspace_choices(self, response):
-        return [
-            (workspace.get('id'), workspace.get('descriptiveMetadata', {}).get('title'))
-            for workspace in response.json().get('data', [])
-        ]
+        try:
+            data = response.json()
+        except ValueError:
+            raise RadarProtocolError('get_workspaces') from None
+        if not isinstance(data, dict):
+            raise RadarProtocolError('get_workspaces')
+        return workspace_choices(data)
 
     def get_get_url(self):
-        return f'{self.radar_url}/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title'
+        return workspaces_url(self.radar_url)
 
     def get_post_url(self, workspace_id):
-        return f'{self.radar_url}/radar/api/workspaces/{workspace_id}/datasets'
+        return dataset_url(self.radar_url, workspace_id)
 
     def get_post_data(self, set_index):
         now = int(time.time() * 1000)
@@ -150,7 +165,19 @@ class RadarExportProviderBase(RadarProjectExportBase):
         }
 
     def post_success(self, request, response):
-        radar_id = response.json().get('id')
+        try:
+            data = response.json()
+        except ValueError:
+            data = None
+        radar_id = data.get('id') if isinstance(data, dict) else None
+        if not isinstance(radar_id, str) or not radar_id.strip():
+            return render(request, 'core/error.html', {
+                'title': _('RADAR error'),
+                'errors': [self.get_client_error_message(RadarProtocolError('create_dataset'))],
+            }, status=200)
+        return self.complete_export(request, radar_id)
+
+    def complete_export(self, request, radar_id):
         if radar_id:
             project_id = self.get_from_session(self.request, 'project_id')
             set_index = self.get_from_session(self.request, 'set_index')
@@ -207,6 +234,19 @@ class RadarExportProviderBase(RadarProjectExportBase):
     def request_timeout(self):
         return settings.RADAR_PROVIDER.get('request_timeout', 30)
 
+    def get_client_error_message(self, error):
+        if error.code == 'invalid_client':
+            return _('RADAR rejected the configured client. Please contact an administrator.')
+        if isinstance(error, RadarAuthenticationError):
+            return _('RADAR login failed or expired. Please check your credentials and log in again.')
+        if isinstance(error, RadarAuthorizationError):
+            return _('Your RADAR account does not have permission for this operation. Check workspace access.')
+        if isinstance(error, RadarMetadataRejected):
+            return _('RADAR rejected the dataset metadata. Review the metadata and mapping warnings before retrying.')
+        if error.operation == 'create_dataset':
+            return _('The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.')
+        return _('RADAR could not complete the request. Please try again later.')
+
 
 class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
@@ -223,6 +263,9 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
                 error_code = response.json().get('error') if response is not None else None
             except (AttributeError, ValueError):
                 error_code = None
+
+            if error_code not in ('invalid_client', 'invalid_grant'):
+                error_code = 'unknown'
 
             logger.error(
                 'RADAR OAuth token exchange failed: status=%s error=%s',
@@ -258,6 +301,7 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
             form = self.get_export_form()
             return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
 
+        self.store_in_session(self.request, 'operation', 'get_workspaces')
         return self.get(self.request, self.get_get_url())
 
     def submit(self):
@@ -270,6 +314,7 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
         if form.is_valid():
             self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
+            self.store_in_session(self.request, 'operation', 'create_dataset')
             return self.post(
                 self.request,
                 self.get_post_url(form.cleaned_data['workspace']),
@@ -279,8 +324,14 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
 
     def get_success(self, request, response):
+        try:
+            choices = self.get_workspace_choices(response)
+        except RadarClientError as error:
+            return render(request, 'core/error.html', {
+                'title': _('RADAR error'), 'errors': [self.get_client_error_message(error)],
+            }, status=200)
         self.store_in_session(request, 'get', True)
-        self.store_in_session(request, 'workspace_choices', self.get_workspace_choices(response))
+        self.store_in_session(request, 'workspace_choices', choices)
         return redirect('project_export', self.get_from_session(request, 'project_id'), self.key)
 
     @property
@@ -343,5 +394,5 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         return None
 
     def get_error_message(self, response):
-        response_data = response.json()
-        return response_data.get('exception') or response_data.get('error')
+        operation = self.get_from_session(self.request, 'operation') or 'get_workspaces'
+        return self.get_client_error_message(error_for_response(response, operation))

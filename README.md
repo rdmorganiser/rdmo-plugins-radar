@@ -54,8 +54,10 @@ The modes are:
 * `oauth`: use `RadarExportProvider`, the browser authorization-code flow, and `redirect_uri`. This is the default
   for existing installations without an `authentication_mode` setting.
 * `credentials`: use `RadarCredentialsExportProvider`. Users enter a local RADAR username and password. RDMO sends
-  them directly to the RADAR token endpoint, does not store them, and retains the bearer token only for that single
-  export. The token request derives `https://rdmo.example.com/` from `redirect_uri`.
+  them directly to the RADAR token endpoint and does not store them. The bearer token stays in the session
+  during the export workflow and is removed on success, cancellation, or authentication failure. Metadata,
+  permission, and upstream errors preserve the export form and selections. The token request derives
+  `https://rdmo.example.com/` from `redirect_uri`.
 
 For OAuth, `oauth_token_auth_method` controls how RDMO authenticates the client at RADAR's token endpoint:
 
@@ -108,6 +110,20 @@ dataset collection labels, nested answers, DFG subject areas, creation methods, 
 funding. An explicit dataset title takes precedence over its collection label. Mapping warnings
 identify answers that need completion in RADAR. See [the mapping documentation](docs/metadata-mapping.md)
 for supported fields and deferred decisions.
+
+File/media formats do not determine RADAR resource type. Resource type remains unset until users complete
+it in RADAR. RADAR XML import also leaves the file-format field untouched when importing resource types.
+
+Direct exports use an independent REST adapter, audited against populated public RADAR API responses.
+See [the REST contract references](docs/radar-api-contract.md). The credentials provider uses a small HTTP
+client with `RADAR_PROVIDER['request_timeout']` (default: 30 seconds) on each request. Metadata rejection
+and missing workspace permissions are reported without requesting another login. Creation is never retried
+automatically; if the outcome is uncertain, check RADAR for an existing draft before retrying.
+
+OAuth continues to use RDMO's `OauthProviderMixin`. Its current transport does not expose timeout or
+request-injection hooks and logs some upstream response bodies itself. Improving those hooks and logs,
+and sharing RADAR's local answer index with RDMO core, are separate upstream follow-ups. Plugin-owned
+client diagnostics log only operation, HTTP status, recognized error codes, and error category.
 
 For diagnostics, RADAR administrators can use the API endpoints
 `GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does

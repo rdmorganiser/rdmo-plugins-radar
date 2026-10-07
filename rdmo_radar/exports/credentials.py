@@ -5,8 +5,7 @@ from django.conf import settings
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 
-import requests
-
+from .client import RadarAuthenticationError, RadarClient, RadarClientError
 from .providers import RadarExportProviderBase
 
 
@@ -60,24 +59,11 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
             return self.render_credentials_form(form)
 
         try:
-            response = requests.post(
-                self.token_url,
-                json={
-                    'clientId': self.client_id,
-                    'clientSecret': self.client_secret,
-                    'userName': form.cleaned_data['username'],
-                    'userPassword': form.cleaned_data['password'],
-                    'redirectUrl': self.redirect_url
-                },
-                timeout=self.request_timeout
+            access_token = self.client.authenticate(
+                form.cleaned_data['username'], form.cleaned_data['password']
             )
-            response.raise_for_status()
-            access_token = response.json().get('access_token')
-        except (requests.RequestException, AttributeError, ValueError):
-            access_token = None
-
-        if not access_token:
-            form.add_error(None, _('RADAR login failed. Please check your credentials and try again.'))
+        except RadarClientError as error:
+            form.add_error(None, self.get_client_error_message(error))
             return self.render_credentials_form(form)
 
         self.store_in_session(self.request, 'access_token', access_token)
@@ -86,24 +72,21 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
     def render_export_form(self, form=None, error=None):
         if form is None:
             try:
-                response = requests.get(
-                    self.get_get_url(),
-                    headers=self.get_authorization_headers(self.get_from_session(self.request, 'access_token')),
-                    timeout=self.request_timeout
+                workspace_choices = self.client.get_workspaces(
+                    self.get_from_session(self.request, 'access_token')
                 )
-                response.raise_for_status()
-                workspace_choices = self.get_workspace_choices(response)
-            except (requests.RequestException, AttributeError, ValueError):
-                self.clear_session(self.request)
-                return self.render_credentials_form(
-                    error=_('RADAR workspaces could not be retrieved. Please log in and try again.')
-                )
+            except RadarAuthenticationError as error:
+                self.pop_from_session(self.request, 'access_token')
+                return self.render_credentials_form(error=self.get_client_error_message(error))
+            except RadarClientError as client_error:
+                form = self.get_export_form()
+                error = self.get_client_error_message(client_error)
+            else:
+                self.store_in_session(self.request, 'workspace_choices', workspace_choices)
+                form = self.get_export_form(workspace_choices=workspace_choices)
 
-            self.store_in_session(self.request, 'workspace_choices', workspace_choices)
-            form = self.get_export_form(workspace_choices=workspace_choices)
-
-            if not workspace_choices:
-                error = _('No RADAR workspaces are available for this account.')
+                if not workspace_choices:
+                    error = _('No RADAR workspaces are available for this account.')
 
         return render(self.request, 'plugins/exports_radar.html', {
             'form': form,
@@ -123,26 +106,28 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
 
         try:
-            response = requests.post(
-                self.get_post_url(form.cleaned_data['workspace']),
-                json=self.get_post_data(form.cleaned_data['dataset']),
-                headers=self.get_authorization_headers(self.get_from_session(self.request, 'access_token')),
-                timeout=self.request_timeout
+            data = self.client.create_dataset(
+                self.get_from_session(self.request, 'access_token'),
+                form.cleaned_data['workspace'],
+                self.get_post_data(form.cleaned_data['dataset']),
             )
-            response.raise_for_status()
-            result = self.post_success(self.request, response)
-        except (requests.RequestException, AttributeError, ValueError):
-            result = self.render_credentials_form(
-                error=_('The dataset could not be exported to RADAR. Please log in and try again.')
-            )
-        finally:
-            self.clear_session(self.request)
+        except RadarAuthenticationError as error:
+            self.pop_from_session(self.request, 'access_token')
+            return self.render_credentials_form(error=self.get_client_error_message(error))
+        except RadarClientError as error:
+            return self.render_export_form(form, error=self.get_client_error_message(error))
 
+        result = self.complete_export(self.request, data['id'])
+        self.clear_session(self.request)
         return result
 
     @property
+    def client(self):
+        return RadarClient(self.radar_url, self.client_id, self.client_secret, self.redirect_url, self.request_timeout)
+
+    @property
     def token_url(self):
-        return f'{self.radar_url}/radar/api/tokens'
+        return self.client.token_url
 
     @property
     def redirect_url(self):
