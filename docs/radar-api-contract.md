@@ -25,5 +25,24 @@ XML renderer's intermediate dictionary.
 
 The [official API documentation](https://radar.products.fiz-karlsruhe.de/en/radarfeatures/radar-api)
 documents request endpoints and the RDDM 9.3 technical metadata envelope. These public
-response references establish populated shapes; local tests do not claim to replace
-a live authenticated draft-creation smoke test.
+response references establish populated shapes; local tests do not perform live
+authenticated draft creation.
+
+## Observed authenticated draft export
+
+On 2026-10-08 the user reported that export successfully created and opened a RADAR
+dataset after workspace discovery switched to the bare `/radar/api/workspaces` endpoint.
+The user downloaded its descriptive metadata and supplied the unchanged document at
+[RADAR_DATASET_DESCRIPTIVE_METADATA.xml](../tests/xml/RADAR_DATASET_DESCRIPTIVE_METADATA.xml).
+They confirmed that RDMO answers had changed since the saved prototype: the observed
+dataset includes the additional Web scraping creation method.
+
+Offline regression tests reconstruct this source scenario by adding catalog option
+`dfg_new_data/dfg-nd_11` to dataset 0 in a separate fixture. They compare generated XML
+structurally with the downloaded document and check both providers against an explicit,
+hand-written REST expectation. The original prototype remains unchanged.
+
+This evidence confirms preservation of the document's populated descriptive values;
+the downloaded XML does not independently establish JSON wire shapes or publication
+readiness. The draft remains incomplete under the bundled XSD. See the
+[observed metadata gap report](metadata-mapping.md#observed-draft-metadata-and-gaps).

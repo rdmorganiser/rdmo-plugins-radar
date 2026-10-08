@@ -79,3 +79,42 @@ subject and source vocabularies, licenses, nested datasets, funding groups, and 
 The expected prototype output contains two labeled datasets, the first dataset's description,
 three source entries (`Survey`, `Trial`, `Trial`), its CC-BY license, and shared keywords, funding,
 and the Ancient Cultures subject retained as `Other` with its label.
+
+## Observed draft metadata and gaps
+
+On 2026-10-08 the user reported successful creation and opening of a RADAR dataset and
+supplied its [downloaded descriptive XML](../tests/xml/RADAR_DATASET_DESCRIPTIVE_METADATA.xml).
+The live RDMO answers included Web scraping, which is absent from the older prototype
+project snapshot. A separate regression scenario adds that option to dataset 0 without
+changing the original fixture.
+
+The document preserves the expected title, acronym as an additional title, all three
+keywords, Ancient Cultures subject label, resource description, four creation methods,
+CC-BY licence, and DFG funding name, award number, and programme title. Comparison with
+the saved prototype plus the confirmed extra method found no clear loss in those fields.
+
+| Gap in the downloaded document | Current mapping or source limitation |
+| --- | --- |
+| Identifier and scheme | No populated dataset publication PID in the prototype; no identifier is invented. |
+| Creators | No established dataset-creator answers. Coordination and data-management names exist, but mapping them to creators or contributors is deferred. |
+| Publishers | No publisher reader in the current RDMO mapping. The adapters support publishers when supplied in canonical metadata. |
+| Production year | No agreed dataset production-date mapping. Project dates do not supply this value. |
+| Resource type | Intentionally unset pending an agreed source; file formats are not resource types. |
+| Rights holders | No established rights-holder-name answers in the prototype. |
+
+These are the missing publication fields reported by the plugin's canonical completeness
+check. Successful draft creation does not make the downloaded XML complete under the
+bundled XSD: it lacks the required identifier and resource-type attribute, among other
+publication fields. The tests retain these warnings and allow draft XML download.
+
+Other absent fields include contributors, typed descriptions, language, software,
+processing, geolocation, version, publication year, alternate/related identifiers, and
+related information. Funding has no award URL or persistent funder identifier here.
+Their absence alone does not demonstrate export loss: some lack populated established
+source answers and others have deferred mappings. In particular, coordination/data-management
+people and `project/dataset/usage_description` text are possible future mapping work,
+not inferred creators, contributor roles, abstracts, or processing statements.
+
+Regression tests remain offline and production mapping behavior is unchanged. The
+[contract notes](radar-api-contract.md#observed-authenticated-draft-export) distinguish
+the live descriptive-value evidence from the independently specified REST contract.

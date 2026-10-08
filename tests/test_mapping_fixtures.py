@@ -22,8 +22,9 @@ from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors
 from rdmo_radar.metadata.crosswalks import SUBJECT_OPTIONS
 from rdmo_radar.metadata.rdmo import RDMOReadContext
-from rdmo_radar.metadata.types import Agent, Identifier, Resource, Rights, SubjectArea
-from rdmo_radar.metadata.xml import to_xml_payload
+from rdmo_radar.metadata.types import Agent, FundingReference, Identifier, RadarMetadata, Resource, Rights, SubjectArea
+from rdmo_radar.metadata.validation import missing_required_fields
+from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
 XML_DIRECTORY = Path(__file__).parent / 'xml'
 URI = '{http://purl.org/dc/elements/1.1/}uri'
@@ -80,6 +81,101 @@ def add_value(project, path, text='', option=None, **kwargs):
         Attribute.objects.filter(pk=attribute.pk).update(path=path)
         attribute.path = path
     return Value.objects.create(project=project, attribute=attribute, text=text, option=option, **kwargs)
+
+
+@pytest.fixture
+def observed_draft_project(prototype):
+    # The live RDMO answers gained Web scraping after the saved prototype snapshot.
+    add_value(prototype, 'project/dataset/creation_methods',
+              option=Option.objects.get(uri_path='dfg_new_data/dfg-nd_11'),
+              set_prefix='0', set_index=0, collection_index=11, value_type='option')
+    return prototype
+
+
+@pytest.fixture
+def observed_draft_metadata():
+    # Explicit expectations from the downloaded document, independent of both adapters.
+    return RadarMetadata(
+        title='Radar Testdatensatz Nr 1',
+        additional_titles=['RADAR Test'],
+        keywords=['Schlagwort 1', 'Schlagwort 2', 'Schlagwort 3'],
+        subject_areas=[SubjectArea('Other', 'Humanities and Social Sciences / Ancient Cultures')],
+        resource=Resource('ein Datensatz zum testen des neuen RADAR Plugins'),
+        data_sources=[
+            Resource('Surveys', 'Survey'),
+            Resource('Laboratory experiments', 'Trial'),
+            Resource('Social science experiments', 'Trial'),
+            Resource('Web scraping', 'Other'),
+        ],
+        rights=Rights('CC BY 4.0 Attribution'),
+        funding_references=[FundingReference(funder_name='DFG', award_number='123345', award_title='Program42')],
+    )
+
+
+def xml_structure(element):
+    """Compare expanded names and all values, ignoring indentation and prefix spelling."""
+    return (
+        element.tag, element.attrib,
+        element.text if element.text and element.text.strip() else '',
+        element.tail if element.tail and element.tail.strip() else '',
+        tuple(xml_structure(child) for child in element),
+    )
+
+
+def test_downloaded_radar_draft_parses_expected_metadata(observed_draft_metadata):
+    path = XML_DIRECTORY / 'RADAR_DATASET_DESCRIPTIVE_METADATA.xml'
+    metadata = parse_xml(ElementTree.parse(path).getroot())
+    assert metadata == observed_draft_metadata
+    assert missing_required_fields(metadata) == (
+        'identifier', 'identifier.identifierType', 'creators.creator', 'publishers.publisher',
+        'productionYear', 'resource.resourceType', 'rightsHolders.rightsHolder',
+    )
+    # RADAR accepted a draft, not a document complete enough for the bundled XSD.
+    assert get_radar_validation_errors(path)
+
+
+def test_updated_prototype_xml_matches_downloaded_radar_draft(observed_draft_project, observed_draft_metadata):
+    export = export_for(observed_draft_project)
+    assert export.compute_metadata(0) == observed_draft_metadata
+    assert export.compute_metadata(1).data_sources == []
+    first = export.prepare_files()[0]
+    expected = ElementTree.parse(XML_DIRECTORY / 'RADAR_DATASET_DESCRIPTIVE_METADATA.xml').getroot()
+    assert xml_structure(ElementTree.fromstring(first.xml_data)) == xml_structure(expected)
+    assert tuple(field.path for field in first.missing_fields) == missing_required_fields(observed_draft_metadata)
+    assert first.has_warnings and first.validation_errors and not first.mapping_issues
+
+    export.request = RequestFactory().get('/', {'download': '1'})
+    with zipfile.ZipFile(io.BytesIO(export.render().content)) as archive:
+        assert archive.read(first.file_name) == first.xml_data
+
+
+@pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
+def test_both_providers_export_observed_radar_draft(observed_draft_project, cls):
+    provider = export_for(observed_draft_project, cls)
+    # Hand-written REST expectation: do not derive wire shapes from the XML fixture/parser.
+    assert provider.get_post_data('0')['descriptiveMetadata'] == {
+        'title': 'Radar Testdatensatz Nr 1',
+        'additionalTitles': {'additionalTitle': [{'value': 'RADAR Test', 'additionalTitleType': 'OTHER'}]},
+        'keywords': {'keyword': [
+            {'value': 'Schlagwort 1'}, {'value': 'Schlagwort 2'}, {'value': 'Schlagwort 3'},
+        ]},
+        'subjectAreas': {'subjectArea': [{
+            'controlledSubjectAreaName': 'OTHER',
+            'additionalSubjectAreaName': 'Humanities and Social Sciences / Ancient Cultures',
+        }]},
+        'resource': {'value': 'ein Datensatz zum testen des neuen RADAR Plugins'},
+        'dataSources': {'dataSource': [
+            {'value': 'Surveys', 'dataSourceDetail': 'SURVEY'},
+            {'value': 'Laboratory experiments', 'dataSourceDetail': 'TRIAL'},
+            {'value': 'Social science experiments', 'dataSourceDetail': 'TRIAL'},
+            {'value': 'Web scraping', 'dataSourceDetail': 'OTHER'},
+        ]},
+        'rights': {'controlledRights': 'CC_BY_4_0_ATTRIBUTION'},
+        'fundingReferences': {'fundingReference': [{
+            'funderName': 'DFG', 'awardNumber': '123345', 'awardTitle': 'Program42',
+        }]},
+    }
+    assert 'dataSources' not in provider.get_post_data('1')['descriptiveMetadata']
 
 
 def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
