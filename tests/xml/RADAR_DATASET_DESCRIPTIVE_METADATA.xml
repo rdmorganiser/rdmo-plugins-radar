@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ns2:radarDataset xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements" xmlns:ns2="http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset">
+    <title>Radar Testdatensatz Nr 1</title>
+    <additionalTitles>
+        <additionalTitle additionalTitleType="Other">RADAR Test</additionalTitle>
+    </additionalTitles>
+    <keywords>
+        <keyword>Schlagwort 1</keyword>
+        <keyword>Schlagwort 2</keyword>
+        <keyword>Schlagwort 3</keyword>
+    </keywords>
+    <subjectAreas>
+        <subjectArea>
+            <controlledSubjectAreaName>Other</controlledSubjectAreaName>
+            <additionalSubjectAreaName>Humanities and Social Sciences / Ancient Cultures</additionalSubjectAreaName>
+        </subjectArea>
+    </subjectAreas>
+    <resource>ein Datensatz zum testen des neuen RADAR Plugins</resource>
+    <dataSources>
+        <dataSource dataSourceDetail="Survey">Surveys</dataSource>
+        <dataSource dataSourceDetail="Trial">Laboratory experiments</dataSource>
+        <dataSource dataSourceDetail="Trial">Social science experiments</dataSource>
+        <dataSource dataSourceDetail="Other">Web scraping</dataSource>
+    </dataSources>
+    <rights>
+        <controlledRights>CC BY 4.0 Attribution</controlledRights>
+    </rights>
+    <fundingReferences>
+        <fundingReference>
+            <funderName>DFG</funderName>
+            <awardNumber>123345</awardNumber>
+            <awardTitle>Program42</awardTitle>
+        </fundingReference>
+    </fundingReferences>
+</ns2:radarDataset>

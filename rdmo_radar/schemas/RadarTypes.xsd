@@ -1,0 +1,1284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright 2026 FIZ Karlsruhe - Leibniz-Institut fuer Informationsinfrastruktur GmbH
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+RADAR Revision History
+2022-12-09 v9.1: Addition of the controlled list nameIdentifierScheme with the values "Other", "ORCID" and "ROR" and of the controlled list keywordScheme with the values "Other" and "GND".
+Addition of values "Public Domain Mark 1.0", "Public Domain Dedication and License (PDDL)", "Attribution License (ODC-By)", "Open Database License (ODC-ODbL)", "Apache License 2.0", "Common Development and Distribution License 1.0", "Eclipse Public License 1.0", "Eclipse Public License 2.0", "GNU General Public License v3.0 only", "GNU Lesser General Public License v3.0 only", "BSD 2-Clause Simplified License", "BSD 3-Clause New or Revised License" and "MIT License" to the controlled list rights.
+Addition of value "Survey" to the controlled list dataSourceDetail.
+Addition of value "Other" to the controlled list additionalTitleType.
+Addition of value "Supervisor" to the controlled list contributorType.
+Addition of values "ePIC" and "w3id" to the controlled list relatedIdentifierType.
+Addition of values "isDescribedBy", "Describes", "HasVersion", "IsVersionOf", "IsPublishedIn", "IsRequiredBy", "Requires", "IsObsoleteBy" and "Obsoletes" to the controlled list relationType.
+Addition of value "ROR" to the controlled list funderIdentifierType.
+2025-05-07 v9.2:
+Addition of the controlled list resourceType with the values "Audiovisual", "Collection", "ComputationalNotebook", "DataPaper", "Dataset", "Event", "Image", "InteractiveResource", "Instrument", "Model", "PhysicalObject", "Project", "Service", "Software", "Sound", "Standard", "Text", "Workflow" and "Other".
+Addition of value "Translator" to the controlled list contributorType.
+Addition of value "CSTR" and "RRID" to the controlled list relatedIdentifierType.
+Addition of values "IsCollectedBy", "Collects", "HasTranslation" and "IsTranslationOf" to the controlled list relationType.
+2026-06-11 v9.3:
+Addition of value "RAiD" and "SWHID" to the controlled list relatedIdentifierType.
+Addition of value "VersionNotes" to the controlled list descriptionType.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types" xmlns:dc="http://purl.org/dc/elements/1.1/"
+	targetNamespace="http://radar-service.eu/schemas/descriptive/radar/v09/radar-types"
+	elementFormDefault="unqualified" version="9.3">
+
+	<xs:import namespace="http://purl.org/dc/elements/1.1/" schemaLocation="https://www.radar-service.eu/schemas/dc.xsd"/>
+
+	<!-- ********************** TYPE DECLARATIONS ********************** -->
+	<!-- define possible values for identifierType attribute -->
+	<xs:simpleType name="identifierType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="DOI"/>
+			<xs:enumeration value="Handle"/>
+			<xs:enumeration value="RADAR"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!-- define possible values for identifier element -->
+	<xs:simpleType name="identifierValue">
+					<xs:restriction base="xs:token">
+						<xs:pattern value="[^/]+/[^/]+"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="notNull">
+					<xs:restriction base="xs:string">
+						<xs:minLength value="1"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="year">
+					<xs:restriction base="xs:string">
+						<xs:pattern value="\d{4}"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="yearOrUnknown">
+					<xs:restriction base="xs:string">
+						<xs:pattern value="\d{4}|\d{4}-\d{4}|unknown"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="softwareType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Resource Production"></xs:enumeration>
+			<xs:enumeration value="Resource Processing"></xs:enumeration>
+			<xs:enumeration value="Resource Viewing"></xs:enumeration>
+			<xs:enumeration value="Other"></xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for subjectArea element -->
+	<xs:simpleType name="subjectArea">
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="Agriculture"/>
+						<xs:enumeration value="Architecture"/>
+						<xs:enumeration value="Arts and Media"/>
+						<xs:enumeration value="Astrophysics and Astronomy"/>
+						<xs:enumeration value="Biochemistry"/>
+						<xs:enumeration value="Biology"/>
+						<xs:enumeration value="Behavioural Sciences"/>
+						<xs:enumeration value="Chemistry"/>
+						<xs:enumeration value="Computer Science"/>
+						<xs:enumeration value="Economics"/>
+						<xs:enumeration value="Engineering"/>
+						<xs:enumeration value="Environmental Science and Ecology"/>
+						<xs:enumeration value="Ethnology"/>
+						<xs:enumeration value="Geological Science"/>
+						<xs:enumeration value="Geography"/>
+						<xs:enumeration value="History"/>
+						<xs:enumeration value="Horticulture"/>
+						<xs:enumeration value="Information Technology"/>
+						<xs:enumeration value="Linguistics"/>
+						<xs:enumeration value="Life Science"/>
+						<xs:enumeration value="Materials Science"/>
+						<xs:enumeration value="Mathematics"/>
+						<xs:enumeration value="Medicine"/>
+						<xs:enumeration value="Philosophy"/>
+						<xs:enumeration value="Physics"/>
+						<xs:enumeration value="Psychology"/>
+						<xs:enumeration value="Social Sciences"/>
+						<xs:enumeration value="Software Technology"/>
+						<xs:enumeration value="Sports"/>
+						<xs:enumeration value="Theology"/>
+						<xs:enumeration value="Veterinary Medicine"/>
+						<xs:enumeration value="Other"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for rights element -->
+	<xs:simpleType name="rightsType">
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="CC BY 4.0 Attribution"/>
+						<xs:enumeration value="CC BY-ND 4.0 Attribution-NoDerivs"/>
+						<xs:enumeration value="CC BY-SA 4.0 Attribution-ShareAlike"/>
+						<xs:enumeration value="CC BY-NC 4.0 Attribution-NonCommercial"/>
+						<xs:enumeration value="CC BY-NC-SA 4.0 Attribution-NonCommercial-ShareAlike"/>
+						<xs:enumeration value="CC BY-NC-ND 4.0 Attribution-NonCommercial-NoDerivs"/>
+						<xs:enumeration value="CC0 1.0 Universal Public Domain Dedication"/>
+						<xs:enumeration value="Public Domain Mark 1.0"/>
+						<xs:enumeration value="Public Domain Dedication and License (PDDL)"/>
+						<xs:enumeration value="Attribution License (ODC-By)"/>
+						<xs:enumeration value="Open Database License (ODC-ODbL)"/>
+						<xs:enumeration value="Apache License 2.0"/>
+						<xs:enumeration value="Common Development and Distribution License 1.0"/>
+						<xs:enumeration value="Eclipse Public License 1.0"/>
+						<xs:enumeration value="Eclipse Public License 2.0"/>
+						<xs:enumeration value="GNU General Public License v3.0 only"/>
+						<xs:enumeration value="GNU Lesser General Public License v3.0 only"/>
+						<xs:enumeration value="BSD 2-Clause Simplified License"/>
+						<xs:enumeration value="BSD 3-Clause New or Revised License"/>
+						<xs:enumeration value="MIT License"/>
+						<xs:enumeration value="All rights reserved"/>
+						<xs:enumeration value="Other"/>
+					</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for data source detail element -->
+	<xs:simpleType name="dataSourceDetail">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Instrument"/>
+			<xs:enumeration value="Media"/>
+			<xs:enumeration value="Observation"/>
+			<xs:enumeration value="Survey"/>
+			<xs:enumeration value="Trial"/>
+			<xs:enumeration value="Organism"/>
+			<xs:enumeration value="Tissue"/>
+			<xs:enumeration value="Other"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for additional title type element -->
+	<xs:simpleType name="additionalTitleType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Subtitle"/>
+			<xs:enumeration value="TranslatedTitle"/>
+			<xs:enumeration value="AlternativeTitle"/>
+			<xs:enumeration value="Other"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for description type type element -->
+	<xs:simpleType name="descriptionType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Abstract"/>
+            <xs:enumeration value="Object"/>
+            <xs:enumeration value="Method"/>
+			<xs:enumeration value="TableOfContents"/>
+            <xs:enumeration value="TechnicalInfo"/>
+			<xs:enumeration value="TechnicalRemarks"/>
+			<xs:enumeration value="VersionNotes"/>
+			<xs:enumeration value="Other"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for contributor type type element -->
+	<xs:simpleType name="contributorType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="ContactPerson"/>
+			<xs:enumeration value="DataCollector"/>
+			<xs:enumeration value="DataCurator"/>
+			<xs:enumeration value="DataManager"/>
+			<xs:enumeration value="Distributor"/>
+			<xs:enumeration value="Editor"/>
+			<xs:enumeration value="HostingInstitution"/>
+			<xs:enumeration value="Producer"/>
+			<xs:enumeration value="ProjectLeader"/>
+			<xs:enumeration value="ProjectManager"/>
+			<xs:enumeration value="ProjectMember"/>
+			<xs:enumeration value="RegistrationAgency"/>
+			<xs:enumeration value="RegistrationAuthority"/>
+			<xs:enumeration value="RelatedPerson"/>
+			<xs:enumeration value="Researcher"/>
+			<xs:enumeration value="ResearchGroup"/>
+			<xs:enumeration value="Sponsor"/>
+			<xs:enumeration value="Supervisor"/>
+			<xs:enumeration value="Translator"/>
+			<xs:enumeration value="WorkPackageLeader"/>
+			<xs:enumeration value="Other"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for related identifier type type element -->
+	<xs:simpleType name="relatedIdentifierType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="ARK"/>
+			<xs:enumeration value="arXiv"/>
+			<xs:enumeration value="bibcode"/>
+			<xs:enumeration value="CSTR"/>
+			<xs:enumeration value="DOI"/>
+			<xs:enumeration value="EAN13"/>
+			<xs:enumeration value="EISSN"/>
+			<xs:enumeration value="Handle"/>
+			<xs:enumeration value="ePIC"/>
+            <xs:enumeration value="IGSN"/>
+			<xs:enumeration value="ISBN"/>
+			<xs:enumeration value="ISSN"/>
+			<xs:enumeration value="ISTC"/>
+			<xs:enumeration value="LISSN"/>
+			<xs:enumeration value="LSID"/>
+			<xs:enumeration value="PMID"/>
+			<xs:enumeration value="PURL"/>
+			<xs:enumeration value="RAiD"/>
+			<xs:enumeration value="RRID"/>
+			<xs:enumeration value="SWHID"/>
+			<xs:enumeration value="UPC"/>
+			<xs:enumeration value="URL"/>
+			<xs:enumeration value="URN"/>
+			<xs:enumeration value="w3id"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- define possible values for relation type type element -->
+	<xs:simpleType name="relationType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="IsCitedBy"/>
+			<xs:enumeration value="Cites"/>
+			<xs:enumeration value="IsSupplementTo"/>
+			<xs:enumeration value="IsSupplementedBy"/>
+			<xs:enumeration value="IsContinuedBy"/>
+			<xs:enumeration value="Continues"/>
+			<xs:enumeration value="Describes"/>
+			<xs:enumeration value="IsDescribedBy"/>
+			<xs:enumeration value="HasMetadata"/>
+			<xs:enumeration value="IsMetadataFor"/>
+			<xs:enumeration value="HasVersion"/>
+			<xs:enumeration value="IsVersionOf"/>
+			<xs:enumeration value="IsNewVersionOf"/>
+			<xs:enumeration value="IsPreviousVersionOf"/>
+			<xs:enumeration value="IsPartOf"/>
+			<xs:enumeration value="HasPart"/>
+			<xs:enumeration value="IsPublishedIn"/>
+			<xs:enumeration value="IsReferencedBy"/>
+			<xs:enumeration value="References"/>
+			<xs:enumeration value="IsDocumentedBy"/>
+			<xs:enumeration value="Documents"/>
+			<xs:enumeration value="IsCompiledBy"/>
+			<xs:enumeration value="Compiles"/>
+			<xs:enumeration value="IsVariantFormOf"/>
+			<xs:enumeration value="IsOriginalFormOf"/>
+			<xs:enumeration value="IsIdenticalTo"/>
+			<xs:enumeration value="IsReviewedBy"/>
+			<xs:enumeration value="Reviews"/>
+			<xs:enumeration value="IsDerivedFrom"/>
+			<xs:enumeration value="IsSourceOf"/>
+			<xs:enumeration value="Requires"/>
+			<xs:enumeration value="IsRequiredBy"/>
+			<xs:enumeration value="Obsoletes"/>
+			<xs:enumeration value="IsObsoletedBy"/>
+			<xs:enumeration value="IsCollectedBy"/>
+			<xs:enumeration value="Collects"/>
+			<xs:enumeration value="HasTranslation"/>
+			<xs:enumeration value="IsTranslationOf"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+    <!-- define possible values for relation type type element -->
+    <xs:simpleType name="funderIdentifierType">
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="CrossRefFunder"/>
+        <xs:enumeration value="GRID"/>
+        <xs:enumeration value="ISNI"/>
+        <xs:enumeration value="ROR"/>
+        <xs:enumeration value="Other"/>
+      </xs:restriction>
+    </xs:simpleType>
+
+	<xs:simpleType name="nameIdentifierScheme">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Other"/>
+			<xs:enumeration value="ORCID"/>
+			<xs:enumeration value="ROR"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="keywordScheme">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Other"/>
+			<xs:enumeration value="GND"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="resourceType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Audiovisual"/>
+			<xs:enumeration value="Collection"/>
+			<xs:enumeration value="ComputationalNotebook"/>
+			<xs:enumeration value="DataPaper"/>
+			<xs:enumeration value="Dataset"/>
+			<xs:enumeration value="Event"/>
+			<xs:enumeration value="Image"/>
+			<xs:enumeration value="InteractiveResource"/>
+			<xs:enumeration value="Instrument"/>
+			<xs:enumeration value="Model"/>
+			<xs:enumeration value="PhysicalObject"/>
+			<xs:enumeration value="Project"/>
+			<xs:enumeration value="Service"/>
+			<xs:enumeration value="Software"/>
+			<xs:enumeration value="Sound"/>
+			<xs:enumeration value="Standard"/>
+			<xs:enumeration value="Text"/>
+			<xs:enumeration value="Workflow"/>
+			<xs:enumeration value="Other"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="language">
+		<xs:annotation>
+			<xs:documentation>Three letter codes from ISO 639-3 but only for languages that have also an ISO 639-1 code.</xs:documentation>
+		</xs:annotation>
+
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="aar"><xs:annotation><xs:documentation><dc:title xml:lang="en">Afar</dc:title><dc:title xml:lang="de">Danakil-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="abk"><xs:annotation><xs:documentation><dc:title xml:lang="en">Abkhazian</dc:title><dc:title xml:lang="de">Abchasisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="afr"><xs:annotation><xs:documentation><dc:title xml:lang="en">Afrikaans</dc:title><dc:title xml:lang="de">Afrikaans</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="aka"><xs:annotation><xs:documentation><dc:title xml:lang="en">Akan</dc:title><dc:title xml:lang="de">Akan-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="amh"><xs:annotation><xs:documentation><dc:title xml:lang="en">Amharic</dc:title><dc:title xml:lang="de">Amharisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ara"><xs:annotation><xs:documentation><dc:title xml:lang="en">Arabic</dc:title><dc:title xml:lang="de">Arabisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="arg"><xs:annotation><xs:documentation><dc:title xml:lang="en">Aragonese</dc:title><dc:title xml:lang="de">Aragonesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="asm"><xs:annotation><xs:documentation><dc:title xml:lang="en">Assamese</dc:title><dc:title xml:lang="de">Assamesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ava"><xs:annotation><xs:documentation><dc:title xml:lang="en">Avaric</dc:title><dc:title xml:lang="de">Awarisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ave"><xs:annotation><xs:documentation><dc:title xml:lang="en">Avestan</dc:title><dc:title xml:lang="de">Avestisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="aym"><xs:annotation><xs:documentation><dc:title xml:lang="en">Aymara</dc:title><dc:title xml:lang="de">Aymará-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="aze"><xs:annotation><xs:documentation><dc:title xml:lang="en">Azerbaijani</dc:title><dc:title xml:lang="de">Aserbeidschanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bak"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bashkir</dc:title><dc:title xml:lang="de">Baschkirisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bam"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bambara</dc:title><dc:title xml:lang="de">Bambara-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bel"><xs:annotation><xs:documentation><dc:title xml:lang="en">Belarusian</dc:title><dc:title xml:lang="de">Weißrussisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ben"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bengali</dc:title><dc:title xml:lang="de">Bengali</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bih"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bihari languages</dc:title><dc:title xml:lang="de">Bihari (Andere)</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bis"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bislama</dc:title><dc:title xml:lang="de">Beach-la-mar</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bod"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tibetan</dc:title><dc:title xml:lang="de">Tibetisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bos"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bosnian</dc:title><dc:title xml:lang="de">Bosnisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bre"><xs:annotation><xs:documentation><dc:title xml:lang="en">Breton</dc:title><dc:title xml:lang="de">Bretonisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="bul"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bulgarian</dc:title><dc:title xml:lang="de">Bulgarisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cat"><xs:annotation><xs:documentation><dc:title xml:lang="en">Catalan; Valencian</dc:title><dc:title xml:lang="de">Katalanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ces"><xs:annotation><xs:documentation><dc:title xml:lang="en">Czech</dc:title><dc:title xml:lang="de">Tschechisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cha"><xs:annotation><xs:documentation><dc:title xml:lang="en">Chamorro</dc:title><dc:title xml:lang="de">Chamorro-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="che"><xs:annotation><xs:documentation><dc:title xml:lang="en">Chechen</dc:title><dc:title xml:lang="de">Tschetschenisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="chu"><xs:annotation><xs:documentation><dc:title xml:lang="en">Church Slavic; Old Slavonic; Church Slavonic; Old Bulgarian; Old Church Slavonic</dc:title><dc:title xml:lang="de">Kirchenslawisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="chv"><xs:annotation><xs:documentation><dc:title xml:lang="en">Chuvash</dc:title><dc:title xml:lang="de">Tschuwaschisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cor"><xs:annotation><xs:documentation><dc:title xml:lang="en">Cornish</dc:title><dc:title xml:lang="de">Kornisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cos"><xs:annotation><xs:documentation><dc:title xml:lang="en">Corsican</dc:title><dc:title xml:lang="de">Korsisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cre"><xs:annotation><xs:documentation><dc:title xml:lang="en">Cree</dc:title><dc:title xml:lang="de">Cree-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="cym"><xs:annotation><xs:documentation><dc:title xml:lang="en">Welsh</dc:title><dc:title xml:lang="de">Kymrisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="dan"><xs:annotation><xs:documentation><dc:title xml:lang="en">Danish</dc:title><dc:title xml:lang="de">Dänisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="deu"><xs:annotation><xs:documentation><dc:title xml:lang="en">German</dc:title><dc:title xml:lang="de">Deutsch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="div"><xs:annotation><xs:documentation><dc:title xml:lang="en">Divehi; Dhivehi; Maldivian</dc:title><dc:title xml:lang="de">Maledivisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="dzo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Dzongkha</dc:title><dc:title xml:lang="de">Dzongkha</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ell"><xs:annotation><xs:documentation><dc:title xml:lang="en">Greek, Modern (1453-)</dc:title><dc:title xml:lang="de">Neugriechisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="eng"><xs:annotation><xs:documentation><dc:title xml:lang="en">English</dc:title><dc:title xml:lang="de">Englisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="epo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Esperanto</dc:title><dc:title xml:lang="de">Esperanto</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="est"><xs:annotation><xs:documentation><dc:title xml:lang="en">Estonian</dc:title><dc:title xml:lang="de">Estnisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="eus"><xs:annotation><xs:documentation><dc:title xml:lang="en">Basque</dc:title><dc:title xml:lang="de">Baskisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ewe"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ewe</dc:title><dc:title xml:lang="de">Ewe-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fao"><xs:annotation><xs:documentation><dc:title xml:lang="en">Faroese</dc:title><dc:title xml:lang="de">Färöisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fas"><xs:annotation><xs:documentation><dc:title xml:lang="en">Persian</dc:title><dc:title xml:lang="de">Persisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fij"><xs:annotation><xs:documentation><dc:title xml:lang="en">Fijian</dc:title><dc:title xml:lang="de">Fidschi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fin"><xs:annotation><xs:documentation><dc:title xml:lang="en">Finnish</dc:title><dc:title xml:lang="de">Finnisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fra"><xs:annotation><xs:documentation><dc:title xml:lang="en">French</dc:title><dc:title xml:lang="de">Französisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="fry"><xs:annotation><xs:documentation><dc:title xml:lang="en">Western Frisian</dc:title><dc:title xml:lang="de">Friesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ful"><xs:annotation><xs:documentation><dc:title xml:lang="en">Fulah</dc:title><dc:title xml:lang="de">Ful</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="gla"><xs:annotation><xs:documentation><dc:title xml:lang="en">Gaelic; Scottish Gaelic</dc:title><dc:title xml:lang="de">Gälisch-Schottisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="gle"><xs:annotation><xs:documentation><dc:title xml:lang="en">Irish</dc:title><dc:title xml:lang="de">Irisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="glg"><xs:annotation><xs:documentation><dc:title xml:lang="en">Galician</dc:title><dc:title xml:lang="de">Galicisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="glv"><xs:annotation><xs:documentation><dc:title xml:lang="en">Manx</dc:title><dc:title xml:lang="de">Manx</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="grn"><xs:annotation><xs:documentation><dc:title xml:lang="en">Guarani</dc:title><dc:title xml:lang="de">Guaraní-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="guj"><xs:annotation><xs:documentation><dc:title xml:lang="en">Gujarati</dc:title><dc:title xml:lang="de">Gujarati-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hat"><xs:annotation><xs:documentation><dc:title xml:lang="en">Haitian; Haitian Creole</dc:title><dc:title xml:lang="de">Haïtien (Haiti-Kreolisch)</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hau"><xs:annotation><xs:documentation><dc:title xml:lang="en">Hausa</dc:title><dc:title xml:lang="de">Haussa-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="heb"><xs:annotation><xs:documentation><dc:title xml:lang="en">Hebrew</dc:title><dc:title xml:lang="de">Hebräisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="her"><xs:annotation><xs:documentation><dc:title xml:lang="en">Herero</dc:title><dc:title xml:lang="de">Herero-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hin"><xs:annotation><xs:documentation><dc:title xml:lang="en">Hindi</dc:title><dc:title xml:lang="de">Hindi</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hmo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Hiri Motu</dc:title><dc:title xml:lang="de">Hiri-Motu</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hrv"><xs:annotation><xs:documentation><dc:title xml:lang="en">Croatian</dc:title><dc:title xml:lang="de">Kroatisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hun"><xs:annotation><xs:documentation><dc:title xml:lang="en">Hungarian</dc:title><dc:title xml:lang="de">Ungarisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="hye"><xs:annotation><xs:documentation><dc:title xml:lang="en">Armenian</dc:title><dc:title xml:lang="de">Armenisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ibo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Igbo</dc:title><dc:title xml:lang="de">Ibo-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ido"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ido</dc:title><dc:title xml:lang="de">Ido</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="iii"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sichuan Yi; Nuosu</dc:title><dc:title xml:lang="de">Lalo-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="iku"><xs:annotation><xs:documentation><dc:title xml:lang="en">Inuktitut</dc:title><dc:title xml:lang="de">Inuktitut</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ile"><xs:annotation><xs:documentation><dc:title xml:lang="en">Interlingue; Occidental</dc:title><dc:title xml:lang="de">Interlingue</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ina"><xs:annotation><xs:documentation><dc:title xml:lang="en">Interlingua (International Auxiliary Language Association)</dc:title><dc:title xml:lang="de">Interlingua</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ind"><xs:annotation><xs:documentation><dc:title xml:lang="en">Indonesian</dc:title><dc:title xml:lang="de">Bahasa Indonesia</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ipk"><xs:annotation><xs:documentation><dc:title xml:lang="en">Inupiaq</dc:title><dc:title xml:lang="de">Inupik</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="isl"><xs:annotation><xs:documentation><dc:title xml:lang="en">Icelandic</dc:title><dc:title xml:lang="de">Isländisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ita"><xs:annotation><xs:documentation><dc:title xml:lang="en">Italian</dc:title><dc:title xml:lang="de">Italienisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="jav"><xs:annotation><xs:documentation><dc:title xml:lang="en">Javanese</dc:title><dc:title xml:lang="de">Javanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="jpn"><xs:annotation><xs:documentation><dc:title xml:lang="en">Japanese</dc:title><dc:title xml:lang="de">Japanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kal"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kalaallisut; Greenlandic</dc:title><dc:title xml:lang="de">Grönländisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kan"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kannada</dc:title><dc:title xml:lang="de">Kannada</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kas"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kashmiri</dc:title><dc:title xml:lang="de">Kaschmiri</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kat"><xs:annotation><xs:documentation><dc:title xml:lang="en">Georgian</dc:title><dc:title xml:lang="de">Georgisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kau"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kanuri</dc:title><dc:title xml:lang="de">Kanuri-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kaz"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kazakh</dc:title><dc:title xml:lang="de">Kasachisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="khm"><xs:annotation><xs:documentation><dc:title xml:lang="en">Central Khmer</dc:title><dc:title xml:lang="de">Kambodschanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kik"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kikuyu; Gikuyu</dc:title><dc:title xml:lang="de">Kikuyu-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kin"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kinyarwanda</dc:title><dc:title xml:lang="de">Rwanda-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kir"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kirghiz; Kyrgyz</dc:title><dc:title xml:lang="de">Kirgisisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kom"><xs:annotation><xs:documentation><dc:title xml:lang="en">Komi</dc:title><dc:title xml:lang="de">Komi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kon"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kongo</dc:title><dc:title xml:lang="de">Kongo-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kor"><xs:annotation><xs:documentation><dc:title xml:lang="en">Korean</dc:title><dc:title xml:lang="de">Koreanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kua"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kuanyama; Kwanyama</dc:title><dc:title xml:lang="de">Kwanyama-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="kur"><xs:annotation><xs:documentation><dc:title xml:lang="en">Kurdish</dc:title><dc:title xml:lang="de">Kurdisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lao"><xs:annotation><xs:documentation><dc:title xml:lang="en">Lao</dc:title><dc:title xml:lang="de">Laotisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lat"><xs:annotation><xs:documentation><dc:title xml:lang="en">Latin</dc:title><dc:title xml:lang="de">Latein</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lav"><xs:annotation><xs:documentation><dc:title xml:lang="en">Latvian</dc:title><dc:title xml:lang="de">Lettisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lim"><xs:annotation><xs:documentation><dc:title xml:lang="en">Limburgan; Limburger; Limburgish</dc:title><dc:title xml:lang="de">Limburgisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lin"><xs:annotation><xs:documentation><dc:title xml:lang="en">Lingala</dc:title><dc:title xml:lang="de">Lingala</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lit"><xs:annotation><xs:documentation><dc:title xml:lang="en">Lithuanian</dc:title><dc:title xml:lang="de">Litauisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ltz"><xs:annotation><xs:documentation><dc:title xml:lang="en">Luxembourgish; Letzeburgesch</dc:title><dc:title xml:lang="de">Luxemburgisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lub"><xs:annotation><xs:documentation><dc:title xml:lang="en">Luba-Katanga</dc:title><dc:title xml:lang="de">Luba-Katanga-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="lug"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ganda</dc:title><dc:title xml:lang="de">Ganda-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mah"><xs:annotation><xs:documentation><dc:title xml:lang="en">Marshallese</dc:title><dc:title xml:lang="de">Marschallesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mal"><xs:annotation><xs:documentation><dc:title xml:lang="en">Malayalam</dc:title><dc:title xml:lang="de">Malayalam</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mar"><xs:annotation><xs:documentation><dc:title xml:lang="en">Marathi</dc:title><dc:title xml:lang="de">Marathi</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mkd"><xs:annotation><xs:documentation><dc:title xml:lang="en">Macedonian</dc:title><dc:title xml:lang="de">Makedonisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mlg"><xs:annotation><xs:documentation><dc:title xml:lang="en">Malagasy</dc:title><dc:title xml:lang="de">Malagassi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mlt"><xs:annotation><xs:documentation><dc:title xml:lang="en">Maltese</dc:title><dc:title xml:lang="de">Maltesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mon"><xs:annotation><xs:documentation><dc:title xml:lang="en">Mongolian</dc:title><dc:title xml:lang="de">Mongolisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mri"><xs:annotation><xs:documentation><dc:title xml:lang="en">Maori</dc:title><dc:title xml:lang="de">Maori-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="msa"><xs:annotation><xs:documentation><dc:title xml:lang="en">Malay</dc:title><dc:title xml:lang="de">Malaiisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="mya"><xs:annotation><xs:documentation><dc:title xml:lang="en">Burmese</dc:title><dc:title xml:lang="de">Birmanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nau"><xs:annotation><xs:documentation><dc:title xml:lang="en">Nauru</dc:title><dc:title xml:lang="de">Nauruanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nav"><xs:annotation><xs:documentation><dc:title xml:lang="en">Navajo; Navaho</dc:title><dc:title xml:lang="de">Navajo-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nbl"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ndebele, South; South Ndebele</dc:title><dc:title xml:lang="de">Ndebele-Sprache (Transvaal)</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nde"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ndebele, North; North Ndebele</dc:title><dc:title xml:lang="de">Ndebele-Sprache (Simbabwe)</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ndo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ndonga</dc:title><dc:title xml:lang="de">Ndonga</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nep"><xs:annotation><xs:documentation><dc:title xml:lang="en">Nepali</dc:title><dc:title xml:lang="de">Nepali</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nld"><xs:annotation><xs:documentation><dc:title xml:lang="en">Dutch; Flemish</dc:title><dc:title xml:lang="de">Niederländisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nno"><xs:annotation><xs:documentation><dc:title xml:lang="en">Norwegian Nynorsk; Nynorsk, Norwegian</dc:title><dc:title xml:lang="de">Nynorsk</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nob"><xs:annotation><xs:documentation><dc:title xml:lang="en">Bokmål, Norwegian; Norwegian Bokmål</dc:title><dc:title xml:lang="de">Bokmål</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nor"><xs:annotation><xs:documentation><dc:title xml:lang="en">Norwegian</dc:title><dc:title xml:lang="de">Norwegisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="nya"><xs:annotation><xs:documentation><dc:title xml:lang="en">Chichewa; Chewa; Nyanja</dc:title><dc:title xml:lang="de">Nyanja-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="oci"><xs:annotation><xs:documentation><dc:title xml:lang="en">Occitan (post 1500)</dc:title><dc:title xml:lang="de">Okzitanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="oji"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ojibwa</dc:title><dc:title xml:lang="de">Ojibwa-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ori"><xs:annotation><xs:documentation><dc:title xml:lang="en">Oriya</dc:title><dc:title xml:lang="de">Oriya-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="orm"><xs:annotation><xs:documentation><dc:title xml:lang="en">Oromo</dc:title><dc:title xml:lang="de">Galla-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="oss"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ossetian; Ossetic</dc:title><dc:title xml:lang="de">Ossetisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="pan"><xs:annotation><xs:documentation><dc:title xml:lang="en">Panjabi; Punjabi</dc:title><dc:title xml:lang="de">Pandschabi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="pli"><xs:annotation><xs:documentation><dc:title xml:lang="en">Pali</dc:title><dc:title xml:lang="de">Pali</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="pol"><xs:annotation><xs:documentation><dc:title xml:lang="en">Polish</dc:title><dc:title xml:lang="de">Polnisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="por"><xs:annotation><xs:documentation><dc:title xml:lang="en">Portuguese</dc:title><dc:title xml:lang="de">Portugiesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="pus"><xs:annotation><xs:documentation><dc:title xml:lang="en">Pushto; Pashto</dc:title><dc:title xml:lang="de">Paschtu</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="que"><xs:annotation><xs:documentation><dc:title xml:lang="en">Quechua</dc:title><dc:title xml:lang="de">Quechua-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="roh"><xs:annotation><xs:documentation><dc:title xml:lang="en">Romansh</dc:title><dc:title xml:lang="de">Rätoromanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ron"><xs:annotation><xs:documentation><dc:title xml:lang="en">Romanian; Moldavian; Moldovan</dc:title><dc:title xml:lang="de">Rumänisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="run"><xs:annotation><xs:documentation><dc:title xml:lang="en">Rundi</dc:title><dc:title xml:lang="de">Rundi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="rus"><xs:annotation><xs:documentation><dc:title xml:lang="en">Russian</dc:title><dc:title xml:lang="de">Russisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sag"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sango</dc:title><dc:title xml:lang="de">Sango-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="san"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sanskrit</dc:title><dc:title xml:lang="de">Sanskrit</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sin"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sinhala; Sinhalese</dc:title><dc:title xml:lang="de">Singhalesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="slk"><xs:annotation><xs:documentation><dc:title xml:lang="en">Slovak</dc:title><dc:title xml:lang="de">Slowakisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="slv"><xs:annotation><xs:documentation><dc:title xml:lang="en">Slovenian</dc:title><dc:title xml:lang="de">Slowenisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sme"><xs:annotation><xs:documentation><dc:title xml:lang="en">Northern Sami</dc:title><dc:title xml:lang="de">Nordsaamisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="smo"><xs:annotation><xs:documentation><dc:title xml:lang="en">Samoan</dc:title><dc:title xml:lang="de">Samoanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sna"><xs:annotation><xs:documentation><dc:title xml:lang="en">Shona</dc:title><dc:title xml:lang="de">Schona-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="snd"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sindhi</dc:title><dc:title xml:lang="de">Sindhi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="som"><xs:annotation><xs:documentation><dc:title xml:lang="en">Somali</dc:title><dc:title xml:lang="de">Somali</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sot"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sotho, Southern</dc:title><dc:title xml:lang="de">Süd-Sotho-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="spa"><xs:annotation><xs:documentation><dc:title xml:lang="en">Spanish; Castilian</dc:title><dc:title xml:lang="de">Spanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sqi"><xs:annotation><xs:documentation><dc:title xml:lang="en">Albanian</dc:title><dc:title xml:lang="de">Albanisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="srd"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sardinian</dc:title><dc:title xml:lang="de">Sardisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="srp"><xs:annotation><xs:documentation><dc:title xml:lang="en">Serbian</dc:title><dc:title xml:lang="de">Serbisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ssw"><xs:annotation><xs:documentation><dc:title xml:lang="en">Swati</dc:title><dc:title xml:lang="de">Swasi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="sun"><xs:annotation><xs:documentation><dc:title xml:lang="en">Sundanese</dc:title><dc:title xml:lang="de">Sundanesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="swa"><xs:annotation><xs:documentation><dc:title xml:lang="en">Swahili</dc:title><dc:title xml:lang="de">Swahili</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="swe"><xs:annotation><xs:documentation><dc:title xml:lang="en">Swedish</dc:title><dc:title xml:lang="de">Schwedisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tah"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tahitian</dc:title><dc:title xml:lang="de">Tahitisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tam"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tamil</dc:title><dc:title xml:lang="de">Tamil</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tat"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tatar</dc:title><dc:title xml:lang="de">Tatarisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tel"><xs:annotation><xs:documentation><dc:title xml:lang="en">Telugu</dc:title><dc:title xml:lang="de">Telugu-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tgk"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tajik</dc:title><dc:title xml:lang="de">Tadschikisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tgl"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tagalog</dc:title><dc:title xml:lang="de">Tagalog</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tha"><xs:annotation><xs:documentation><dc:title xml:lang="en">Thai</dc:title><dc:title xml:lang="de">Thailändisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tir"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tigrinya</dc:title><dc:title xml:lang="de">Tigrinja-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ton"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tonga (Tonga Islands)</dc:title><dc:title xml:lang="de">Tongaisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tsn"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tswana</dc:title><dc:title xml:lang="de">Tswana-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tso"><xs:annotation><xs:documentation><dc:title xml:lang="en">Tsonga</dc:title><dc:title xml:lang="de">Tsonga-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tuk"><xs:annotation><xs:documentation><dc:title xml:lang="en">Turkmen</dc:title><dc:title xml:lang="de">Turkmenisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="tur"><xs:annotation><xs:documentation><dc:title xml:lang="en">Turkish</dc:title><dc:title xml:lang="de">Türkisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="twi"><xs:annotation><xs:documentation><dc:title xml:lang="en">Twi</dc:title><dc:title xml:lang="de">Twi-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="uig"><xs:annotation><xs:documentation><dc:title xml:lang="en">Uighur; Uyghur</dc:title><dc:title xml:lang="de">Uigurisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ukr"><xs:annotation><xs:documentation><dc:title xml:lang="en">Ukrainian</dc:title><dc:title xml:lang="de">Ukrainisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="und"><xs:annotation><xs:documentation><dc:title xml:lang="en">Undetermined</dc:title><dc:title xml:lang="de">Nicht zu entscheiden</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="urd"><xs:annotation><xs:documentation><dc:title xml:lang="en">Urdu</dc:title><dc:title xml:lang="de">Urdu</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="uzb"><xs:annotation><xs:documentation><dc:title xml:lang="en">Uzbek</dc:title><dc:title xml:lang="de">Usbekisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="ven"><xs:annotation><xs:documentation><dc:title xml:lang="en">Venda</dc:title><dc:title xml:lang="de">Venda-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="vie"><xs:annotation><xs:documentation><dc:title xml:lang="en">Vietnamese</dc:title><dc:title xml:lang="de">Vietnamesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="vol"><xs:annotation><xs:documentation><dc:title xml:lang="en">Volapük</dc:title><dc:title xml:lang="de">Volapük</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="wln"><xs:annotation><xs:documentation><dc:title xml:lang="en">Walloon</dc:title><dc:title xml:lang="de">Wallonisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="wol"><xs:annotation><xs:documentation><dc:title xml:lang="en">Wolof</dc:title><dc:title xml:lang="de">Wolof-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="xho"><xs:annotation><xs:documentation><dc:title xml:lang="en">Xhosa</dc:title><dc:title xml:lang="de">Xhosa-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="yid"><xs:annotation><xs:documentation><dc:title xml:lang="en">Yiddish</dc:title><dc:title xml:lang="de">Jiddisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="yor"><xs:annotation><xs:documentation><dc:title xml:lang="en">Yoruba</dc:title><dc:title xml:lang="de">Yoruba-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="zha"><xs:annotation><xs:documentation><dc:title xml:lang="en">Zhuang; Chuang</dc:title><dc:title xml:lang="de">Zhuang</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="zho"><xs:annotation><xs:documentation><dc:title xml:lang="en">Chinese</dc:title><dc:title xml:lang="de">Chinesisch</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+						<xs:enumeration value="zul"><xs:annotation><xs:documentation><dc:title xml:lang="en">Zulu</dc:title><dc:title xml:lang="de">Zulu-Sprache</dc:title></xs:documentation></xs:annotation></xs:enumeration>
+					</xs:restriction>
+
+	</xs:simpleType>
+
+	<xs:simpleType name="ISO3166-Country-Name">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="ÅLAND ISLANDS"/>
+			<xs:enumeration value="AFGHANISTAN"/>
+			<xs:enumeration value="ALBANIA"/>
+			<xs:enumeration value="ALGERIA"/>
+			<xs:enumeration value="AMERICAN SAMOA"/>
+			<xs:enumeration value="ANDORRA"/>
+			<xs:enumeration value="ANGOLA"/>
+			<xs:enumeration value="ANGUILLA"/>
+			<xs:enumeration value="ANTARCTICA"/>
+			<xs:enumeration value="ANTIGUA AND BARBUDA"/>
+			<xs:enumeration value="ARGENTINA"/>
+			<xs:enumeration value="ARMENIA"/>
+			<xs:enumeration value="ARUBA"/>
+			<xs:enumeration value="AUSTRALIA"/>
+			<xs:enumeration value="AUSTRIA"/>
+			<xs:enumeration value="AZERBAIJAN"/>
+			<xs:enumeration value="BAHAMAS"/>
+			<xs:enumeration value="BAHRAIN"/>
+			<xs:enumeration value="BANGLADESH"/>
+			<xs:enumeration value="BARBADOS"/>
+			<xs:enumeration value="BELARUS"/>
+			<xs:enumeration value="BELGIUM"/>
+			<xs:enumeration value="BELIZE"/>
+			<xs:enumeration value="BENIN"/>
+			<xs:enumeration value="BERMUDA"/>
+			<xs:enumeration value="BHUTAN"/>
+			<xs:enumeration value="BOLIVIA, PLURINATIONAL STATE OF"/>
+			<xs:enumeration value="BONAIRE, SINT EUSTATIUS AND SABA"/>
+			<xs:enumeration value="BOSNIA AND HERZEGOWINA"/>
+			<xs:enumeration value="BOTSWANA"/>
+			<xs:enumeration value="BOUVET ISLAND"/>
+			<xs:enumeration value="BRAZIL"/>
+			<xs:enumeration value="BRITISH INDIAN OCEAN TERRITORY"/>
+			<xs:enumeration value="BRUNEI DARUSSALAM"/>
+			<xs:enumeration value="BULGARIA"/>
+			<xs:enumeration value="BURKINA FASO"/>
+			<xs:enumeration value="BURUNDI"/>
+			<xs:enumeration value="CAMBODIA"/>
+			<xs:enumeration value="CAMEROON"/>
+			<xs:enumeration value="CANADA"/>
+			<xs:enumeration value="CAPE VERDE"/>
+			<xs:enumeration value="CAYMAN ISLANDS"/>
+			<xs:enumeration value="CENTRAL AFRICAN REPUBLIC"/>
+			<xs:enumeration value="CHAD"/>
+			<xs:enumeration value="CHILE"/>
+			<xs:enumeration value="CHINA"/>
+			<xs:enumeration value="CHRISTMAS ISLAND"/>
+			<xs:enumeration value="COCOS (KEELING) ISLANDS"/>
+			<xs:enumeration value="COLOMBIA"/>
+			<xs:enumeration value="COMOROS"/>
+			<xs:enumeration value="CONGO"/>
+			<xs:enumeration value="CONGO, THE DEMOCRATIC REPUBLIC OF THE"/>
+			<xs:enumeration value="COOK ISLANDS"/>
+			<xs:enumeration value="COSTA RICA"/>
+			<xs:enumeration value="COTE D'IVOIRE"/>
+			<xs:enumeration value="CROATIA (local name Hrvatska)"/>
+			<xs:enumeration value="CUBA"/>
+			<xs:enumeration value="CURAÇAO"/>
+			<xs:enumeration value="CYPRUS"/>
+			<xs:enumeration value="CZECH REPUBLIC"/>
+			<xs:enumeration value="DENMARK"/>
+			<xs:enumeration value="DJIBOUTI"/>
+			<xs:enumeration value="DOMINICA"/>
+			<xs:enumeration value="DOMINICAN REPUBLIC"/>
+			<xs:enumeration value="ECUADOR"/>
+			<xs:enumeration value="EGYPT"/>
+			<xs:enumeration value="EL SALVADOR"/>
+			<xs:enumeration value="EQUATORIAL GUINEA"/>
+			<xs:enumeration value="ERITREA"/>
+			<xs:enumeration value="ESTONIA"/>
+			<xs:enumeration value="ETHIOPIA"/>
+			<xs:enumeration value="FALKLAND ISLANDS (MALVINAS)"/>
+			<xs:enumeration value="FAROE ISLANDS"/>
+			<xs:enumeration value="FIJI"/>
+			<xs:enumeration value="FINLAND"/>
+			<xs:enumeration value="FRANCE"/>
+			<xs:enumeration value="FRENCH GUIANA"/>
+			<xs:enumeration value="FRENCH POLYNESIA"/>
+			<xs:enumeration value="FRENCH SOUTHERN TERRITORIES"/>
+			<xs:enumeration value="GABON"/>
+			<xs:enumeration value="GAMBIA"/>
+			<xs:enumeration value="GEORGIA"/>
+			<xs:enumeration value="GERMANY"/>
+			<xs:enumeration value="GHANA"/>
+			<xs:enumeration value="GIBRALTAR"/>
+			<xs:enumeration value="GREECE"/>
+			<xs:enumeration value="GREENLAND"/>
+			<xs:enumeration value="GRENADA"/>
+			<xs:enumeration value="GUADELOUPE"/>
+			<xs:enumeration value="GUAM"/>
+			<xs:enumeration value="GUATEMALA"/>
+			<xs:enumeration value="GUERNSEY"/>
+			<xs:enumeration value="GUINEA"/>
+			<xs:enumeration value="GUINEA-BISSAU"/>
+			<xs:enumeration value="GUYANA"/>
+			<xs:enumeration value="HAITI"/>
+			<xs:enumeration value="HEARD AND MC DONALD ISLANDS"/>
+			<xs:enumeration value="HOLY SEE"/>
+			<xs:enumeration value="HONDURAS"/>
+			<xs:enumeration value="HONG KONG"/>
+			<xs:enumeration value="HUNGARY"/>
+			<xs:enumeration value="ICELAND"/>
+			<xs:enumeration value="INDIA"/>
+			<xs:enumeration value="INDONESIA"/>
+			<xs:enumeration value="IRAN (ISLAMIC REPUBLIC OF)"/>
+			<xs:enumeration value="IRAQ"/>
+			<xs:enumeration value="IRELAND"/>
+			<xs:enumeration value="ISLE OF MAN"/>
+			<xs:enumeration value="ISRAEL"/>
+			<xs:enumeration value="ITALY"/>
+			<xs:enumeration value="JAMAICA"/>
+			<xs:enumeration value="JAPAN"/>
+			<xs:enumeration value="JERSEY"/>
+			<xs:enumeration value="JORDAN"/>
+			<xs:enumeration value="KAZAKHSTAN"/>
+			<xs:enumeration value="KENYA"/>
+			<xs:enumeration value="KIRIBATI"/>
+			<xs:enumeration value="KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF"/>
+			<xs:enumeration value="KOREA, REPUBLIC OF"/>
+			<xs:enumeration value="KUWAIT"/>
+			<xs:enumeration value="KYRGYZSTAN"/>
+			<xs:enumeration value="LAO PEOPLE'S DEMOCRATIC REPUBLIC"/>
+			<xs:enumeration value="LATVIA"/>
+			<xs:enumeration value="LEBANON"/>
+			<xs:enumeration value="LESOTHO"/>
+			<xs:enumeration value="LIBERIA"/>
+			<xs:enumeration value="LIBYA"/>
+			<xs:enumeration value="LIECHTENSTEIN"/>
+			<xs:enumeration value="LITHUANIA"/>
+			<xs:enumeration value="LUXEMBOURG"/>
+			<xs:enumeration value="MACAO"/>
+			<xs:enumeration value="MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF"/>
+			<xs:enumeration value="MADAGASCAR"/>
+			<xs:enumeration value="MALAWI"/>
+			<xs:enumeration value="MALAYSIA"/>
+			<xs:enumeration value="MALDIVES"/>
+			<xs:enumeration value="MALI"/>
+			<xs:enumeration value="MALTA"/>
+			<xs:enumeration value="MARSHALL ISLANDS"/>
+			<xs:enumeration value="MARTINIQUE"/>
+			<xs:enumeration value="MAURITANIA"/>
+			<xs:enumeration value="MAURITIUS"/>
+			<xs:enumeration value="MAYOTTE"/>
+			<xs:enumeration value="MEXICO"/>
+			<xs:enumeration value="MICRONESIA, FEDERATED STATES OF"/>
+			<xs:enumeration value="MOLDOVA, REPUBLIC OF"/>
+			<xs:enumeration value="MONACO"/>
+			<xs:enumeration value="MONGOLIA"/>
+			<xs:enumeration value="MONTENEGRO"/>
+			<xs:enumeration value="MONTSERRAT"/>
+			<xs:enumeration value="MOROCCO"/>
+			<xs:enumeration value="MOZAMBIQUE"/>
+			<xs:enumeration value="MYANMAR"/>
+			<xs:enumeration value="NAMIBIA"/>
+			<xs:enumeration value="NAURU"/>
+			<xs:enumeration value="NEPAL"/>
+			<xs:enumeration value="NETHERLANDS"/>
+			<xs:enumeration value="NEW CALEDONIA"/>
+			<xs:enumeration value="NEW ZEALAND"/>
+			<xs:enumeration value="NICARAGUA"/>
+			<xs:enumeration value="NIGER"/>
+			<xs:enumeration value="NIGERIA"/>
+			<xs:enumeration value="NIUE"/>
+			<xs:enumeration value="NORFOLK ISLAND"/>
+			<xs:enumeration value="NORTHERN MARIANA ISLANDS"/>
+			<xs:enumeration value="NORWAY"/>
+			<xs:enumeration value="OMAN"/>
+			<xs:enumeration value="PAKISTAN"/>
+			<xs:enumeration value="PALAU"/>
+			<xs:enumeration value="PALESTINE, STATE OF"/>
+			<xs:enumeration value="PANAMA"/>
+			<xs:enumeration value="PAPUA NEW GUINEA"/>
+			<xs:enumeration value="PARAGUAY"/>
+			<xs:enumeration value="PERU"/>
+			<xs:enumeration value="PHILIPPINES"/>
+			<xs:enumeration value="PITCAIRN"/>
+			<xs:enumeration value="POLAND"/>
+			<xs:enumeration value="PORTUGAL"/>
+			<xs:enumeration value="PUERTO RICO"/>
+			<xs:enumeration value="QATAR"/>
+			<xs:enumeration value="REUNION"/>
+			<xs:enumeration value="ROMANIA"/>
+			<xs:enumeration value="RUSSIAN FEDERATION"/>
+			<xs:enumeration value="RWANDA"/>
+			<xs:enumeration value="SAINT HELENA, ASCENSION AND TRISTAN DA CUNHA"/>
+			<xs:enumeration value="SAINT BARTHÉLEMY"/>
+			<xs:enumeration value="SAINT KITTS AND NEVIS"/>
+			<xs:enumeration value="SAINT LUCIA"/>
+			<xs:enumeration value="SAINT MARTIN (FRENCH PART)"/>
+			<xs:enumeration value="SAINT PIERRE AND MIQUELON"/>
+			<xs:enumeration value="SAINT VINCENT AND THE GRENADINES"/>
+			<xs:enumeration value="SAMOA"/>
+			<xs:enumeration value="SAN MARINO"/>
+			<xs:enumeration value="SAO TOME AND PRINCIPE"/>
+			<xs:enumeration value="SAUDI ARABIA"/>
+			<xs:enumeration value="SENEGAL"/>
+			<xs:enumeration value="SERBIA"/>
+			<xs:enumeration value="SEYCHELLES"/>
+			<xs:enumeration value="SIERRA LEONE"/>
+			<xs:enumeration value="SINGAPORE"/>
+			<xs:enumeration value="SINT MAARTEN (DUTCH PART)"/>
+			<xs:enumeration value="SLOVAKIA"/>
+			<xs:enumeration value="SLOVENIA"/>
+			<xs:enumeration value="SOLOMON ISLANDS"/>
+			<xs:enumeration value="SOMALIA"/>
+			<xs:enumeration value="SOUTH AFRICA"/>
+			<xs:enumeration value="SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS"/>
+			<xs:enumeration value="SOUTH SUDAN"/>
+			<xs:enumeration value="SPAIN"/>
+			<xs:enumeration value="SRI LANKA"/>
+			<xs:enumeration value="SUDAN"/>
+			<xs:enumeration value="SURINAME"/>
+			<xs:enumeration value="SVALBARD AND JAN MAYEN ISLANDS"/>
+			<xs:enumeration value="SWAZILAND"/>
+			<xs:enumeration value="SWEDEN"/>
+			<xs:enumeration value="SWITZERLAND"/>
+			<xs:enumeration value="SYRIAN ARAB REPUBLIC"/>
+			<xs:enumeration value="TAIWAN, PROVINCE OF CHINA"/>
+			<xs:enumeration value="TAJIKISTAN"/>
+			<xs:enumeration value="TANZANIA, UNITED REPUBLIC OF"/>
+			<xs:enumeration value="THAILAND"/>
+			<xs:enumeration value="TIMOR-LESTE"/>
+			<xs:enumeration value="TOGO"/>
+			<xs:enumeration value="TOKELAU"/>
+			<xs:enumeration value="TONGA"/>
+			<xs:enumeration value="TRINIDAD AND TOBAGO"/>
+			<xs:enumeration value="TUNISIA"/>
+			<xs:enumeration value="TURKEY"/>
+			<xs:enumeration value="TURKMENISTAN"/>
+			<xs:enumeration value="TURKS AND CAICOS ISLANDS"/>
+			<xs:enumeration value="TUVALU"/>
+			<xs:enumeration value="UGANDA"/>
+			<xs:enumeration value="UKRAINE"/>
+			<xs:enumeration value="UNITED ARAB EMIRATES"/>
+			<xs:enumeration value="UNITED KINGDOM OF GREAT BRITAIN AND NORTHERN IRELAND*"/>
+			<xs:enumeration value="UNITED STATES OF AMERICA"/>
+			<xs:enumeration value="UNITED STATES MINOR OUTLYING ISLANDS"/>
+			<xs:enumeration value="URUGUAY"/>
+			<xs:enumeration value="UZBEKISTAN"/>
+			<xs:enumeration value="VANUATU"/>
+			<xs:enumeration value="VENEZUELA, BOLIVARIAN REPUBLIC OF"/>
+			<xs:enumeration value="VIET NAM"/>
+			<xs:enumeration value="VIRGIN ISLANDS (BRITISH)"/>
+			<xs:enumeration value="VIRGIN ISLANDS (U.S.)"/>
+			<xs:enumeration value="WALLIS AND FUTUNA ISLANDS"/>
+			<xs:enumeration value="WESTERN SAHARA"/>
+			<xs:enumeration value="YEMEN"/>
+			<xs:enumeration value="ZAMBIA"/>
+			<xs:enumeration value="ZIMBABWE"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="ISO3166-Country-Code">
+		<xs:annotation>
+			<xs:documentation> Two-letter (alpha-2) ISO 3166-1 code for one of the 243 countries.
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="AF"/>
+			<!-- AFGHANISTAN -->
+			<xs:enumeration value="AX"/>
+			<!-- &Aring;LAND ISLANDS -->
+			<xs:enumeration value="AL"/>
+			<!-- ALBANIA -->
+			<xs:enumeration value="DZ"/>
+			<!-- ALGERIA -->
+			<xs:enumeration value="AS"/>
+			<!-- AMERICAN SAMOA -->
+			<xs:enumeration value="AD"/>
+			<!-- ANDORRA -->
+			<xs:enumeration value="AO"/>
+			<!-- ANGOLA -->
+			<xs:enumeration value="AI"/>
+			<!-- ANGUILLA -->
+			<xs:enumeration value="AQ"/>
+			<!-- ANTARCTICA -->
+			<xs:enumeration value="AG"/>
+			<!-- ANTIGUA AND BARBUDA -->
+			<xs:enumeration value="AR"/>
+			<!-- ARGENTINA -->
+			<xs:enumeration value="AM"/>
+			<!-- ARMENIA -->
+			<xs:enumeration value="AW"/>
+			<!-- ARUBA -->
+			<xs:enumeration value="AU"/>
+			<!-- AUSTRALIA -->
+			<xs:enumeration value="AT"/>
+			<!-- AUSTRIA -->
+			<xs:enumeration value="AZ"/>
+			<!-- AZERBAIJAN -->
+			<xs:enumeration value="BS"/>
+			<!-- BAHAMAS -->
+			<xs:enumeration value="BH"/>
+			<!-- BAHRAIN -->
+			<xs:enumeration value="BD"/>
+			<!-- BANGLADESH -->
+			<xs:enumeration value="BB"/>
+			<!-- BARBADOS -->
+			<xs:enumeration value="BY"/>
+			<!-- BELARUS -->
+			<xs:enumeration value="BE"/>
+			<!-- BELGIUM -->
+			<xs:enumeration value="BZ"/>
+			<!-- BELIZE -->
+			<xs:enumeration value="BJ"/>
+			<!-- BENIN -->
+			<xs:enumeration value="BM"/>
+			<!-- BERMUDA -->
+			<xs:enumeration value="BT"/>
+			<!-- BHUTAN -->
+			<xs:enumeration value="BO"/>
+			<!-- BOLIVIA -->
+			<xs:enumeration value="BA"/>
+			<!-- BOSNIA AND HERZEGOVINA -->
+			<xs:enumeration value="BW"/>
+			<!-- BOTSWANA -->
+			<xs:enumeration value="BV"/>
+			<!-- BOUVET ISLAND -->
+			<xs:enumeration value="BR"/>
+			<!-- BRAZIL -->
+			<xs:enumeration value="IO"/>
+			<!-- BRITISH INDIAN OCEAN TERRITORY -->
+			<xs:enumeration value="BN"/>
+			<!-- BRUNEI DARUSSALAM -->
+			<xs:enumeration value="BG"/>
+			<!-- BULGARIA -->
+			<xs:enumeration value="BF"/>
+			<!-- BURKINA FASO -->
+			<xs:enumeration value="BI"/>
+			<!-- BURUNDI -->
+			<xs:enumeration value="KH"/>
+			<!-- CAMBODIA -->
+			<xs:enumeration value="CM"/>
+			<!-- CAMEROON -->
+			<xs:enumeration value="CA"/>
+			<!-- CANADA -->
+			<xs:enumeration value="CV"/>
+			<!-- CAPE VERDE -->
+			<xs:enumeration value="KY"/>
+			<!-- CAYMAN ISLANDS -->
+			<xs:enumeration value="CF"/>
+			<!-- CENTRAL AFRICAN REPUBLIC -->
+			<xs:enumeration value="TD"/>
+			<!-- CHAD -->
+			<xs:enumeration value="CL"/>
+			<!-- CHILE -->
+			<xs:enumeration value="CN"/>
+			<!-- CHINA -->
+			<xs:enumeration value="CX"/>
+			<!-- CHRISTMAS ISLAND -->
+			<xs:enumeration value="CC"/>
+			<!-- COCOS (KEELING) ISLANDS -->
+			<xs:enumeration value="CO"/>
+			<!-- COLOMBIA -->
+			<xs:enumeration value="KM"/>
+			<!-- COMOROS -->
+			<xs:enumeration value="CG"/>
+			<!-- CONGO -->
+			<xs:enumeration value="CD"/>
+			<!-- CONGO, THE DEMOCRATIC REPUBLIC OF THE -->
+			<xs:enumeration value="CK"/>
+			<!-- COOK ISLANDS -->
+			<xs:enumeration value="CR"/>
+			<!-- COSTA RICA -->
+			<xs:enumeration value="CI"/>
+			<!-- COTE D'IVOIRE -->
+			<xs:enumeration value="HR"/>
+			<!-- CROATIA -->
+			<xs:enumeration value="CU"/>
+			<!-- CUBA -->
+			<xs:enumeration value="CY"/>
+			<!-- CYPRUS -->
+			<xs:enumeration value="CZ"/>
+			<!-- CZECH REPUBLIC -->
+			<xs:enumeration value="DK"/>
+			<!-- DENMARK -->
+			<xs:enumeration value="DJ"/>
+			<!-- DJIBOUTI -->
+			<xs:enumeration value="DM"/>
+			<!-- DOMINICA -->
+			<xs:enumeration value="DO"/>
+			<!-- DOMINICAN REPUBLIC -->
+			<xs:enumeration value="EC"/>
+			<!-- ECUADOR -->
+			<xs:enumeration value="EG"/>
+			<!-- EGYPT -->
+			<xs:enumeration value="SV"/>
+			<!-- EL SALVADOR -->
+			<xs:enumeration value="GQ"/>
+			<!-- EQUATORIAL GUINEA -->
+			<xs:enumeration value="ER"/>
+			<!-- ERITREA -->
+			<xs:enumeration value="EE"/>
+			<!-- ESTONIA -->
+			<xs:enumeration value="ET"/>
+			<!-- ETHIOPIA -->
+			<xs:enumeration value="FK"/>
+			<!-- FALKLAND ISLANDS (MALVINAS) -->
+			<xs:enumeration value="FO"/>
+			<!-- FAROE ISLANDS -->
+			<xs:enumeration value="FJ"/>
+			<!-- FIJI -->
+			<xs:enumeration value="FI"/>
+			<!-- FINLAND -->
+			<xs:enumeration value="FR"/>
+			<!-- FRANCE -->
+			<xs:enumeration value="GF"/>
+			<!-- FRENCH GUIANA -->
+			<xs:enumeration value="PF"/>
+			<!-- FRENCH POLYNESIA -->
+			<xs:enumeration value="TF"/>
+			<!-- FRENCH SOUTHERN TERRITORIES -->
+			<xs:enumeration value="GA"/>
+			<!-- GABON -->
+			<xs:enumeration value="GM"/>
+			<!-- GAMBIA -->
+			<xs:enumeration value="GE"/>
+			<!-- GEORGIA -->
+			<xs:enumeration value="DE"/>
+			<!-- GERMANY -->
+			<xs:enumeration value="GH"/>
+			<!-- GHANA -->
+			<xs:enumeration value="GI"/>
+			<!-- GIBRALTAR -->
+			<xs:enumeration value="GR"/>
+			<!-- GREECE -->
+			<xs:enumeration value="GL"/>
+			<!-- GREENLAND -->
+			<xs:enumeration value="GD"/>
+			<!-- GRENADA -->
+			<xs:enumeration value="GP"/>
+			<!-- GUADELOUPE -->
+			<xs:enumeration value="GU"/>
+			<!-- GUAM -->
+			<xs:enumeration value="GT"/>
+			<!-- GUATEMALA -->
+			<xs:enumeration value="GG"/>
+			<!-- GUERNSEY -->
+			<xs:enumeration value="GN"/>
+			<!-- GUINEA -->
+			<xs:enumeration value="GW"/>
+			<!-- GUINEA-BISSAU -->
+			<xs:enumeration value="GY"/>
+			<!-- GUYANA -->
+			<xs:enumeration value="HT"/>
+			<!-- HAITI -->
+			<xs:enumeration value="HM"/>
+			<!-- HEARD ISLAND AND MCDONALD ISLANDS -->
+			<xs:enumeration value="VA"/>
+			<!-- HOLY SEE (VATICAN CITY STATE) -->
+			<xs:enumeration value="HN"/>
+			<!-- HONDURAS -->
+			<xs:enumeration value="HK"/>
+			<!-- HONG KONG -->
+			<xs:enumeration value="HU"/>
+			<!-- HUNGARY -->
+			<xs:enumeration value="IS"/>
+			<!-- ICELAND -->
+			<xs:enumeration value="IN"/>
+			<!-- INDIA -->
+			<xs:enumeration value="ID"/>
+			<!-- INDONESIA -->
+			<xs:enumeration value="IR"/>
+			<!-- IRAN, ISLAMIC REPUBLIC OF -->
+			<xs:enumeration value="IQ"/>
+			<!-- IRAQ -->
+			<xs:enumeration value="IE"/>
+			<!-- IRELAND -->
+			<xs:enumeration value="IM"/>
+			<!-- ISLE OF MAN -->
+			<xs:enumeration value="IL"/>
+			<!-- ISRAEL -->
+			<xs:enumeration value="IT"/>
+			<!-- ITALY -->
+			<xs:enumeration value="JM"/>
+			<!-- JAMAICA -->
+			<xs:enumeration value="JP"/>
+			<!-- JAPAN -->
+			<xs:enumeration value="JE"/>
+			<!-- JERSEY -->
+			<xs:enumeration value="JO"/>
+			<!-- JORDAN -->
+			<xs:enumeration value="KZ"/>
+			<!-- KAZAKHSTAN -->
+			<xs:enumeration value="KE"/>
+			<!-- KENYA -->
+			<xs:enumeration value="KI"/>
+			<!-- KIRIBATI -->
+			<xs:enumeration value="KP"/>
+			<!-- KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF -->
+			<xs:enumeration value="KR"/>
+			<!-- KOREA, REPUBLIC OF -->
+			<xs:enumeration value="KW"/>
+			<!-- KUWAIT -->
+			<xs:enumeration value="KG"/>
+			<!-- KYRGYZSTAN -->
+			<xs:enumeration value="LA"/>
+			<!-- LAO PEOPLE'S DEMOCRATIC REPUBLIC -->
+			<xs:enumeration value="LV"/>
+			<!-- LATVIA -->
+			<xs:enumeration value="LB"/>
+			<!-- LEBANON -->
+			<xs:enumeration value="LS"/>
+			<!-- LESOTHO -->
+			<xs:enumeration value="LR"/>
+			<!-- LIBERIA -->
+			<xs:enumeration value="LY"/>
+			<!-- LIBYAN ARAB JAMAHIRIYA -->
+			<xs:enumeration value="LI"/>
+			<!-- LIECHTENSTEIN -->
+			<xs:enumeration value="LT"/>
+			<!-- LITHUANIA -->
+			<xs:enumeration value="LU"/>
+			<!-- LUXEMBOURG -->
+			<xs:enumeration value="MO"/>
+			<!-- MACAO -->
+			<xs:enumeration value="MK"/>
+			<!-- MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF -->
+			<xs:enumeration value="MG"/>
+			<!-- MADAGASCAR -->
+			<xs:enumeration value="MW"/>
+			<!-- MALAWI -->
+			<xs:enumeration value="MY"/>
+			<!-- MALAYSIA -->
+			<xs:enumeration value="MV"/>
+			<!-- MALDIVES -->
+			<xs:enumeration value="ML"/>
+			<!-- MALI -->
+			<xs:enumeration value="MT"/>
+			<!-- MALTA -->
+			<xs:enumeration value="MH"/>
+			<!-- MARSHALL ISLANDS -->
+			<xs:enumeration value="MQ"/>
+			<!-- MARTINIQUE -->
+			<xs:enumeration value="MR"/>
+			<!-- MAURITANIA -->
+			<xs:enumeration value="MU"/>
+			<!-- MAURITIUS -->
+			<xs:enumeration value="YT"/>
+			<!-- MAYOTTE -->
+			<xs:enumeration value="MX"/>
+			<!-- MEXICO -->
+			<xs:enumeration value="FM"/>
+			<!-- MICRONESIA, FEDERATED STATES OF -->
+			<xs:enumeration value="MD"/>
+			<!-- MOLDOVA, REPUBLIC OF -->
+			<xs:enumeration value="MC"/>
+			<!-- MONACO -->
+			<xs:enumeration value="MN"/>
+			<!-- MONGOLIA -->
+			<xs:enumeration value="MS"/>
+			<!-- MONTSERRAT -->
+			<xs:enumeration value="MA"/>
+			<!-- MOROCCO -->
+			<xs:enumeration value="MZ"/>
+			<!-- MOZAMBIQUE -->
+			<xs:enumeration value="MM"/>
+			<!-- MYANMAR -->
+			<xs:enumeration value="NA"/>
+			<!-- NAMIBIA -->
+			<xs:enumeration value="NR"/>
+			<!-- NAURU -->
+			<xs:enumeration value="NP"/>
+			<!-- NEPAL -->
+			<xs:enumeration value="NL"/>
+			<!-- NETHERLANDS -->
+			<xs:enumeration value="AN"/>
+			<!-- NETHERLANDS ANTILLES -->
+			<xs:enumeration value="NC"/>
+			<!-- NEW CALEDONIA -->
+			<xs:enumeration value="NZ"/>
+			<!-- NEW ZEALAND -->
+			<xs:enumeration value="NI"/>
+			<!-- NICARAGUA -->
+			<xs:enumeration value="NE"/>
+			<!-- NIGER -->
+			<xs:enumeration value="NG"/>
+			<!-- NIGERIA -->
+			<xs:enumeration value="NU"/>
+			<!-- NIUE -->
+			<xs:enumeration value="NF"/>
+			<!-- NORFOLK ISLAND -->
+			<xs:enumeration value="MP"/>
+			<!-- NORTHERN MARIANA ISLANDS -->
+			<xs:enumeration value="NO"/>
+			<!-- NORWAY -->
+			<xs:enumeration value="OM"/>
+			<!-- OMAN -->
+			<xs:enumeration value="PK"/>
+			<!-- PAKISTAN -->
+			<xs:enumeration value="PW"/>
+			<!-- PALAU -->
+			<xs:enumeration value="PS"/>
+			<!-- PALESTINIAN TERRITORY, OCCUPIED -->
+			<xs:enumeration value="PA"/>
+			<!-- PANAMA -->
+			<xs:enumeration value="PG"/>
+			<!-- PAPUA NEW GUINEA -->
+			<xs:enumeration value="PY"/>
+			<!-- PARAGUAY -->
+			<xs:enumeration value="PE"/>
+			<!-- PERU -->
+			<xs:enumeration value="PH"/>
+			<!-- PHILIPPINES -->
+			<xs:enumeration value="PN"/>
+			<!-- PITCAIRN -->
+			<xs:enumeration value="PL"/>
+			<!-- POLAND -->
+			<xs:enumeration value="PT"/>
+			<!-- PORTUGAL -->
+			<xs:enumeration value="PR"/>
+			<!-- PUERTO RICO -->
+			<xs:enumeration value="QA"/>
+			<!-- QATAR -->
+			<xs:enumeration value="RE"/>
+			<!-- REUNION -->
+			<xs:enumeration value="RO"/>
+			<!-- ROMANIA -->
+			<xs:enumeration value="RU"/>
+			<!-- RUSSIAN FEDERATION -->
+			<xs:enumeration value="RW"/>
+			<!-- RWANDA -->
+			<xs:enumeration value="SH"/>
+			<!-- SAINT HELENA -->
+			<xs:enumeration value="KN"/>
+			<!-- SAINT KITTS AND NEVIS -->
+			<xs:enumeration value="LC"/>
+			<!-- SAINT LUCIA -->
+			<xs:enumeration value="PM"/>
+			<!-- SAINT PIERRE AND MIQUELON -->
+			<xs:enumeration value="VC"/>
+			<!-- SAINT VINCENT AND THE GRENADINES -->
+			<xs:enumeration value="WS"/>
+			<!-- SAMOA -->
+			<xs:enumeration value="SM"/>
+			<!-- SAN MARINO -->
+			<xs:enumeration value="ST"/>
+			<!-- SAO TOME AND PRINCIPE -->
+			<xs:enumeration value="SA"/>
+			<!-- SAUDI ARABIA -->
+			<xs:enumeration value="SN"/>
+			<!-- SENEGAL -->
+			<xs:enumeration value="CS"/>
+			<!-- SERBIA AND MONTENEGRO -->
+			<xs:enumeration value="SC"/>
+			<!-- SEYCHELLES -->
+			<xs:enumeration value="SL"/>
+			<!-- SIERRA LEONE -->
+			<xs:enumeration value="SG"/>
+			<!-- SINGAPORE -->
+			<xs:enumeration value="SK"/>
+			<!-- SLOVAKIA -->
+			<xs:enumeration value="SI"/>
+			<!-- SLOVENIA -->
+			<xs:enumeration value="SB"/>
+			<!-- SOLOMON ISLANDS -->
+			<xs:enumeration value="SO"/>
+			<!-- SOMALIA -->
+			<xs:enumeration value="ZA"/>
+			<!-- SOUTH AFRICA -->
+			<xs:enumeration value="GS"/>
+			<!-- SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS -->
+			<xs:enumeration value="ES"/>
+			<!-- SPAIN -->
+			<xs:enumeration value="LK"/>
+			<!-- SRI LANKA -->
+			<xs:enumeration value="SD"/>
+			<!-- SUDAN -->
+			<xs:enumeration value="SR"/>
+			<!-- SURINAME -->
+			<xs:enumeration value="SJ"/>
+			<!-- SVALBARD AND JAN MAYEN -->
+			<xs:enumeration value="SZ"/>
+			<!-- SWAZILAND -->
+			<xs:enumeration value="SE"/>
+			<!-- SWEDEN -->
+			<xs:enumeration value="CH"/>
+			<!-- SWITZERLAND -->
+			<xs:enumeration value="SY"/>
+			<!-- SYRIAN ARAB REPUBLIC -->
+			<xs:enumeration value="TW"/>
+			<!-- TAIWAN, PROVINCE OF CHINA -->
+			<xs:enumeration value="TJ"/>
+			<!-- TAJIKISTAN -->
+			<xs:enumeration value="TZ"/>
+			<!-- TANZANIA, UNITED REPUBLIC OF -->
+			<xs:enumeration value="TH"/>
+			<!-- THAILAND -->
+			<xs:enumeration value="TL"/>
+			<!-- TIMOR-LESTE -->
+			<xs:enumeration value="TG"/>
+			<!-- TOGO -->
+			<xs:enumeration value="TK"/>
+			<!-- TOKELAU -->
+			<xs:enumeration value="TO"/>
+			<!-- TONGA -->
+			<xs:enumeration value="TT"/>
+			<!-- TRINIDAD AND TOBAGO -->
+			<xs:enumeration value="TN"/>
+			<!-- TUNISIA -->
+			<xs:enumeration value="TR"/>
+			<!-- TURKEY -->
+			<xs:enumeration value="TM"/>
+			<!-- TURKMENISTAN -->
+			<xs:enumeration value="TC"/>
+			<!-- TURKS AND CAICOS ISLANDS -->
+			<xs:enumeration value="TV"/>
+			<!-- TUVALU -->
+			<xs:enumeration value="UG"/>
+			<!-- UGANDA -->
+			<xs:enumeration value="UA"/>
+			<!-- UKRAINE -->
+			<xs:enumeration value="AE"/>
+			<!-- UNITED ARAB EMIRATES -->
+			<xs:enumeration value="GB"/>
+			<!-- UNITED KINGDOM -->
+			<xs:enumeration value="US"/>
+			<!-- UNITED STATES -->
+			<xs:enumeration value="UM"/>
+			<!-- UNITED STATES MINOR OUTLYING ISLANDS -->
+			<xs:enumeration value="UY"/>
+			<!-- URUGUAY -->
+			<xs:enumeration value="UZ"/>
+			<!-- UZBEKISTAN -->
+			<xs:enumeration value="VU"/>
+			<!-- VANUATU -->
+			<xs:enumeration value="VE"/>
+			<!-- VENEZUELA -->
+			<xs:enumeration value="VN"/>
+			<!-- VIET NAM -->
+			<xs:enumeration value="VG"/>
+			<!-- VIRGIN ISLANDS, BRITISH -->
+			<xs:enumeration value="VI"/>
+			<!-- VIRGIN ISLANDS, U.S. -->
+			<xs:enumeration value="WF"/>
+			<!-- WALLIS AND FUTUNA -->
+			<xs:enumeration value="EH"/>
+			<!-- WESTERN SAHARA -->
+			<xs:enumeration value="YE"/>
+			<!-- YEMEN -->
+			<xs:enumeration value="ZM"/>
+			<!-- ZAMBIA -->
+			<xs:enumeration value="ZW"/>
+			<!-- ZIMBABWE -->
+		</xs:restriction>
+	</xs:simpleType>
+
+</xs:schema>

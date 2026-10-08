@@ -1,0 +1,39 @@
+{
+  "identifier": {"value": "10.1234/example", "identifierType": "DOI"},
+  "alternateIdentifiers": {"alternateIdentifier": [{"value": "local-1", "alternateIdentifierType": "Local catalogue"}]},
+  "relatedIdentifiers": {"relatedIdentifier": [{"value": "10.1234/related", "relatedIdentifierType": "DOI", "relationType": "IS_CITED_BY"}]},
+  "creators": {"creator": [{
+    "creatorName": "Doe, Jane", "nameType": "Personal", "givenName": "Jane", "familyName": "Doe",
+    "nameIdentifier": [{"value": "0000-0001", "nameIdentifierScheme": "ORCID"}],
+    "creatorAffiliation": {"value": "University", "affiliationIdentifier": "https://ror.org/example", "affiliationIdentifierScheme": "ROR"}
+  }]},
+  "contributors": {"contributor": [{
+    "contributorName": "Example organization", "nameType": "Organizational", "contributorType": "DATA_MANAGER",
+    "contributorAffiliation": {"value": "Institute"}
+  }]},
+  "title": "Dataset",
+  "additionalTitles": {"additionalTitle": [{"value": "DATA", "additionalTitleType": "OTHER"}, {"value": "Alternative title", "additionalTitleType": "OTHER"}]},
+  "descriptions": {"description": [{"value": "Abstract", "descriptionType": "ABSTRACT"}, {"value": "Changes", "descriptionType": "VERSION_NOTES"}]},
+  "keywords": {"keyword": [{"value": "FAIR"}, {"value": "Science"}]},
+  "publishers": {"publisher": [{"value": "Repository"}, {"value": "University", "nameIdentifier": "ror-1", "nameIdentifierScheme": "ROR"}]},
+  "productionYear": "2025",
+  "publicationYear": "2026",
+  "language": "ENG",
+  "subjectAreas": {"subjectArea": [{"controlledSubjectAreaName": "CHEMISTRY"}, {"controlledSubjectAreaName": "OTHER", "additionalSubjectAreaName": "Interdisciplinary"}]},
+  "resource": {"value": "Research data", "resourceType": "DATASET"},
+  "geoLocations": {"geoLocation": [{"geoLocationCountry": "GERMANY", "geoLocationRegion": "Berlin", "geoLocationPoint": {"latitude": 52.5, "longitude": 13.4}}, {"geoLocationRegion": "Brandenburg"}]},
+  "dataSources": {"dataSource": [{"value": "Survey results", "dataSourceDetail": "SURVEY"}, {"value": "Unclassified source"}]},
+  "software": {"softwareType": [{
+    "type": "RESOURCE_VIEWING", "softwareName": [{"value": "Viewer", "softwareVersion": "1.0"}],
+    "alternativeSoftwareName": [{"value": "Alternative viewer", "alternativeSoftwareVersion": "2.0"}]
+  }]},
+  "processing": {"dataProcessing": ["Cleaned", "Aggregated"]},
+  "rights": {"controlledRights": "CC_BY_4_0_ATTRIBUTION", "additionalRights": "Attribution details"},
+  "rightsHolders": {"rightsHolder": [{"value": "University"}, {"value": "Doe, Jane", "nameIdentifier": "0000-0001", "nameIdentifierScheme": "ORCID"}]},
+  "relatedInformations": {"relatedInformation": [{"value": "Project website", "relatedInformationType": "Other"}]},
+  "fundingReferences": {"fundingReference": [{
+    "funderName": "Funder", "funderIdentifier": {"value": "ror-2", "type": "ROR"}, "awardNumber": "ABC-123",
+    "awardURI": "https://example.test/award", "awardTitle": "Award title"
+  }]},
+  "version": "2.1"
+}
