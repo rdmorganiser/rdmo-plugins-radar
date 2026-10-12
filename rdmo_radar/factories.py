@@ -31,7 +31,7 @@ def build_export_service(
     if serializer is None:
         serializer = compute_radar_payload
     if writer is None:
-        # Import adapter-package defaults here so adapters can later import these factories.
+        # Keep adapter-package imports local to avoid a cycle with the registered exports.
         from .exports.storage import store_export_result
         writer = partial(store_export_result, project)
     kwargs = {} if clock is None else {'clock': clock}

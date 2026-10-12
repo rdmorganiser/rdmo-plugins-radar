@@ -213,7 +213,6 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, outcome)
     # The saved operation, rather than later form state, identifies the destination.
     session = host.session
     session['rdmo_radar.exports.RadarExportProvider.project_id'] = 999999
-    session['rdmo_radar.exports.RadarExportProvider.set_index'] = 99
     session.save()
     if outcome == 'missing_project':
         project.delete()

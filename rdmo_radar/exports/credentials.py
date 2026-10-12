@@ -144,10 +144,6 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         return RadarClient(self.radar_url, self.client_id, self.client_secret, self.redirect_url, self.request_timeout)
 
     @property
-    def token_url(self):
-        return self.client.token_url
-
-    @property
     def redirect_url(self):
         redirect_uri = urlsplit(settings.RADAR_PROVIDER['redirect_uri'])
         return urlunsplit((redirect_uri.scheme, redirect_uri.netloc, '/', '', ''))

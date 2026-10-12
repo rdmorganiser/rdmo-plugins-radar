@@ -24,7 +24,7 @@ from rdmo.views.utils import ProjectWrapper
 from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.rdmo import RDMOReadContext
 
-from .helpers import read_metadata, add_answer, add_attribute, export_for
+from .helpers import add_answer, add_attribute, export_for, read_metadata
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 """Prepare native RDMO answers and bridge the core's missing coordinate scopes.
 
-See docs/architecture.md for the public API audit and minimized core gaps.
+See docs/architecture.md for the scope contract and demonstrated core gaps.
 """
 from collections import defaultdict
 

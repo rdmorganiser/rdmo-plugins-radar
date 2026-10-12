@@ -113,7 +113,6 @@ class RadarExportProviderBase(Export):
             'workspace_choices',
             'radar_urls',
             'project_id',
-            'set_index',
             'operation',
             'export_context',
         ):

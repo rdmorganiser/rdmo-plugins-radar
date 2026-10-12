@@ -32,20 +32,6 @@ SCALAR_TARGETS = {
 }
 
 
-@dataclass(frozen=True)
-class AttributeRef:
-    path: str
-    aliases: tuple[str, ...] = ()
-
-    @property
-    def uri(self) -> str:
-        return TERMS_PREFIX + self.path
-
-    @property
-    def paths(self) -> tuple[str, ...]:
-        return (self.path, *self.aliases)
-
-
 @dataclass
 class RDMOReadContext:
     """Mapping scopes and diagnostics over prepared data; never loads or caches RDMO models."""
@@ -71,42 +57,33 @@ class RDMOReadContext:
         if issue not in self.issues:
             self.issues.append(issue)
 
-    def get_text(self, attribute: AttributeRef | str, collection_index: int = 0) -> str | None:
-        texts = self.get_texts(attribute)
-        if collection_index:
-            return texts[collection_index] if collection_index < len(texts) else None
+    def get_text(self, path: str) -> str | None:
+        texts = self.get_texts(path)
         if len(texts) > 1:
-            path = self._paths(attribute)[0]
             self.warn(path, path, 'Multiple answers for a scalar field', '; '.join(texts))
             return None
         return texts[0] if texts else None
 
-    def get_values(self, attribute: AttributeRef | str) -> list[Value]:
-        for path in self._paths(attribute):
-            values = get_scoped_values(
-                self.values, self.placements, path, int(self.set_index) if self.scope == 'dataset' else None,
-                (self.set_prefix, self.set_index) if self.scope == 'group' else None,
-            )
-            if values:
-                return values
-        return []
+    def get_values(self, path: str) -> list[Value]:
+        return get_scoped_values(
+            self.values, self.placements, path, int(self.set_index) if self.scope == 'dataset' else None,
+            (self.set_prefix, self.set_index) if self.scope == 'group' else None,
+        )
 
-    def get_texts(self, attribute: AttributeRef | str) -> list[str]:
-        return list(dict.fromkeys(value.text.strip() for value in self.get_values(attribute)
+    def get_texts(self, path: str) -> list[str]:
+        return list(dict.fromkeys(value.text.strip() for value in self.get_values(path)
                                   if value.text and value.text.strip() and not value.option))
 
     def get_option(
         self,
-        attribute: AttributeRef | str,
+        path: str,
         options: dict[str, str],
-        collection_index: int = 0,
         default: str | None = None,
     ) -> str | None:
-        values = [value for value in self.get_values(attribute) if value.is_true]
+        values = [value for value in self.get_values(path) if value.is_true]
         mapped = list(dict.fromkeys(options.get(value.option.uri_path) if value.option else None
                                     for value in values))
         if values and (None in mapped or len(mapped) > 1):
-            path = self._paths(attribute)[0]
             self.warn(path, path, 'Unmapped or conflicting controlled answers')
             return default
         return mapped[0] if mapped else default
@@ -119,10 +96,6 @@ class RDMOReadContext:
         if identifiers:
             self.warn('nameIdentifier', path, 'Identifier is ambiguous or contains display markup')
         return None
-
-    @staticmethod
-    def _paths(attribute: AttributeRef | str) -> tuple[str, ...]:
-        return attribute.paths if isinstance(attribute, AttributeRef) else (attribute,)
 
 
 @dataclass

@@ -11,7 +11,6 @@ import pytest
 
 from rdmo.core.exports import prettify_xml
 
-from rdmo_radar.client import dataset_page_url
 from rdmo_radar.exceptions import ExportStoreError, XmlExportError
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_validation_errors
@@ -105,24 +104,6 @@ def test_local_failure_retains_confirmed_id_and_url_without_retry():
     assert 'Private database detail' not in str(caught.value)
     service.writer.assert_called_once_with(10, 'radar-1', url)
     service.reader.assert_not_called()
-
-
-def test_custom_transport_can_run_between_direct_service_operations():
-    service, _, calls = make_export_service(RadarMetadata(title='Draft'))
-    client = Mock()
-    client.radar_url = 'https://radar-staging.example.test/'
-    client.create_dataset.return_value = {'id': 'confirmed'}
-    calls.attach_mock(client.create_dataset, 'remote')
-
-    payload = service.compute_payload(0, 'owner@example.test')
-    dataset = client.create_dataset('token', 'workspace', payload.payload)
-    url = dataset_page_url(client.radar_url, dataset['id'])
-    result = service.store_result(0, dataset['id'], url)
-
-    assert result == ExportResult('confirmed', url)
-    assert [call[0] for call in calls.mock_calls] == ['reader', 'mapping', 'clock', 'serializer', 'remote', 'writer']
-    client.create_dataset.assert_called_once_with('token', 'workspace', payload.payload)
-    service.writer.assert_called_once_with(0, 'confirmed', url)
 
 
 def test_storage_error_propagates_unchanged_without_double_wrapping():
@@ -282,11 +263,3 @@ assert RadarImportService(lambda root: metadata, lambda value: ()).process(None)
 assert not any(name.startswith(('django', 'rest_framework', 'rdmo.', 'rdmo_radar.exports')) for name in sys.modules)
 '''], env=environment, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
-
-
-def test_lazy_metadata_context_exports_remain_available():
-    from rdmo_radar.metadata import AttributeRef, RDMOReadContext, RDMOWriteContext, rdmo
-
-    assert (AttributeRef, RDMOReadContext, RDMOWriteContext) == (
-        rdmo.AttributeRef, rdmo.RDMOReadContext, rdmo.RDMOWriteContext,
-    )

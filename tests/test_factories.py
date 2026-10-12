@@ -11,7 +11,6 @@ from rdmo.projects.models import Project, Snapshot
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.factories import build_export_service, build_import_service, build_xml_export_service
-from rdmo_radar.imports.imports import RadarImport
 from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.types import Agent, MappingIssue, MappingResult, RadarMetadata

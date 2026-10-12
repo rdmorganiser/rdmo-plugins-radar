@@ -14,6 +14,8 @@ token endpoint, depending on the client registered by RADAR support.
 Setup
 -----
 
+These instructions use RDMO 2's project export/import interfaces. RDMO 3 frontend integration is deferred.
+
 Install the plugin in your RDMO virtual environment using pip (directly from GitHub):
 
 ```bash
@@ -133,8 +135,7 @@ the dataset link from the RADAR instance used for creation. If creation succeeds
 shows the confirmed dataset link so users can inspect it before attempting another export.
 
 Import retains RDMO's preview and checked-value save workflow; the mapping service stages unsaved Values.
-See [the architecture audit](docs/architecture.md) for service customization, pinned compatibility checks, and
-the remaining RDMO 3 legacy presentation blocker. Backend checks on RDMO 3 do not establish frontend support.
+See [the architecture documentation](docs/architecture.md) for service customization and verification.
 
 For diagnostics, RADAR administrators can use the API endpoints
 `GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does

@@ -281,7 +281,7 @@ def test_oauth_workspace_callback_stores_locally_sorted_choices(monkeypatch):
 def test_credentials_provider_uses_json_api_and_registered_url():
     provider = make_provider()
 
-    assert provider.token_url == 'https://radar.example.test/radar/api/tokens'
+    assert provider.client.token_url == 'https://radar.example.test/radar/api/tokens'
     assert provider.client_id == 'configured-client-id'
     assert provider.redirect_url == 'https://rdmo.example.test/'
 
