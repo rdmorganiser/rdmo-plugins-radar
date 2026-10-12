@@ -28,7 +28,7 @@ def merge_funding(context: RDMOWriteContext, references: list[FundingReference])
     for reference in references:
         set_index = _find_funder(context, reference)
         if set_index is None:
-            set_index = context.next_set_index(FUNDER_ANCHOR)
+            set_index = context.compute_next_set_index(FUNDER_ANCHOR)
             marker = reference.funder_name or reference.award_number or f'Funder {set_index + 1}'
             context.add(FUNDER_ANCHOR, marker, set_index=set_index, dataset=False)
             context.add(FUNDER_NAME, reference.funder_name, set_index=set_index, dataset=False)
@@ -45,11 +45,11 @@ def merge_funding(context: RDMOWriteContext, references: list[FundingReference])
 
 def _find_funder(context: RDMOWriteContext, reference: FundingReference) -> int | None:
     if reference.funder_identifier:
-        for value in context.values_for('project/funder/name_identifier'):
+        for value in context.get_values('project/funder/name_identifier'):
             if normalize(value.text) == normalize(reference.funder_identifier.value):
                 return value.set_index
     if reference.funder_name:
-        for value in context.values_for(FUNDER_NAME):
+        for value in context.get_values(FUNDER_NAME):
             if normalize(value.text) == normalize(reference.funder_name):
                 return value.set_index
     return None
@@ -58,7 +58,7 @@ def _find_funder(context: RDMOWriteContext, reference: FundingReference) -> int 
 def _add_missing(context: RDMOWriteContext, path: str, text: str | None, set_index: int) -> None:
     if text in (None, ''):
         return
-    existing = [value for value in context.values_for(path) if value.set_index == set_index]
+    existing = [value for value in context.get_values(path) if value.set_index == set_index]
     if any(normalize(value.text) == normalize(text) for value in existing):
         return
     if existing:

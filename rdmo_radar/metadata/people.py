@@ -64,7 +64,7 @@ def merge_contributors(context: RDMOWriteContext, contributors: list[Agent]) -> 
     for contributor in contributors:
         set_index = _find_partner(context, contributor)
         if set_index is None:
-            set_index = context.next_set_index(CONTRIBUTOR_NAME)
+            set_index = context.compute_next_set_index(CONTRIBUTOR_NAME)
             context.add(CONTRIBUTOR_NAME, contributor.name, set_index=set_index, dataset=False)
         _add_missing_partner_value(context, 'project/partner/given_name', contributor.given_name, set_index)
         _add_missing_partner_value(context, 'project/partner/family_name', contributor.family_name, set_index)
@@ -145,10 +145,10 @@ def _read_partner(context: RDMOReadContext) -> Agent | None:
 def _find_partner(context: RDMOWriteContext, contributor: Agent) -> int | None:
     identifier = contributor.identifiers[0].value if contributor.identifiers else None
     if identifier:
-        for value in context.values_for('project/partner/orcid'):
+        for value in context.get_values('project/partner/orcid'):
             if normalize(value.text) == normalize(identifier):
                 return value.set_index
-    for value in context.values_for(CONTRIBUTOR_NAME):
+    for value in context.get_values(CONTRIBUTOR_NAME):
         if normalize(value.text) == normalize(contributor.name):
             return value.set_index
     return None
@@ -162,7 +162,7 @@ def _add_missing_partner_value(
 ) -> None:
     if text in (None, ''):
         return
-    existing = [value for value in context.values_for(path) if value.set_index == set_index]
+    existing = [value for value in context.get_values(path) if value.set_index == set_index]
     if any(normalize(value.text) == normalize(text) for value in existing):
         return
     if existing:

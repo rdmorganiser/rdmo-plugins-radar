@@ -11,7 +11,6 @@ from rdmo_radar.metadata.types import (
     FundingReference,
     GeoLocation,
     Identifier,
-    MappingIssue,
     RadarMetadata,
     Resource,
     Rights,
@@ -50,7 +49,6 @@ def full_metadata():
         funding_references=[FundingReference('Funder', Identifier('ror-2', 'ROR'),
                                              'ABC-123', 'https://example.test/award', 'Award title')],
         version='2.1',
-        mapping_issues=[MappingIssue('test', 'Not serialized')],
     )
 
 

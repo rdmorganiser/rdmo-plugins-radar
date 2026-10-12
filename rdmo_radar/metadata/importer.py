@@ -1,20 +1,33 @@
+from collections.abc import Callable
+
 from rdmo.projects.imports import Import as ProjectImport
+from rdmo.projects.models import Value
 
 from .dataset import write_dataset_fields
 from .funding import merge_funding
 from .people import merge_contributors, write_creators
 from .rdmo import RDMOWriteContext
-from .types import MappingIssue, RadarMetadata
+from .types import Agent, FundingReference, MappingIssue, RadarMetadata
+from .values import fetch_project_values
 
 
 def write_metadata(
     import_plugin: ProjectImport,
     metadata: RadarMetadata,
     set_index: int,
-) -> list[MappingIssue]:
-    context = RDMOWriteContext(import_plugin, set_index)
-    write_dataset_fields(context, metadata)
-    write_creators(context, metadata.creators)
-    merge_contributors(context, metadata.contributors)
-    merge_funding(context, metadata.funding_references)
-    return context.issues
+    *,
+    existing_values: dict[str, list[Value]] | None = None,
+    dataset: Callable[[RDMOWriteContext, RadarMetadata], None] = write_dataset_fields,
+    creators: Callable[[RDMOWriteContext, list[Agent]], None] = write_creators,
+    contributors: Callable[[RDMOWriteContext, list[Agent]], None] = merge_contributors,
+    funding: Callable[[RDMOWriteContext, list[FundingReference]], None] = merge_funding,
+) -> tuple[MappingIssue, ...]:
+    if existing_values is None:
+        project = import_plugin.current_project
+        existing_values = fetch_project_values(project) if project is not None else {}
+    context = RDMOWriteContext(import_plugin, set_index, existing_values)
+    dataset(context, metadata)
+    creators(context, metadata.creators)
+    contributors(context, metadata.contributors)
+    funding(context, metadata.funding_references)
+    return tuple(context.issues)

@@ -152,7 +152,7 @@ def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
     if not titles:
         return
     acronym = titles[0]
-    existing = context.values_for('project/acronym')
+    existing = context.get_values('project/acronym')
     if not existing:
         context.add('project/acronym', acronym, dataset=False)
     elif all(normalize(value.text) != normalize(acronym) for value in existing):
@@ -163,7 +163,7 @@ def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
 
 def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> None:
     existing_paths = {
-        value.option.uri_path for value in context.values_for('project/research_field/title') if value.option
+        value.option.uri_path for value in context.get_values('project/research_field/title') if value.option
     }
     for subject in subjects:
         option_path = get_option_path(XMLVocabulary.controlled_subject_area_options, subject.controlled_name)
@@ -174,7 +174,7 @@ def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> N
             subject.controlled_name,
             XMLVocabulary.controlled_subject_area_options,
             text=subject.additional_name,
-            collection_index=context.next_collection_index('project/research_field/title'),
+            collection_index=context.compute_next_collection_index('project/research_field/title'),
             dataset=False,
         )
         if value and value.option:

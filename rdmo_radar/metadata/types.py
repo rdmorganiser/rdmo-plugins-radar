@@ -115,4 +115,9 @@ class RadarMetadata:
     related_information: list[str] = field(default_factory=list)
     funding_references: list[FundingReference] = field(default_factory=list)
     version: str | None = None
-    mapping_issues: list[MappingIssue] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MappingResult:
+    metadata: RadarMetadata
+    issues: tuple[MappingIssue, ...] = ()

@@ -31,7 +31,7 @@ def make_import(xml):
     radar_import = RadarImport.__new__(RadarImport)
     radar_import.current_project = SimpleNamespace(
         catalog=object(),
-        values=SimpleNamespace(filter=lambda **kwargs: []),
+        values=SimpleNamespace(filter=lambda **kwargs: SimpleNamespace(select_related=lambda *args: [])),
     )
     radar_import.root = ElementTree.fromstring(xml)
     radar_import.values = []
@@ -73,17 +73,19 @@ def test_only_confirmed_dataset_paths_are_read(db):
         'project/dataset/title': 'Dataset title',
         'project/dataset/format': 'text/csv',
     })
-    metadata = compute_metadata(export, 0)
+    result = compute_metadata(export.get_service().reader(0))
+    metadata = result.metadata
     assert metadata.resource == Resource('Canonical resource')
     assert metadata.title == 'Dataset title'
-    assert not any(issue.source == 'project/dataset/format' for issue in metadata.mapping_issues)
+    assert not any(issue.source == 'project/dataset/format' for issue in result.issues)
 
 
 def test_creator_name_is_derived_from_structured_parts(db):
     export = make_export()
     add_answer(export.project, 'project/dataset/creator/given_name', 'Jane', set_prefix='0')
     add_answer(export.project, 'project/dataset/creator/family_name', 'Doe', set_prefix='0')
-    metadata = compute_metadata(export, 0)
+    result = compute_metadata(export.get_service().reader(0))
+    metadata = result.metadata
     assert metadata.creators[0].name == 'Doe, Jane'
     assert metadata.creators[0].given_name == 'Jane'
     assert metadata.creators[0].family_name == 'Doe'

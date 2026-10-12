@@ -1,88 +1,97 @@
-"""Resolve stored answers using the catalog's page/questionset coordinates."""
+"""Prepare native RDMO answers and bridge the core's missing coordinate scopes.
+
+See docs/architecture.md for the public API audit and minimized core gaps.
+"""
 from collections import defaultdict
 
-DATASET_ANCHORS = {'project/dataset/id', 'project/dataset/title'}
+from rdmo.questions.models import Page, QuestionSet
+
+DATASET_ANCHORS = ('project/dataset/id', 'project/dataset/title')
+
+
+def compute_next_dataset_index(values):
+    """Allocate after persisted dataset titles, preserving the import convention."""
+    current_datasets = values.get('project/dataset/title', ())
+    return max((value.set_index for value in current_datasets), default=-1) + 1
 
 
 def coordinates(value):
     return (*value.set_prefix.split('|'), str(value.set_index)) if value.set_prefix else (str(value.set_index),)
 
 
-class AnswerIndex:
-    def __init__(self, export):
-        self.values = defaultdict(list)
-        self.placements = defaultdict(list)
-        for value in export.project.values.filter(snapshot=export.snapshot).select_related('attribute', 'option'):
-            if value.attribute:
-                self.values[value.attribute.path].append(value)
-        for values in self.values.values():
-            values.sort(key=lambda value: (tuple(int(part) for part in coordinates(value)), value.collection_index))
-        catalog = getattr(export.project, 'catalog', None)
-        if catalog:
-            catalog.prefetch_elements()
-            self._walk(catalog)
-
-    def _walk(self, element, ancestors=()):
-        kind = element._meta.model_name
-        attribute = getattr(element, 'attribute', None)
-        path = attribute.path if attribute else None
-        if kind in ('page', 'questionset'):
-            ancestors = (*ancestors, (path, element.is_collection))
-        if path:
-            self.placements[path].append(ancestors)
-        for child in getattr(element, 'elements', ()):
-            self._walk(child, ancestors)
-
-    def rows(self, path, dataset_index=None, group=None):
-        values = self.values.get(path, [])
-        if group is not None:
-            return [value for value in values if (value.set_prefix, value.set_index) == group]
-        placements = self.placements.get(path)
-        if placements:
-            return [value for value in values if any(
-                self._matches(value, placement, dataset_index) for placement in placements
-            )]
-        if dataset_index is None:
-            return list(values)
-        # Legacy attributes absent from the catalog retain their established layout.
-        if path.startswith('project/dataset/creator/'):
-            return [value for value in values if coordinates(value)[0] == str(dataset_index) and value.set_prefix]
-        return [value for value in values if value.set_prefix == '' and value.set_index == dataset_index]
-
-    @staticmethod
-    def _matches(value, placement, dataset_index):
-        position = coordinates(value)
-        if len(position) != len(placement):
-            return False
-        for coordinate, (anchor, collection) in zip(position, placement, strict=True):
-            if not collection and coordinate != '0':
-                return False
-            if anchor in DATASET_ANCHORS and dataset_index is not None and coordinate != str(dataset_index):
-                return False
-        return True
-
-    def dataset_indices(self):
-        indices = set()
-        for path in DATASET_ANCHORS:
-            for value in self.rows(path):
-                placements = self.placements.get(path, [])
-                for placement in placements:
-                    if self._matches(value, placement, None):
-                        for level, (anchor, _) in enumerate(placement):
-                            if anchor in DATASET_ANCHORS:
-                                indices.add(int(coordinates(value)[level]))
-                                break
-                if not any(anchor in DATASET_ANCHORS for p in placements for anchor, _ in p) and not value.set_prefix:
-                    indices.add(value.set_index)
-        return sorted(indices)
+def fetch_project_values(project, snapshot=None):
+    """Load Values once; group by native path without imposing a catalog or namespace."""
+    values = defaultdict(list)
+    for value in project.values.filter(snapshot=snapshot).select_related('attribute', 'option'):
+        if value.attribute:
+            values[value.attribute.path].append(value)
+    for answers in values.values():
+        answers.sort(key=lambda value: (tuple(int(part) for part in coordinates(value)), value.collection_index))
+    return dict(values)
 
 
-def get_answer_index(export):
-    """Cache the single production read path for this project/snapshot."""
-    project = export.project
-    key = (id(project), getattr(export, 'snapshot', None))
-    cached = getattr(export, '_radar_answer_index', None)
-    if cached is None or cached[0] != key:
-        cached = (key, AnswerIndex(export))
-        export._radar_answer_index = cached
-    return cached[1]
+def fetch_catalog_placements(catalog):
+    """Convert core model preorder to minimal coordinate ancestry, including empty markers.
+
+    RDMO exposes descendants/links but no public placement API. The temporary parent scopes
+    preserve reused elements; all recursive traversal and model loading belong to core.
+    """
+    placements = defaultdict(set)
+    if catalog is not None:
+        catalog.prefetch_elements()
+        for page in catalog.pages:
+            parents = defaultdict(set, {page: {()}})
+            for element in (page, *page.descendants):
+                attribute = getattr(element, 'attribute', None)
+                path = attribute.path if attribute else None
+                for ancestors in tuple(parents[element]):
+                    scope = (*ancestors, (path, element.is_collection)) if isinstance(
+                        element, Page | QuestionSet
+                    ) else ancestors
+                    if path:
+                        placements[path].add(scope)
+                    for child in getattr(element, 'elements', ()):
+                        parents[child].add(scope)
+    return {path: tuple(scopes) for path, scopes in placements.items()}
+
+
+def matches_placement(value, placement, dataset_index=None):
+    """Match complete coordinates; core filter_set's startswith is not boundary-safe."""
+    position = coordinates(value)
+    return len(position) == len(placement) and all(
+        (collection or coordinate == '0') and
+        (anchor not in DATASET_ANCHORS or dataset_index is None or coordinate == str(dataset_index))
+        for coordinate, (anchor, collection) in zip(position, placement, strict=True)
+    )
+
+
+def get_scoped_values(values, placements, path, dataset_index=None, group=None):
+    answers = values.get(path, ())
+    if group is not None:
+        return [value for value in answers if (value.set_prefix, value.set_index) == group]
+    if placements.get(path):
+        return [value for value in answers if any(
+            matches_placement(value, placement, dataset_index) for placement in placements[path]
+        )]
+    if dataset_index is None:
+        return list(answers)
+    # Preserve only the established fallback for attributes absent from the catalog.
+    if path.startswith('project/dataset/creator/'):
+        return [value for value in answers if value.set_prefix and coordinates(value)[0] == str(dataset_index)]
+    return [value for value in answers if value.set_prefix == '' and value.set_index == dataset_index]
+
+
+def compute_dataset_indices(values, placements):
+    indices = set()
+    for path in DATASET_ANCHORS:
+        scopes = placements.get(path, ())
+        for value in get_scoped_values(values, placements, path):
+            for placement in scopes:
+                if matches_placement(value, placement):
+                    for level, (anchor, _) in enumerate(placement):
+                        if anchor in DATASET_ANCHORS:
+                            indices.add(int(coordinates(value)[level]))
+                            break
+            if not any(anchor in DATASET_ANCHORS for scope in scopes for anchor, _ in scope) and not value.set_prefix:
+                indices.add(value.set_index)
+    return sorted(indices)

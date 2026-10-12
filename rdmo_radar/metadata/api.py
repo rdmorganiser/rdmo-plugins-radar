@@ -4,6 +4,20 @@ from .constants import to_api_value
 from .types import Affiliation, Agent, FundingReference, GeoLocation, RadarMetadata, Software
 
 
+def compute_radar_payload(metadata: RadarMetadata, *, responsible_email: str, timestamp: int) -> dict:
+    """Build the RADAR request with an explicit millisecond timestamp, independent of a request/session."""
+    return {
+        'technicalMetadata': {
+            'retentionPeriod': 10,
+            'archiveDate': timestamp,
+            'publishDate': timestamp,
+            'responsibleEmail': responsible_email,
+            'schema': {'key': 'RDDM', 'version': '9.3'},
+        },
+        'descriptiveMetadata': to_api_payload(metadata),
+    }
+
+
 def to_api_payload(metadata: RadarMetadata) -> dict:
     """Build descriptive metadata for RDDM 9.3; omit unavailable draft fields."""
     data = {}

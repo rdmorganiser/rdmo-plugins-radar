@@ -4,12 +4,11 @@ from django.utils.html import strip_tags
 
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
-from rdmo.projects.exports import Export
 from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
 
 from .types import MappingIssue
-from .values import get_answer_index
+from .values import get_scoped_values
 
 TERMS_PREFIX = 'https://rdmorganiser.github.io/terms/domain/'
 OPTION_PREFIXES = (
@@ -49,21 +48,19 @@ class AttributeRef:
 
 @dataclass
 class RDMOReadContext:
-    export: Export
+    """Mapping scopes and diagnostics over prepared data; never loads or caches RDMO models."""
+    values: dict[str, list[Value]]
+    placements: dict[str, tuple]
     set_prefix: str = ''
     set_index: int = 0
     scope: str = 'dataset'
     issues: list[MappingIssue] = field(default_factory=list)
 
-    @property
-    def index(self):
-        return get_answer_index(self.export)
-
     def shared(self):
-        return RDMOReadContext(self.export, scope='project', issues=self.issues)
+        return RDMOReadContext(self.values, self.placements, scope='project', issues=self.issues)
 
     def group(self, prefix, index):
-        return RDMOReadContext(self.export, prefix, index, scope='group', issues=self.issues)
+        return RDMOReadContext(self.values, self.placements, prefix, index, scope='group', issues=self.issues)
 
     def groups(self, *paths):
         positions = {(value.set_prefix, value.set_index) for path in paths for value in self.get_values(path)}
@@ -86,8 +83,8 @@ class RDMOReadContext:
 
     def get_values(self, attribute: AttributeRef | str) -> list[Value]:
         for path in self._paths(attribute):
-            values = self.index.rows(
-                path, int(self.set_index) if self.scope == 'dataset' else None,
+            values = get_scoped_values(
+                self.values, self.placements, path, int(self.set_index) if self.scope == 'dataset' else None,
                 (self.set_prefix, self.set_index) if self.scope == 'group' else None,
             )
             if values:
@@ -130,9 +127,21 @@ class RDMOReadContext:
 
 @dataclass
 class RDMOWriteContext:
+    """Merge prepared answers and stage unsaved Values for one import mapping operation."""
     import_plugin: ProjectImport
     dataset_index: int
+    existing_values: dict[str, list[Value]]
     issues: list[MappingIssue] = field(default_factory=list)
+    _values: dict[str, list[Value]] = field(init=False, repr=False)
+    _attributes: dict[str, Attribute | None] = field(default_factory=dict, init=False, repr=False)
+    _options: dict[str, Option | None] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self):
+        # Copy the buckets: staging must not change the prepared project read.
+        self._values = {path: list(values) for path, values in self.existing_values.items()}
+        for value in self.import_plugin.values:
+            if value.attribute is not None:
+                self._values.setdefault(value.attribute.path, []).append(value)
 
     def add(
         self,
@@ -146,20 +155,14 @@ class RDMOWriteContext:
     ) -> Value | None:
         if text in (None, ''):
             return None
-        attribute = self.get_attribute(path)
+        attribute = self.fetch_attribute(path)
         if attribute is None:
             self.warn(path, 'RDMO Attribute is not installed', str(text))
             return None
-        value = Value(
-            attribute=attribute,
-            set_prefix=set_prefix,
-            set_index=self.dataset_index if set_index is None and dataset else (set_index or 0),
-            text=text,
+        return self._add_value(
+            attribute, text, set_prefix=set_prefix, set_index=set_index,
+            collection_index=collection_index, dataset=dataset,
         )
-        if collection_index is not None:
-            value.collection_index = collection_index
-        self.import_plugin.values.append(value)
-        return value
 
     def add_option(
         self,
@@ -179,14 +182,76 @@ class RDMOWriteContext:
         if option_path is None:
             self.warn(path, 'RADAR controlled value has no RDMO mapping', canonical_value)
             return None
-        attribute = self.get_attribute(path)
-        option = self.get_option(option_path)
+        attribute = self.fetch_attribute(path)
+        option = self.fetch_option(option_path)
         if attribute is None:
             self.warn(path, 'RDMO Attribute is not installed', canonical_value)
             return None
         if option is None:
             self.warn(path, f'RDMO Option is not installed: {option_path}', canonical_value)
             return None
+        return self._add_value(
+            attribute, text, option=option, set_prefix=set_prefix, set_index=set_index,
+            collection_index=collection_index, dataset=dataset,
+        )
+
+    def add_unique_text(self, path: str, text: str) -> Value | None:
+        normalized = normalize(text)
+        if any(normalize(value.text) == normalized for value in self.get_values(path)):
+            return None
+        return self.add(path, text, collection_index=self.compute_next_collection_index(path), dataset=False)
+
+    def get_values(self, path: str) -> list[Value]:
+        return list(self._values.get(path, ()))
+
+    def compute_next_set_index(self, anchor_path: str) -> int:
+        values = self.get_values(anchor_path)
+        return max((value.set_index for value in values), default=-1) + 1
+
+    def compute_next_collection_index(self, path: str) -> int:
+        values = self.get_values(path)
+        return max((value.collection_index for value in values), default=-1) + 1
+
+    def fetch_attribute(self, path: str) -> Attribute | None:
+        if path in self._attributes:
+            return self._attributes[path]
+        attribute = self.import_plugin.get_attribute(TERMS_PREFIX + path)
+        # Preserve installed custom URI prefixes through the public import API.
+        if attribute is None:
+            for uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
+                attribute = self.import_plugin.get_attribute(uri)
+                if attribute is not None:
+                    break
+        self._attributes[path] = attribute
+        return attribute
+
+    def fetch_option(self, path: str) -> Option | None:
+        if path in self._options:
+            return self._options[path]
+        option = None
+        for prefix in OPTION_PREFIXES:
+            option = self.import_plugin.get_option(prefix + path)
+            if option is not None:
+                break
+        if option is None:
+            for uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
+                option = self.import_plugin.get_option(uri)
+                if option is not None:
+                    break
+        self._options[path] = option
+        return option
+
+    def _add_value(
+        self,
+        attribute: Attribute,
+        text: object,
+        *,
+        option: Option | None = None,
+        set_prefix: str = '',
+        set_index: int | None = None,
+        collection_index: int | None = None,
+        dataset: bool = True,
+    ) -> Value:
         value = Value(
             attribute=attribute,
             option=option,
@@ -197,54 +262,8 @@ class RDMOWriteContext:
         if collection_index is not None:
             value.collection_index = collection_index
         self.import_plugin.values.append(value)
+        self._values.setdefault(attribute.path, []).append(value)
         return value
-
-    def add_unique_text(self, path: str, text: str) -> Value | None:
-        normalized = normalize(text)
-        if any(normalize(value.text) == normalized for value in self.values_for(path)):
-            return None
-        return self.add(path, text, collection_index=self.next_collection_index(path), dataset=False)
-
-    def values_for(self, path: str) -> list[Value]:
-        existing = []
-        project = getattr(self.import_plugin, 'current_project', None)
-        if project is not None:
-            existing = list(project.values.filter(snapshot=None, attribute__path=path))
-        staged = [
-            value for value in self.import_plugin.values
-            if value.attribute is not None and value.attribute.path == path
-        ]
-        return [*existing, *staged]
-
-    def next_set_index(self, anchor_path: str) -> int:
-        values = self.values_for(anchor_path)
-        return max((value.set_index for value in values), default=-1) + 1
-
-    def next_collection_index(self, path: str) -> int:
-        values = self.values_for(path)
-        return max((value.collection_index for value in values), default=-1) + 1
-
-    def get_attribute(self, path: str):
-        attribute = self.import_plugin.get_attribute(TERMS_PREFIX + path)
-        if attribute is not None:
-            return attribute
-        # Preserve installed custom URI prefixes through the public import API.
-        for uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
-            attribute = self.import_plugin.get_attribute(uri)
-            if attribute is not None:
-                return attribute
-        return None
-
-    def get_option(self, path: str):
-        for prefix in OPTION_PREFIXES:
-            option = self.import_plugin.get_option(prefix + path)
-            if option is not None:
-                return option
-        for uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
-            option = self.import_plugin.get_option(uri)
-            if option is not None:
-                return option
-        return None
 
     def warn(self, field: str, reason: str, value: str | None = None) -> None:
         issue = MappingIssue(field, reason, value)

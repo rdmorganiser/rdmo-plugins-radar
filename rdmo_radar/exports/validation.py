@@ -1,7 +1,23 @@
 from functools import lru_cache
 from pathlib import Path
 
+from django.utils.translation import gettext_lazy as _
+
 import xmlschema
+
+REQUIRED_FIELD_LABELS = {
+    'identifier': _('Identifier'),
+    'identifier.identifierType': _('Identifier type'),
+    'creators.creator': _('Creator'),
+    'title': _('Title'),
+    'publishers.publisher': _('Publisher'),
+    'productionYear': _('Production year'),
+    'subjectAreas.subjectArea': _('Subject area'),
+    'resource.value': _('Resource description'),
+    'resource.resourceType': _('Resource type'),
+    'rights.controlledRights': _('Rights'),
+    'rightsHolders.rightsHolder': _('Rights holder'),
+}
 
 SCHEMA_DIRECTORY = Path(__file__).resolve().parent.parent / 'schemas'
 
