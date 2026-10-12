@@ -2,6 +2,7 @@ import pytest
 
 from rdmo_radar.exports import RadarExportProvider
 from rdmo_radar.exports.exports import RadarExport
+from rdmo_radar.mappings import ExportCandidate
 from rdmo_radar.metadata.types import Agent, Identifier, MappingResult, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.metadata.validation import missing_required_fields
 
@@ -37,7 +38,7 @@ def test_rest_provider_does_not_inherit_xml_exporter():
 
 def test_xml_computes_metadata_once_per_dataset(monkeypatch):
     export = configure_service(RadarExport('radar-xml', 'RADAR', 'rdmo_radar.exports.RadarExport'))
-    export.get_dataset_indices = lambda: [0]
+    export.get_candidates = lambda: [ExportCandidate('0', 'Dataset', {'set_index': 0})]
     calls = []
 
     def compute(context):
@@ -51,7 +52,7 @@ def test_xml_computes_metadata_once_per_dataset(monkeypatch):
 
 def test_rest_warnings_do_not_use_xml_adapter(monkeypatch):
     provider = configure_service(RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider'))
-    provider.get_dataset_indices = lambda: [0]
+    provider.get_candidates = lambda: [ExportCandidate('0', 'Dataset', {'set_index': 0})]
     provider.get_service().mapping = lambda context: MappingResult(complete_metadata(resource=Resource('Description')))
     monkeypatch.setattr('rdmo_radar.metadata.xml.to_xml_payload', lambda metadata: pytest.fail('XML called'))
     assert provider.get_mapping_warnings() == [{'title': 'Dataset', 'issues': (), 'missing': ['Resource type']}]

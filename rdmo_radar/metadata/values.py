@@ -1,18 +1,102 @@
-"""Prepare native RDMO answers and bridge the core's missing coordinate scopes.
-
-See docs/architecture.md for the scope contract and demonstrated core gaps.
-"""
+"""Prepare native RDMO Values and match coordinates without catalog-specific paths."""
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 from rdmo.questions.models import Page, QuestionSet
 
-DATASET_ANCHORS = ('project/dataset/id', 'project/dataset/title')
+
+def model_key(model, path=None):
+    """An identity plus lookup labels; unsaved objects never share a None identity."""
+    path = path if path is not None else model.path
+    uri = model.uri or None
+    if model.pk is not None:
+        return ('id', model.pk, path, uri)
+    if uri:
+        return ('uri', uri, path, uri)
+    return ('object', id(model), path, None)
 
 
-def compute_next_dataset_index(values):
-    """Allocate after persisted dataset titles, preserving the import convention."""
-    current_datasets = values.get('project/dataset/title', ())
-    return max((value.set_index for value in current_datasets), default=-1) + 1
+def is_uri(selector):
+    return isinstance(selector, str) and bool(urlsplit(selector).scheme)
+
+
+def selector_key(selector):
+    if isinstance(selector, int):
+        return ('id', selector)
+    if isinstance(selector, str):
+        return ('uri' if is_uri(selector) else 'path', selector)
+    if selector.pk is not None:
+        return ('id', selector.pk)
+    return model_key(selector)[:2]
+
+
+def selector_label(selector):
+    """Describe a selector without loading deferred fields on persisted models."""
+    if isinstance(selector, str | int):
+        return str(selector)
+    if selector.pk is not None:
+        return str(selector.pk)
+    return selector.uri or selector.path or str(id(selector))
+
+
+def prepare_values(values):
+    """Adapt legacy path buckets, preserving each identifiable Attribute separately.
+
+    A path-keyed bucket of path-only synthetic models explicitly represents one fixture
+    Attribute. Outside that compatibility input, URI-less unsaved objects keep object identity.
+    """
+    prepared = defaultdict(list)
+    identities = {}
+    for source, answers in values.items():
+        if isinstance(source, tuple):
+            prepared[identities.setdefault(source[:2], source)].extend(answers)
+            continue
+        for value in answers:
+            attribute = getattr(value, 'attribute', None)
+            if attribute is None and not isinstance(source, str):
+                continue
+            key = model_key(attribute) if attribute is not None else ('path', source, source, None)
+            if key[0] == 'object' and isinstance(source, str):
+                key = ('path', source, source, None)
+            key = identities.setdefault(key[:2], key)
+            prepared[key].append(value)
+    return dict(prepared)
+
+
+def prepare_read_data(values, placements):
+    """Prepare buckets and local aliases once, including attributes with no answers."""
+    values = prepare_values(values)
+    identities = {key[:2]: key for key in values}
+    paths = defaultdict(set)
+    for key in values:
+        paths[key[2]].add(key)
+
+    def placement_key(key):
+        if not isinstance(key, str):
+            # Catalog prefetch objects may have stale URI labels. The PK still identifies
+            # the same Attribute; prefer labels from freshly prepared Value relations.
+            return identities.setdefault(key[:2], key)
+        matches = paths[key]
+        # Do not assign a path-only placement to one of several identifiable Attributes.
+        return next(iter(matches)) if len(matches) == 1 else ('path', key, key, None)
+
+    prepared_placements = defaultdict(list)
+    for key, scopes in placements.items():
+        prepared_placements[placement_key(key)].extend(
+            tuple((placement_key(anchor) if anchor is not None else None, collection)
+                  for anchor, collection in scope)
+            for scope in scopes
+        )
+    aliases = defaultdict(set)
+    keys = set(values) | set(prepared_placements)
+    keys.update(anchor for scopes in prepared_placements.values() for scope in scopes
+                for anchor, _ in scope if anchor is not None)
+    for key in keys:
+        aliases[('path', key[2])].add(key)
+        aliases[key[:2]].add(key)
+        if key[3]:
+            aliases[('uri', key[3])].add(key)
+    return values, dict(prepared_placements), {alias: tuple(keys) for alias, keys in aliases.items()}
 
 
 def coordinates(value):
@@ -20,22 +104,18 @@ def coordinates(value):
 
 
 def fetch_project_values(project, snapshot=None):
-    """Load Values once; group by native path without imposing a catalog or namespace."""
+    """Load Values and their Attributes/Options once, grouped by Attribute identity."""
     values = defaultdict(list)
     for value in project.values.filter(snapshot=snapshot).select_related('attribute', 'option'):
-        if value.attribute:
-            values[value.attribute.path].append(value)
+        if value.attribute is not None:
+            values[model_key(value.attribute)].append(value)
     for answers in values.values():
         answers.sort(key=lambda value: (tuple(int(part) for part in coordinates(value)), value.collection_index))
     return dict(values)
 
 
 def fetch_catalog_placements(catalog):
-    """Convert core model preorder to minimal coordinate ancestry, including empty markers.
-
-    RDMO exposes descendants/links but no public placement API. The temporary parent scopes
-    preserve reused elements; all recursive traversal and model loading belong to core.
-    """
+    """Convert core preorder to identity-aware ancestry, retaining empty markers."""
     placements = defaultdict(set)
     if catalog is not None:
         catalog.prefetch_elements()
@@ -43,55 +123,35 @@ def fetch_catalog_placements(catalog):
             parents = defaultdict(set, {page: {()}})
             for element in (page, *page.descendants):
                 attribute = getattr(element, 'attribute', None)
-                path = attribute.path if attribute else None
+                key = model_key(attribute) if attribute is not None else None
                 for ancestors in tuple(parents[element]):
-                    scope = (*ancestors, (path, element.is_collection)) if isinstance(
+                    scope = (*ancestors, (key, element.is_collection)) if isinstance(
                         element, Page | QuestionSet
                     ) else ancestors
-                    if path:
-                        placements[path].add(scope)
+                    if key is not None:
+                        placements[key].add(scope)
                     for child in getattr(element, 'elements', ()):
                         parents[child].add(scope)
-    return {path: tuple(scopes) for path, scopes in placements.items()}
+    return {key: tuple(scopes) for key, scopes in placements.items()}
 
 
-def matches_placement(value, placement, dataset_index=None):
-    """Match complete coordinates; core filter_set's startswith is not boundary-safe."""
+def matches_placement(value, placement, constraints=None):
+    """Match complete coordinates and explicit identity-based scope constraints."""
+    constraints = constraints or {}
     position = coordinates(value)
     return len(position) == len(placement) and all(
         (collection or coordinate == '0') and
-        (anchor not in DATASET_ANCHORS or dataset_index is None or coordinate == str(dataset_index))
+        (anchor not in constraints or coordinate == str(constraints[anchor]))
         for coordinate, (anchor, collection) in zip(position, placement, strict=True)
     )
 
 
-def get_scoped_values(values, placements, path, dataset_index=None, group=None):
-    answers = values.get(path, ())
+def get_scoped_values(values, placements, key, *, constraints=None, group=None):
+    answers = values.get(key, ())
     if group is not None:
         return [value for value in answers if (value.set_prefix, value.set_index) == group]
-    if placements.get(path):
+    if placements.get(key):
         return [value for value in answers if any(
-            matches_placement(value, placement, dataset_index) for placement in placements[path]
+            matches_placement(value, placement, constraints) for placement in placements[key]
         )]
-    if dataset_index is None:
-        return list(answers)
-    # Preserve only the established fallback for attributes absent from the catalog.
-    if path.startswith('project/dataset/creator/'):
-        return [value for value in answers if value.set_prefix and coordinates(value)[0] == str(dataset_index)]
-    return [value for value in answers if value.set_prefix == '' and value.set_index == dataset_index]
-
-
-def compute_dataset_indices(values, placements):
-    indices = set()
-    for path in DATASET_ANCHORS:
-        scopes = placements.get(path, ())
-        for value in get_scoped_values(values, placements, path):
-            for placement in scopes:
-                if matches_placement(value, placement):
-                    for level, (anchor, _) in enumerate(placement):
-                        if anchor in DATASET_ANCHORS:
-                            indices.add(int(coordinates(value)[level]))
-                            break
-            if not any(anchor in DATASET_ANCHORS for scope in scopes for anchor, _ in scope) and not value.set_prefix:
-                indices.add(value.set_index)
-    return sorted(indices)
+    return list(answers)

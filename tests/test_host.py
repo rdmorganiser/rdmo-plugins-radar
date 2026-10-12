@@ -33,6 +33,14 @@ def host(settings, db, tmp_path):
         ('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'),
         ('radar-credentials', 'RADAR credentials', 'rdmo_radar.exports.RadarCredentialsExportProvider'),
         ('radar-oauth', 'RADAR OAuth', 'rdmo_radar.exports.RadarExportProvider'),
+        ('radar-project-xml', 'RADAR project XML', 'rdmo_radar.exports.RadarProjectExport'),
+        ('radar-project-credentials', 'RADAR project credentials',
+         'rdmo_radar.exports.RadarProjectCredentialsExportProvider'),
+        ('radar-project-oauth', 'RADAR project OAuth', 'rdmo_radar.exports.RadarProjectExportProvider'),
+        ('radar-custom-xml', 'RADAR custom XML', 'tests.test_mapping_profiles.CustomXmlExport'),
+        ('radar-custom-credentials', 'RADAR custom credentials',
+         'tests.test_mapping_profiles.CustomCredentialsExportProvider'),
+        ('radar-custom-oauth', 'RADAR custom OAuth', 'tests.test_mapping_profiles.CustomOauthExportProvider'),
     ]
     settings.PROJECT_SNAPSHOT_EXPORTS = [settings.PROJECT_EXPORTS[0]]
     settings.PROJECT_IMPORTS = [('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')]
@@ -88,7 +96,7 @@ def test_project_export_rejects_user_without_object_permission(host):
     assert host.get(export_url(project)).status_code == 403
 
 
-def credentials_login(host, project, monkeypatch, *, creation_status=201):
+def credentials_login(host, project, monkeypatch, *, creation_status=201, key='radar-credentials'):
     calls = []
 
     def post(url, **kwargs):
@@ -101,7 +109,7 @@ def credentials_login(host, project, monkeypatch, *, creation_status=201):
     monkeypatch.setattr('rdmo_radar.client.requests.get', lambda *args, **kwargs: response({
         'data': [{'id': 'workspace', 'descriptiveMetadata': {'title': 'Workspace'}}],
     }))
-    url = export_url(project, 'radar-credentials')
+    url = export_url(project, key)
     assert host.get(url).status_code == 200
     login = host.post(url, {'stage': 'credentials', 'username': 'radar-user', 'password': 'radar-password'})
     assert login.status_code == 302
@@ -209,7 +217,7 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, outcome)
         pytest.fail('Callback must not prepare mapping data')
 
     monkeypatch.setattr('rdmo_radar.exports.providers.build_export_service', no_preparation)
-    monkeypatch.setattr('rdmo_radar.factories.fetch_project_values', no_preparation)
+    monkeypatch.setattr('rdmo_radar.mappings.template_framework.fetch_project_values', no_preparation)
     # The saved operation, rather than later form state, identifies the destination.
     session = host.session
     session['rdmo_radar.exports.RadarExportProvider.project_id'] = 999999
@@ -331,3 +339,174 @@ def test_credentials_uses_actual_client_instance_for_dataset_link(host, monkeypa
     assert result.url == expected
     assert calls[-1][0].startswith('https://staging.example.test/')
     assert project.values.get(attribute__path='project/dataset/radar_url').text == expected
+
+
+def make_custom_project():
+    from .helpers import add_namespaced_attribute
+
+    project = Project.objects.create(title='Project')
+    attribute = add_namespaced_attribute('research/title', 'https://custom.test')
+    add_namespaced_attribute('research/radar_id', 'https://custom.test')
+    add_namespaced_attribute('research/radar_url', 'https://custom.test')
+    for parent, name in ((1, 'First record'), (10, 'Second record')):
+        Value.objects.create(project=project, attribute=attribute, text=name, set_prefix=str(parent), set_index=3)
+    return project
+
+
+def test_project_and_custom_xml_exports_dispatch_through_native_registration(host):
+    project = Project.objects.create(title='Project record')
+    warning = host.get(export_url(project, 'radar-project-xml'))
+    assert warning.status_code == 200
+    assert b'Project record.xml' in warning.content
+    downloaded = host.get(export_url(project, 'radar-project-xml'), {'download': '1'})
+    with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+        assert archive.namelist() == ['Project record.xml']
+        assert b'<re:title>Project record</re:title>' in archive.read('Project record.xml')
+    assert not project.values.exists()
+    project = make_custom_project()
+    downloaded = host.get(export_url(project, 'radar-custom-xml'), {'download': '1'})
+    with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+        assert archive.namelist() == ['First record.xml', 'Second record.xml']
+        assert b'<re:title>Second record</re:title>' in archive.read('Second record.xml')
+
+
+@pytest.mark.parametrize('mode', ['project', 'custom', 'storage_error'])
+def test_credentials_profiles_use_opaque_keys_and_selected_persistence(host, monkeypatch, mode):
+    from dataclasses import replace
+
+    from .test_mapping_profiles import CUSTOM_MAPPING, CustomCredentialsExportProvider
+
+    if mode == 'project':
+        project = Project.objects.create(title='Project record')
+        add_attribute('project/dataset/radar_id')
+        add_attribute('project/dataset/radar_url')
+        key, selected, title = 'radar-project-credentials', 'project', 'Project record'
+    else:
+        project = make_custom_project()
+        key, selected, title = 'radar-custom-credentials', 'record-10-3', 'Second record'
+    if mode == 'storage_error':
+        def fail(*args):
+            raise RuntimeError('Private database detail')
+        monkeypatch.setattr(CustomCredentialsExportProvider, 'mapping', replace(CUSTOM_MAPPING, store_result=fail))
+    url, calls = credentials_login(host, project, monkeypatch, key=key)
+    result = host.post(url, {'stage': 'export', 'dataset': selected, 'workspace': 'workspace'})
+    assert len(calls) == 2
+    assert calls[1][1]['json']['descriptiveMetadata']['title'] == title
+    if mode == 'storage_error':
+        assert result.status_code == 200
+        assert b'https://radar.example.test/radar/en/dataset/confirmed' in result.content
+        assert b'Private database detail' not in result.content
+        assert b'name="workspace"' not in result.content
+    else:
+        assert result.status_code == 302
+        assert result.url == 'https://radar.example.test/radar/en/dataset/confirmed'
+    if mode == 'custom':
+        stored = project.values.get(attribute__uri='https://custom.test/domain/research/radar_url')
+        assert (stored.set_prefix, stored.set_index, stored.text) == ('10', 3, result.url)
+    elif mode == 'project':
+        assert not project.values.exists()
+    else:
+        assert not project.values.filter(attribute__path='research/radar_url').exists()
+
+
+@pytest.mark.parametrize('mode', ['project', 'custom', 'storage_error'])
+def test_reconstructed_oauth_profiles_preserve_scope_and_optional_storage_without_readers(host, monkeypatch, mode):
+    from dataclasses import replace
+
+    from rdmo_radar.exports import RadarProjectExportProvider
+
+    from .test_mapping_profiles import CUSTOM_MAPPING, CustomOauthExportProvider
+
+    if mode == 'project':
+        project = Project.objects.create(title='Project record')
+        add_attribute('project/dataset/radar_id')
+        add_attribute('project/dataset/radar_url')
+        key, selected, title = 'radar-project-oauth', 'project', 'Project record'
+        cls = RadarProjectExportProvider
+        class_name = 'rdmo_radar.exports.RadarProjectExportProvider'
+    else:
+        project = make_custom_project()
+        key, selected, title = 'radar-custom-oauth', 'record-10-3', 'Second record'
+        cls = CustomOauthExportProvider
+        class_name = 'tests.test_mapping_profiles.CustomOauthExportProvider'
+    if mode == 'storage_error':
+        def fail(*args):
+            raise RuntimeError('Private database detail')
+        monkeypatch.setattr(cls, 'mapping', replace(CUSTOM_MAPPING, store_result=fail))
+    calls = []
+
+    def post(url, *args, **kwargs):
+        calls.append((url, args, kwargs))
+        return response({'access_token': 'oauth-token'} if '/oauth/token' in url else {'id': 'confirmed'})
+
+    monkeypatch.setattr('rdmo.services.providers.requests.post', post)
+    monkeypatch.setattr('rdmo.services.providers.requests.get', lambda *args, **kwargs: response({
+        'data': [{'id': 'workspace', 'descriptiveMetadata': {'title': 'Workspace'}}],
+    }))
+    url = export_url(project, key)
+    authorized = host.get(url)
+    state = parse_qs(urlsplit(authorized.url).query)['state'][0]
+    callback = reverse('oauth_callback', args=[key])
+    assert host.get(callback, {'state': state, 'code': 'workspace-code'}).status_code == 302
+    form = host.get(url)
+    assert form.status_code == 200
+    assert title.encode() in form.content
+    session = host.session
+    del session[f'{class_name}.access_token']
+    session.save()
+    authorization = host.post(url, {'dataset': selected, 'workspace': 'workspace'})
+    state = parse_qs(urlsplit(authorization.url).query)['state'][0]
+    captured = host.session[f'{class_name}.export_context']
+    assert captured['candidate']['key'] == selected
+    assert captured['provider'] == class_name
+
+    def no_preparation(*args, **kwargs):
+        pytest.fail('OAuth persistence must not prepare metadata readers')
+
+    monkeypatch.setattr(cls, 'mapping', replace(cls.mapping, build_reader=no_preparation, get_datasets=no_preparation,
+                                              compute_metadata=no_preparation))
+    monkeypatch.setattr('rdmo_radar.exports.providers.build_export_service', no_preparation)
+    session = host.session
+    session[f'{class_name}.project_id'] = 999999
+    session[f'{class_name}.dataset_choices'] = [('wrong-record', 'Changed form')]
+    session.save()
+    if mode == 'project':
+        # Omitted persistence remains success even if its former project disappears.
+        project.delete()
+    result = host.get(callback, {'state': state, 'code': 'creation-code'})
+    assert len(calls) == 3
+    assert calls[-1][2]['json']['descriptiveMetadata']['title'] == title
+    if mode == 'storage_error':
+        assert result.status_code == 200
+        assert b'https://radar.example.test/radar/en/dataset/confirmed' in result.content
+        assert b'Private database detail' not in result.content
+        assert b'name="workspace"' not in result.content
+    else:
+        assert result.status_code == 302
+        assert result.url == 'https://radar.example.test/radar/en/dataset/confirmed'
+    if mode == 'custom':
+        stored = project.values.get(attribute__uri='https://custom.test/domain/research/radar_url')
+        assert (stored.set_prefix, stored.set_index, stored.text) == ('10', 3, result.url)
+    assert f'{class_name}.export_context' not in host.session
+
+
+def test_stale_candidate_is_rejected_before_remote_creation(host, monkeypatch):
+    project = make_custom_project()
+    url, calls = credentials_login(host, project, monkeypatch, key='radar-custom-credentials')
+    project.values.filter(attribute__uri='https://custom.test/domain/research/title', set_prefix='10').delete()
+    result = host.post(url, {'stage': 'export', 'dataset': 'record-10-3', 'workspace': 'workspace'})
+    assert result.status_code == 200
+    assert b'no longer available' in result.content
+    assert len(calls) == 1
+
+
+def test_project_and_template_framework_sessions_coexist(host, monkeypatch):
+    project = Project.objects.create(title='Project record')
+    add_answer(project, 'project/dataset/title', 'Dataset')
+    credentials_login(host, project, monkeypatch)
+    credentials_login(host, project, monkeypatch, key='radar-project-credentials')
+    session = host.session
+    assert session['rdmo_radar.exports.RadarCredentialsExportProvider.dataset_choices'] == [['0', 'Dataset']]
+    assert session['rdmo_radar.exports.RadarProjectCredentialsExportProvider.dataset_choices'] == [
+        ['project', 'Project record'],
+    ]

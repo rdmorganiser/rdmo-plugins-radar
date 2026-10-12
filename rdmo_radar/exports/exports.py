@@ -9,7 +9,9 @@ from rdmo.projects.exports import Export
 
 from rdmo_radar.exceptions import XmlExportError
 from rdmo_radar.factories import build_xml_export_service
-from rdmo_radar.metadata.values import compute_dataset_indices
+from rdmo_radar.mappings import validate_candidates
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
 from .validation import REQUIRED_FIELD_LABELS
 
@@ -17,18 +19,27 @@ logger = logging.getLogger(__name__)
 
 
 class RadarExport(Export):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
+
     def get_service(self):
         if self.project is None and self.snapshot is not None:
             self.project = self.snapshot.project
-        key = (id(self.project), self.snapshot, self.project.catalog_id)
+        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping))
         if getattr(self, '_service_key', None) != key:
-            self._service = build_xml_export_service(self.project, snapshot=self.snapshot)
+            self._service = build_xml_export_service(self.project, snapshot=self.snapshot, profile=self.mapping)
             self._service_key = key
         return self._service
 
     def get_dataset_indices(self):
-        context = self.get_service().reader(0)
-        return compute_dataset_indices(context.values, context.placements)
+        """Legacy TF convenience; workflows use candidates with complete scope instead."""
+        return sorted({candidate.scope['set_index'] for candidate in self.get_candidates()})
+
+    def get_candidates(self):
+        service = self.get_service()
+        if getattr(self, '_candidate_service', None) is not service:
+            self._candidates = validate_candidates(self.mapping.get_datasets(self.project, service.reader))
+            self._candidate_service = service
+        return self._candidates
 
     def render(self):
         try:
@@ -48,7 +59,7 @@ class RadarExport(Export):
         return self.render_zip(files)
 
     def prepare_files(self):
-        files = self.get_service().compute_files(self.get_dataset_indices())
+        files = self.get_service().compute_files(self.get_candidates())
         return [{
             'file_name': file.file_name,
             'xml_data': file.xml_data,
@@ -69,3 +80,11 @@ class RadarExport(Export):
             for file in files:
                 zip_file.writestr(file['file_name'], file['xml_data'])
         return response
+
+
+class RadarProjectExport(RadarExport):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkExport(RadarExport):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING

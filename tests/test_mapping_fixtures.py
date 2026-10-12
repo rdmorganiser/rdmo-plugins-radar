@@ -193,7 +193,7 @@ def test_both_providers_offer_collection_labels_and_shared_metadata(prototype, c
     provider = export_for(prototype, cls)
     provider.prepare_export_session()
     assert provider.get_from_session(provider.request, 'dataset_choices') == [
-        (0, 'Radar Testdatensatz Nr 1'), (1, 'Radar Testdatensatz Nr 2'),
+        ('0', 'Radar Testdatensatz Nr 1'), ('1', 'Radar Testdatensatz Nr 2'),
     ]
     form = provider.get_export_form(workspace_choices=[('workspace', 'Workspace')])
     assert len(form.mapping_warnings) == 2

@@ -22,6 +22,7 @@ from rdmo_radar.exports.validation import (
     get_radar_validation_errors,
     validate_radar_xml,
 )
+from rdmo_radar.mappings import ExportCandidate
 from rdmo_radar.metadata.constants import APIVocabulary, XMLVocabulary
 from rdmo_radar.metadata.types import MappingResult, RadarMetadata
 
@@ -45,7 +46,7 @@ def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
         LANGUAGE_CODE='en'
     )
     provider.project = SimpleNamespace(id=1, pk=1)
-    provider.get_dataset_indices = lambda: []
+    provider.get_candidates = lambda: []
     return provider
 
 
@@ -86,7 +87,7 @@ def test_oauth_provider_uses_authorization_code_configuration():
 
 def test_oauth_render_redirects_and_preserves_workspace_request():
     provider = make_provider(provider_class=RadarExportProvider)
-    provider.get_dataset_indices = lambda: []
+    provider.get_candidates = lambda: []
 
     response = provider.render()
 
@@ -423,6 +424,7 @@ def export_provider():
         ('workspace_choices', [('workspace-1', 'Workspace')]), ('radar_urls', [None]), ('project_id', 1),
     ):
         provider.store_in_session(provider.request, key, value)
+    provider.get_candidates = lambda: [ExportCandidate('0', 'Dataset', {'set_prefix': '', 'set_index': 0})]
     provider.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Dataset'))
     return provider
 
@@ -598,7 +600,7 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
 def test_zip_export_is_complete_and_readable():
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(title='Project')
-    export.get_dataset_indices = lambda: [0, 1]
+    export.get_candidates = lambda: [0, 1]
     export.get_service().mapping = lambda context: MappingResult(
         complete_metadata(title=f'Dataset {context.set_index + 1}'),
     )
@@ -664,7 +666,7 @@ def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_dataset_indices = lambda: [0, 1]
+    export.get_candidates = lambda: [0, 1]
     export.get_service().mapping = lambda context: MappingResult(
         complete_metadata() if context.set_index == 0 else RadarMetadata(title='Incomplete dataset'),
     )
@@ -693,7 +695,7 @@ def test_invalid_xml_export_can_be_downloaded_after_confirmation():
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_dataset_indices = lambda: [0]
+    export.get_candidates = lambda: [0]
     export.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Incomplete dataset'))
 
     response = export.render()
@@ -711,7 +713,7 @@ def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch)
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_dataset_indices = lambda: [0]
+    export.get_candidates = lambda: [0]
     export.get_service().mapping = lambda context: MappingResult(RadarMetadata())
     monkeypatch.setattr(
         'rdmo_radar.exports.exports.render',
@@ -747,7 +749,7 @@ def test_xml_generation_failure_still_blocks_export(caplog):
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_dataset_indices = lambda: [0]
+    export.get_candidates = lambda: [0]
     export.get_service().mapping = lambda context: (_ for _ in ()).throw(ValueError('internal details'))
 
     response = export.render()

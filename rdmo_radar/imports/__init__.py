@@ -1,5 +1,3 @@
-from .imports import RadarImport
+from .imports import RadarImport, RadarTemplateFrameworkImport
 
-__all__ = [
-    'RadarImport'
-]
+__all__ = ['RadarImport', 'RadarTemplateFrameworkImport']

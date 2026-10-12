@@ -10,6 +10,8 @@ import requests
 
 from rdmo_radar.client import RadarClient, dataset_page_url
 from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
 from .providers import RadarExportProviderBase
 
@@ -111,9 +113,11 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         if not form.is_valid():
             return self.render_export_form(form)
 
-        set_index = int(form.cleaned_data['dataset'])
+        candidate = self.get_selected_candidate(form)
+        if candidate is None:
+            return self.render_export_form(form)
         service = self.get_service()
-        prepared = service.compute_payload(set_index, self.request.user.email)
+        prepared = service.compute_payload(candidate, self.request.user.email)
         client = self.client
         try:
             data = client.create_dataset(
@@ -132,7 +136,7 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         radar_url = dataset_page_url(client.radar_url, data['id'], self.request.LANGUAGE_CODE)
         stored = True
         try:
-            service.store_result(set_index, data['id'], radar_url)
+            service.store_result(candidate, data['id'], radar_url)
         except ExportStoreError:
             logger.warning('Could not store confirmed RADAR dataset %s', data['id'])
             stored = False
@@ -147,3 +151,11 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
     def redirect_url(self):
         redirect_uri = urlsplit(settings.RADAR_PROVIDER['redirect_uri'])
         return urlunsplit((redirect_uri.scheme, redirect_uri.netloc, '/', '', ''))
+
+
+class RadarProjectCredentialsExportProvider(RadarCredentialsExportProvider):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkCredentialsExportProvider(RadarCredentialsExportProvider):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING

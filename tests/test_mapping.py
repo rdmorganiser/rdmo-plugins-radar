@@ -88,7 +88,7 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
     dataset_payload(export, 1)
     assert not hasattr(export, 'mapping_issues')
 
-    export.get_dataset_indices = lambda: [0, 1]
+    export.get_candidates = lambda: [0, 1]
     files = export.prepare_files()
     assert files[0]['mapping_issues'] == first.issues
     assert files[1]['mapping_issues'] == ()

@@ -1,51 +1,44 @@
-"""Build operation-scoped services with RDMO defaults and explicit overrides."""
+"""Build operation-scoped services with mapping profiles and explicit overrides."""
 from functools import partial
 
+from .exceptions import UnsupportedImportMapping
+from .mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from .metadata.api import compute_radar_payload
-from .metadata.builder import compute_metadata
-from .metadata.importer import write_metadata
-from .metadata.rdmo import RDMOReadContext
-from .metadata.values import compute_next_dataset_index, fetch_catalog_placements, fetch_project_values
 from .metadata.xml import parse_xml, to_xml_payload
 from .services import RadarExportService, RadarImportService, RadarXmlExportService
 
-
-def _build_reader(project, snapshot=None):
-    values = fetch_project_values(project, snapshot)
-    placements = fetch_catalog_placements(project.catalog)
-
-    def read(set_index):
-        return RDMOReadContext(values, placements, set_index=int(set_index))
-
-    return read
+_UNSET = object()
 
 
 def build_export_service(
-    project, *, snapshot=None, reader=None, mapping=None, serializer=None, writer=None, clock=None,
+    project, *, snapshot=None, profile=None, reader=None, mapping=None, serializer=None,
+    writer=_UNSET, clock=None,
 ):
-    """Prepare one REST export operation; only omitted dependencies use RDMO defaults."""
+    """Explicit dependencies win; an omitted profile retains legacy TF defaults."""
+    if profile is None:
+        profile = TEMPLATE_FRAMEWORK_MAPPING
     if reader is None:
-        reader = _build_reader(project, snapshot)
+        reader = profile.build_reader(project, snapshot=snapshot)
     if mapping is None:
-        mapping = compute_metadata
+        mapping = profile.compute_metadata
     if serializer is None:
         serializer = compute_radar_payload
-    if writer is None:
-        # Keep adapter-package imports local to avoid a cycle with the registered exports.
-        from .exports.storage import store_export_result
-        writer = partial(store_export_result, project)
+    if writer is _UNSET:
+        writer = partial(profile.store_result, project) if profile.store_result is not None else None
     kwargs = {} if clock is None else {'clock': clock}
     return RadarExportService(reader, mapping, serializer, writer, **kwargs)
 
 
 def build_xml_export_service(
-    project, *, snapshot=None, reader=None, mapping=None, serializer=None, renderer=None, validator=None,
+    project, *, snapshot=None, profile=None, reader=None, mapping=None, serializer=None,
+    renderer=None, validator=None,
 ):
-    """Prepare XML export data once, without requiring RADAR provider settings."""
+    if profile is None:
+        profile = TEMPLATE_FRAMEWORK_MAPPING
     if reader is None:
-        reader = _build_reader(project, snapshot)
+        reader = profile.build_reader(project, snapshot=snapshot)
     if mapping is None:
-        mapping = compute_metadata
+        mapping = profile.compute_metadata
     if serializer is None:
         serializer = to_xml_payload
     if renderer is None:
@@ -62,19 +55,26 @@ def build_xml_export_service(
 
 
 def build_import_service(
-    import_plugin, *, set_index=None, existing_values=None, parser=None, mapping=None, writer=None,
+    import_plugin, *, profile=None, set_index=None, existing_values=None, parser=None,
+    mapping=None, writer=None,
 ):
-    """Prepare unsaved import staging; an explicit writer replaces preparation entirely."""
+    """A profile owns destination/allocation rules; an explicit writer skips preparation."""
+    if profile is None:
+        profile = TEMPLATE_FRAMEWORK_MAPPING
     if parser is None:
         parser = parse_xml
     if writer is None:
+        if profile.build_import_writer is None and mapping is None:
+            raise UnsupportedImportMapping('The selected RADAR mapping does not support import.')
         if existing_values is None:
             if import_plugin.current_project is None:
                 raise ValueError('RADAR import requires an existing project.')
+            from .metadata.values import fetch_project_values
             existing_values = fetch_project_values(import_plugin.current_project)
-        if set_index is None:
-            set_index = compute_next_dataset_index(existing_values)
-        if mapping is None:
-            mapping = write_metadata
-        writer = partial(mapping, import_plugin, set_index=set_index, existing_values=existing_values)
+        if profile.build_import_writer is not None:
+            writer = profile.build_import_writer(import_plugin, set_index=set_index,
+                                                 existing_values=existing_values, mapping=mapping)
+        else:
+            # An explicit custom mapping owns allocation; never borrow TF coordinates.
+            writer = partial(mapping, import_plugin, set_index=set_index, existing_values=existing_values)
     return RadarImportService(parser, writer)

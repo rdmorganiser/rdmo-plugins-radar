@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, replace
 
 from .exceptions import ExportStoreError, XmlExportError
+from .mappings import ExportCandidate
 from .metadata.types import MappingIssue
 from .metadata.validation import missing_required_fields
 
@@ -18,6 +19,19 @@ class ExportPayload:
 class ExportResult:
     radar_id: str
     radar_url: str
+
+
+def store_confirmed_result(writer, selection, radar_id, radar_url):
+    """Optional local storage, shared by services and reconstructed OAuth callbacks."""
+    try:
+        if writer is not None:
+            writer(selection, radar_id, radar_url)
+    except ExportStoreError:
+        raise
+    except Exception as error:
+        key = selection.key if isinstance(selection, ExportCandidate) else selection
+        raise ExportStoreError(key, radar_id, radar_url) from error
+    return ExportResult(radar_id, radar_url)
 
 
 @dataclass(frozen=True)
@@ -44,11 +58,12 @@ class RadarExportService:
 
     def compute_payload(self, set_index, responsible_email) -> ExportPayload:
         """Prepare the request and diagnostics without performing a remote request or local write."""
-        set_index = int(set_index)
+        set_index = set_index if isinstance(set_index, ExportCandidate) else int(set_index)
         result = self.mapping(self.reader(set_index))
         metadata = result.metadata
         if not metadata.title:
-            metadata = replace(metadata, title=f'Dataset #{set_index + 1}')
+            title = set_index.label if isinstance(set_index, ExportCandidate) else f'Dataset #{set_index + 1}'
+            metadata = replace(metadata, title=title or 'Dataset')
         payload = self.serializer(
             metadata, responsible_email=responsible_email, timestamp=int(self.clock() * 1000),
         )
@@ -56,14 +71,8 @@ class RadarExportService:
 
     def store_result(self, set_index, radar_id, radar_url) -> ExportResult:
         """Record an ID and complete URL after the caller has confirmed remote creation."""
-        set_index = int(set_index)
-        try:
-            self.writer(set_index, radar_id, radar_url)
-        except ExportStoreError:
-            raise
-        except Exception as error:
-            raise ExportStoreError(set_index, radar_id, radar_url) from error
-        return ExportResult(radar_id, radar_url)
+        set_index = set_index if isinstance(set_index, ExportCandidate) else int(set_index)
+        return store_confirmed_result(self.writer, set_index, radar_id, radar_url)
 
 
 class RadarXmlExportService:
@@ -78,12 +87,16 @@ class RadarXmlExportService:
         files = []
         names = set()
         for set_index in indices:
-            set_index = int(set_index)
-            file_name = f'{set_index + 1}.xml'
+            set_index = set_index if isinstance(set_index, ExportCandidate) else int(set_index)
+            fallback = ((set_index.fallback_file_stem or set_index.label or set_index.key)
+                        if isinstance(set_index, ExportCandidate)
+                        else str(set_index + 1))
+            fallback_stem = re.sub(r'[/\\\x00-\x1f\x7f]', '_', fallback).strip(' .')[:180] or 'dataset'
+            file_name = f'{fallback_stem}.xml'
             try:
                 result = self.mapping(self.reader(set_index))
-                title = result.metadata.title or str(set_index + 1)
-                stem = re.sub(r'[/\\\x00-\x1f\x7f]', '_', title).strip(' .')[:180] or str(set_index + 1)
+                title = result.metadata.title or fallback
+                stem = re.sub(r'[/\\\x00-\x1f\x7f]', '_', title).strip(' .')[:180] or fallback_stem
                 file_name = f'{stem}.xml'
                 suffix = 2
                 while file_name.casefold() in names:

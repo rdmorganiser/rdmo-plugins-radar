@@ -92,6 +92,62 @@ PROJECT_IMPORTS += [
 ```
 
 
+### Mapping selection
+
+Existing registrations and factories retain the Template Framework mapping. New explicit classes let
+project-level and collection-based mappings coexist in one installation:
+
+```python
+PROJECT_EXPORTS += [
+    ('radar-project-xml', _('as RADAR XML (project)'), 'rdmo_radar.exports.RadarProjectExport'),
+    ('radar-tf-xml', _('as RADAR XML (Template Framework)'), 'rdmo_radar.exports.RadarTemplateFrameworkExport'),
+]
+```
+
+The project mapping exports one record using `Project.title`, including projects without a catalog or
+dataset Attributes. It leaves other metadata unset and reports missing required fields. It supplies no
+import mapping or local result storage. The Template Framework mapping discovers entered dataset records,
+preserves shared metadata and vocabulary mappings, and supports catalog-less flat markers. Empty dataset
+collections produce no candidates. Nested records with the same local index have distinct selection keys.
+
+For direct exports, select the corresponding registered class:
+
+| Mapping | OAuth class | Credentials class |
+| --- | --- | --- |
+| Project | `rdmo_radar.exports.RadarProjectExportProvider` | `rdmo_radar.exports.RadarProjectCredentialsExportProvider` |
+| Template Framework | `rdmo_radar.exports.RadarTemplateFrameworkExportProvider` | `rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider` |
+
+For example:
+
+```python
+project_provider_class = {
+    'oauth': 'rdmo_radar.exports.RadarProjectExportProvider',
+    'credentials': 'rdmo_radar.exports.RadarProjectCredentialsExportProvider',
+}[RADAR_PROVIDER.get('authentication_mode', 'oauth')]
+PROJECT_EXPORTS += [('radar-project', _('directly to RADAR (project)'), project_provider_class)]
+```
+
+`RADAR_PROVIDER` configures authentication; the registered class selects the mapping. The existing
+`RadarExport`, `RadarExportProvider`, `RadarCredentialsExportProvider`, and `RadarImport` paths remain
+Template Framework entry points. `rdmo_radar.imports.RadarTemplateFrameworkImport` is an explicit equivalent.
+There is no built-in project importer: arbitrary catalogs need an explicit destination mapping.
+
+A third-party package can provide ordinary mapping callables and select them in a thin subclass:
+
+```python
+from rdmo_radar.exports import RadarProjectExport
+from my_rdmo_plugin.mapping import MY_MAPPING
+
+
+class MyRadarExport(RadarProjectExport):
+    mapping = MY_MAPPING
+```
+
+Register the subclass's dotted path in `PROJECT_EXPORTS`. The same pattern works with either direct provider
+and with `RadarImport` when the profile supplies an import writer. See the
+[profile contracts and factory overrides](docs/architecture.md#mapping-profiles-and-candidates).
+
+
 Usage
 -----
 
@@ -130,9 +186,11 @@ messages based on status and workflow, without displaying raw exception text or 
 
 The registered adapters assemble the services through small factories. XML export handles current projects
 and snapshots; direct export separates payload preparation, the remote request, and confirmed-result storage.
-OAuth callbacks persist results directly without preparing project answers again. Both direct providers build
+OAuth callbacks use the registered mapping's persistence hook and captured candidate scope without preparing
+project answers again. Both direct providers build
 the dataset link from the RADAR instance used for creation. If creation succeeds but local storage fails, RDMO
 shows the confirmed dataset link so users can inspect it before attempting another export.
+When a profile omits storage, confirmed creation succeeds without writing RDMO Values.
 
 Import retains RDMO's preview and checked-value save workflow; the mapping service stages unsaved Values.
 See [the architecture documentation](docs/architecture.md) for service customization and verification.

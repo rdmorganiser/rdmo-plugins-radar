@@ -6,8 +6,12 @@ class RadarProtocolError(Exception):
         super().__init__('RADAR returned an invalid response.')
 
 
+class UnsupportedImportMapping(ValueError):
+    """An explicitly selected mapping has no RADAR-to-RDMO staging implementation."""
+
+
 class ExportStoreError(Exception):
-    def __init__(self, set_index: int, radar_id: str, radar_url: str):
+    def __init__(self, set_index: int | str, radar_id: str, radar_url: str):
         self.set_index = set_index
         self.radar_id = radar_id
         self.radar_url = radar_url

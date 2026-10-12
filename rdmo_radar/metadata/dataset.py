@@ -2,6 +2,7 @@ from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .rdmo import RDMOReadContext, RDMOWriteContext, answer_label, get_option_path, normalize
 from .types import Agent, GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea
+from .values import model_key
 
 
 def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
@@ -81,17 +82,18 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
 def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
     subjects = []
     values = context.shared().get_values('project/research_field/title')
-    for value in values:
+    mapped = context.map_options('project/research_field/title',
+                                 {**XMLVocabulary.controlled_subject_area_options, **SUBJECT_OPTIONS}, values=values)
+    for value, controlled in zip(values, mapped, strict=True):
         if not value.is_true:
             continue
         option_path = value.option.uri_path if value.option else None
-        controlled = SUBJECT_OPTIONS.get(option_path)
         if controlled is None:
-            known = XMLVocabulary.controlled_subject_area_options.get(option_path)
-            controlled = (known or 'Other',)
-            if known is None:
-                context.warn('subjectAreas', 'project/research_field/title',
-                             'Unmapped subject preserved as Other', answer_label(value))
+            controlled = ('Other',)
+            context.warn('subjectAreas', 'project/research_field/title',
+                         'Unmapped subject preserved as Other', answer_label(value))
+        elif isinstance(controlled, str):
+            controlled = (controlled,)
         if option_path == 'research_fields/211':
             context.warn('subjectAreas', 'project/research_field/title',
                          'Workbook mapping is uncertain; preserved as Other', answer_label(value))
@@ -104,12 +106,13 @@ def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
 
 def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
     sources = []
-    for value in context.get_values('project/dataset/creation_methods'):
+    path = 'project/dataset/creation_methods'
+    values = context.get_values(path)
+    mapped = context.map_options(path, {**XMLVocabulary.data_source_options, **CREATION_METHOD_OPTIONS}, values=values)
+    for value, detail in zip(values, mapped, strict=True):
         source = answer_label(value)
         if not source:
             continue
-        option_path = value.option.uri_path if value.option else None
-        detail = CREATION_METHOD_OPTIONS.get(option_path) or XMLVocabulary.data_source_options.get(option_path)
         if detail is None:
             detail = 'Other'
             context.warn('dataSources', 'project/dataset/creation_methods',
@@ -124,9 +127,9 @@ def _read_rights(context: RDMOReadContext) -> Rights | None:
     if not values:
         return None
     rights = []
-    for value in values:
-        option_path = value.option.uri_path if value.option else None
-        controlled = XMLVocabulary.controlled_rights_options.get(option_path, 'Other')
+    mapped = context.map_options(path, XMLVocabulary.controlled_rights_options, values=values)
+    for value, controlled in zip(values, mapped, strict=True):
+        controlled = controlled or 'Other'
         additional = value.text or (answer_label(value) if controlled == 'Other' else None)
         right = Rights(controlled, additional)
         if right not in rights:
@@ -141,8 +144,10 @@ def _read_rights(context: RDMOReadContext) -> Rights | None:
 def _read_software(context):
     software = []
     path = 'project/dataset/usage_technology'
-    for value in context.get_values(path):
-        if value.option and value.option.uri_path == SOFTWARE_REQUIREMENT and value.text and value.text.strip():
+    values = context.get_values(path)
+    mapped = context.map_options(path, {SOFTWARE_REQUIREMENT: True}, values=values)
+    for value, required in zip(values, mapped, strict=True):
+        if required and value.text and value.text.strip():
             software.append(Software(value.text.strip(), 'Resource Viewing'))
             context.warn('software.softwareVersion', path, 'Software version is unavailable; complete it in RADAR')
     return software
@@ -162,12 +167,14 @@ def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
 
 
 def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> None:
-    existing_paths = {
-        value.option.uri_path for value in context.get_values('project/research_field/title') if value.option
+    existing_options = {
+        model_key(value.option, value.option.uri_path)
+        for value in context.get_values('project/research_field/title') if value.option
     }
     for subject in subjects:
         option_path = get_option_path(XMLVocabulary.controlled_subject_area_options, subject.controlled_name)
-        if option_path in existing_paths:
+        option = context.fetch_option(option_path) if option_path is not None else None
+        if option is not None and model_key(option, option.uri_path) in existing_options:
             continue
         value = context.add_option(
             'project/research_field/title',
@@ -178,7 +185,7 @@ def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> N
             dataset=False,
         )
         if value and value.option:
-            existing_paths.add(value.option.uri_path)
+            existing_options.add(model_key(value.option, value.option.uri_path))
 
 
 def _write_geo_location(context: RDMOWriteContext, locations: list[GeoLocation]) -> None:

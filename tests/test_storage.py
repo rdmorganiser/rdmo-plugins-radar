@@ -99,7 +99,7 @@ def test_direct_storage_needs_no_service_or_project_data_preparation(db, monkeyp
     add_attribute('project/dataset/radar_url')
     preparation = Mock(side_effect=AssertionError('Storage must not prepare mapping data'))
     monkeypatch.setattr(RadarExportService, '__init__', preparation)
-    for module in ('rdmo_radar.metadata.values', 'rdmo_radar.factories'):
+    for module in ('rdmo_radar.metadata.values', 'rdmo_radar.mappings.template_framework'):
         monkeypatch.setattr(f'{module}.fetch_project_values', preparation)
         monkeypatch.setattr(f'{module}.fetch_catalog_placements', preparation)
 

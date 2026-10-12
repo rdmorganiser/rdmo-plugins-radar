@@ -7,86 +7,132 @@ from rdmo.options.models import Option
 from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
 
+from .template_framework import OPTION_PREFIXES, SCALAR_TARGETS, TERMS_PREFIX, get_dataset_values
 from .types import MappingIssue
-from .values import get_scoped_values
-
-TERMS_PREFIX = 'https://rdmorganiser.github.io/terms/domain/'
-OPTION_PREFIXES = (
-    'https://rdmorganiser.github.io/terms/options/',
-    'https://rdmo.jochenklar.dev/terms/options/',
+from .values import (
+    get_scoped_values,
+    is_uri,
+    model_key,
+    prepare_read_data,
+    prepare_values,
+    selector_key,
+    selector_label,
 )
-
-SCALAR_TARGETS = {
-    'project/dataset/title': 'title',
-    'project/dataset/id': 'title',
-    'project/dataset/description': 'resource',
-    'project/dataset/pids/system': 'identifier.identifierType',
-    'project/dataset/data_publication_pid': 'identifier',
-    'project/dataset/language': 'language',
-    'project/dataset/usage_technology/geo_location': 'geoLocations',
-    'project/acronym': 'additionalTitles',
-    'project/funder/name': 'fundingReferences.funderName',
-    'project/funder/grant_nr': 'fundingReferences.awardNumber',
-    'project/funder/programme/title': 'fundingReferences.awardTitle',
-    'project/funder/programme/url': 'fundingReferences.awardURI',
-}
 
 
 @dataclass
 class RDMOReadContext:
     """Mapping scopes and diagnostics over prepared data; never loads or caches RDMO models."""
-    values: dict[str, list[Value]]
-    placements: dict[str, tuple]
+    values: dict
+    placements: dict
     set_prefix: str = ''
     set_index: int = 0
     scope: str = 'dataset'
     issues: list[MappingIssue] = field(default_factory=list)
+    prepared: tuple | None = field(default=None, repr=False)
+    dataset_prefix: str | None = None
+    project: object | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.prepared is None:
+            self.prepared = prepare_read_data(self.values, self.placements)
 
     def shared(self):
-        return RDMOReadContext(self.values, self.placements, scope='project', issues=self.issues)
+        return RDMOReadContext(self.values, self.placements, scope='project', issues=self.issues,
+                               prepared=self.prepared, project=self.project)
 
     def group(self, prefix, index):
-        return RDMOReadContext(self.values, self.placements, prefix, index, scope='group', issues=self.issues)
+        return RDMOReadContext(self.values, self.placements, prefix, index, scope='group', issues=self.issues,
+                               prepared=self.prepared, project=self.project)
+
+    def resolve_attribute(self, selector):
+        """Resolve only prepared project/catalog identities; never query installed models."""
+        keys = self.prepared[2].get(selector_key(selector), ())
+        if len(keys) > 1:
+            source = selector_label(selector)
+            self.warn(source, source, 'Ambiguous RDMO Attribute',
+                      '; '.join(sorted(key[3] or str(key[1]) for key in keys)))
+            return None
+        return keys[0] if keys else None
 
     def groups(self, *paths):
         positions = {(value.set_prefix, value.set_index) for path in paths for value in self.get_values(path)}
         return [self.group(prefix, index) for prefix, index in sorted(positions)]
 
     def warn(self, target, source, reason, value=None):
+        target = selector_label(target)
+        source = selector_label(source)
         issue = MappingIssue(SCALAR_TARGETS.get(target, target), reason, value, source)
         if issue not in self.issues:
             self.issues.append(issue)
 
-    def get_text(self, path: str) -> str | None:
+    def get_text(self, path: str | int | Attribute) -> str | None:
         texts = self.get_texts(path)
         if len(texts) > 1:
             self.warn(path, path, 'Multiple answers for a scalar field', '; '.join(texts))
             return None
         return texts[0] if texts else None
 
-    def get_values(self, path: str) -> list[Value]:
+    def get_values(self, path: str | int | Attribute) -> list[Value]:
+        key = self.resolve_attribute(path)
+        if key is None:
+            return []
+        if self.scope == 'dataset':
+            return get_dataset_values(self, key)
+        values, placements, _ = self.prepared
         return get_scoped_values(
-            self.values, self.placements, path, int(self.set_index) if self.scope == 'dataset' else None,
-            (self.set_prefix, self.set_index) if self.scope == 'group' else None,
+            values, placements, key,
+            group=(self.set_prefix, self.set_index) if self.scope == 'group' else None,
         )
 
-    def get_texts(self, path: str) -> list[str]:
+    def get_values_by_uri(self, uri: str) -> list[Value]:
+        if not is_uri(uri):
+            raise ValueError('Expected a full Attribute URI.')
+        return self.get_values(uri)
+
+    def get_values_by_attribute_id(self, attribute_id: int) -> list[Value]:
+        return self.get_values(attribute_id)
+
+    def get_texts(self, path: str | int | Attribute) -> list[str]:
         return list(dict.fromkeys(value.text.strip() for value in self.get_values(path)
                                   if value.text and value.text.strip() and not value.option))
 
     def get_option(
         self,
-        path: str,
+        path: str | int | Attribute,
         options: dict[str, str],
         default: str | None = None,
     ) -> str | None:
         values = [value for value in self.get_values(path) if value.is_true]
-        mapped = list(dict.fromkeys(options.get(value.option.uri_path) if value.option else None
-                                    for value in values))
+        mapped = list(dict.fromkeys(self.map_options(path, options, values=values)))
         if values and (None in mapped or len(mapped) > 1):
             self.warn(path, path, 'Unmapped or conflicting controlled answers')
             return default
         return mapped[0] if mapped else default
+
+    def map_options(self, path, options, *, values=None):
+        """Map each Option by full URI, or an unambiguous legacy vocabulary path."""
+        if values is None:
+            values = self.get_values(path)
+        option_keys = {}
+        for value in values:
+            if value.option is not None:
+                option = value.option
+                key = model_key(option, option.uri_path)
+                option_keys.setdefault(option.uri_path, set()).add(key)
+        mapped = []
+        for value in values:
+            option = value.option
+            if option is None:
+                mapped.append(None)
+            elif option.uri and option.uri in options:
+                mapped.append(options[option.uri])
+            elif option.uri_path in options and len(option_keys[option.uri_path]) > 1:
+                self.warn(path, path, 'Ambiguous RDMO Option path', option.uri_path)
+                mapped.append(None)
+            else:
+                mapped.append(options.get(option.uri_path))
+        return mapped
 
     def get_identifier(self, path):
         identifiers = list(dict.fromkeys(value.external_id or value.text for value in self.get_values(path)
@@ -103,18 +149,41 @@ class RDMOWriteContext:
     """Merge prepared answers and stage unsaved Values for one import mapping operation."""
     import_plugin: ProjectImport
     dataset_index: int
-    existing_values: dict[str, list[Value]]
+    existing_values: dict
     issues: list[MappingIssue] = field(default_factory=list)
-    _values: dict[str, list[Value]] = field(init=False, repr=False)
+    _values: dict = field(init=False, repr=False)
     _attributes: dict[str, Attribute | None] = field(default_factory=dict, init=False, repr=False)
     _options: dict[str, Option | None] = field(default_factory=dict, init=False, repr=False)
+    _ambiguous_attributes: set[str] = field(default_factory=set, init=False, repr=False)
+    _ambiguous_options: set[str] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self):
         # Copy the buckets: staging must not change the prepared project read.
-        self._values = {path: list(values) for path, values in self.existing_values.items()}
+        self._values = prepare_values(self.existing_values)
         for value in self.import_plugin.values:
             if value.attribute is not None:
-                self._values.setdefault(value.attribute.path, []).append(value)
+                self._append_value(value)
+
+    def _attribute_key(self, attribute):
+        key = model_key(attribute)
+        for current in self._values:
+            if current[:2] == key[:2]:
+                return current
+        if key[0] == 'object':
+            # A synthetic import API destination can alias one prepared fixture bucket.
+            matches = [key for key in self._values if key[2] == attribute.path]
+            if len(matches) == 1:
+                return matches[0]
+        return key
+
+    def _append_value(self, value, *, resolved=False):
+        key = self._attribute_key(value.attribute) if resolved else model_key(value.attribute)
+        if not resolved:
+            key = next((current for current in self._values if current[:2] == key[:2]), key)
+        synthetic = ('path', value.attribute.path, value.attribute.path, None)
+        if key[0] == 'object' and synthetic in self._values:
+            key = synthetic
+        self._values.setdefault(key, []).append(value)
 
     def add(
         self,
@@ -130,7 +199,8 @@ class RDMOWriteContext:
             return None
         attribute = self.fetch_attribute(path)
         if attribute is None:
-            self.warn(path, 'RDMO Attribute is not installed', str(text))
+            if path not in self._ambiguous_attributes:
+                self.warn(path, 'RDMO Attribute is not installed', str(text))
             return None
         return self._add_value(
             attribute, text, set_prefix=set_prefix, set_index=set_index,
@@ -158,10 +228,12 @@ class RDMOWriteContext:
         attribute = self.fetch_attribute(path)
         option = self.fetch_option(option_path)
         if attribute is None:
-            self.warn(path, 'RDMO Attribute is not installed', canonical_value)
+            if path not in self._ambiguous_attributes:
+                self.warn(path, 'RDMO Attribute is not installed', canonical_value)
             return None
         if option is None:
-            self.warn(path, f'RDMO Option is not installed: {option_path}', canonical_value)
+            if option_path not in self._ambiguous_options:
+                self.warn(path, f'RDMO Option is not installed: {option_path}', canonical_value)
             return None
         return self._add_value(
             attribute, text, option=option, set_prefix=set_prefix, set_index=set_index,
@@ -175,7 +247,11 @@ class RDMOWriteContext:
         return self.add(path, text, collection_index=self.compute_next_collection_index(path), dataset=False)
 
     def get_values(self, path: str) -> list[Value]:
-        return list(self._values.get(path, ()))
+        position = 3 if is_uri(path) else 2
+        if not any(key[position] == path for key in self._values):
+            return []
+        attribute = self.fetch_attribute(path)
+        return list(self._values.get(self._attribute_key(attribute), ())) if attribute is not None else []
 
     def compute_next_set_index(self, anchor_path: str) -> int:
         values = self.get_values(anchor_path)
@@ -188,13 +264,24 @@ class RDMOWriteContext:
     def fetch_attribute(self, path: str) -> Attribute | None:
         if path in self._attributes:
             return self._attributes[path]
-        attribute = self.import_plugin.get_attribute(TERMS_PREFIX + path)
+        attribute = self.import_plugin.get_attribute(path if is_uri(path) else TERMS_PREFIX + path)
         # Preserve installed custom URI prefixes through the public import API.
-        if attribute is None:
+        if attribute is None and not is_uri(path):
+            candidates = {}
             for uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
-                attribute = self.import_plugin.get_attribute(uri)
-                if attribute is not None:
-                    break
+                candidate = self.import_plugin.get_attribute(uri)
+                if candidate is not None:
+                    candidates[model_key(candidate)] = candidate
+            if len(candidates) == 1:
+                attribute = next(iter(candidates.values()))
+            elif candidates:
+                self._ambiguous_attributes.add(path)
+                self.warn(path, 'Ambiguous RDMO Attribute import destination')
+        if attribute is not None and model_key(attribute)[0] == 'object':
+            if sum(key[2] == attribute.path for key in self._values) > 1:
+                self._ambiguous_attributes.add(path)
+                self.warn(path, 'Ambiguous synthetic Attribute import destination')
+                attribute = None
         self._attributes[path] = attribute
         return attribute
 
@@ -202,15 +289,21 @@ class RDMOWriteContext:
         if path in self._options:
             return self._options[path]
         option = None
-        for prefix in OPTION_PREFIXES:
-            option = self.import_plugin.get_option(prefix + path)
+        for uri in (path,) if is_uri(path) else tuple(prefix + path for prefix in OPTION_PREFIXES):
+            option = self.import_plugin.get_option(uri)
             if option is not None:
                 break
-        if option is None:
+        if option is None and not is_uri(path):
+            candidates = {}
             for uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
-                option = self.import_plugin.get_option(uri)
-                if option is not None:
-                    break
+                candidate = self.import_plugin.get_option(uri)
+                if candidate is not None:
+                    candidates[model_key(candidate, candidate.uri_path)] = candidate
+            if len(candidates) == 1:
+                option = next(iter(candidates.values()))
+            elif candidates:
+                self._ambiguous_options.add(path)
+                self.warn(path, 'Ambiguous RDMO Option import destination')
         self._options[path] = option
         return option
 
@@ -235,7 +328,7 @@ class RDMOWriteContext:
         if collection_index is not None:
             value.collection_index = collection_index
         self.import_plugin.values.append(value)
-        self._values.setdefault(attribute.path, []).append(value)
+        self._append_value(value, resolved=True)
         return value
 
     def warn(self, field: str, reason: str, value: str | None = None) -> None:

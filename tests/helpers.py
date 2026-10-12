@@ -9,6 +9,7 @@ from rdmo.projects.models import Project, Value
 
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
+from rdmo_radar.mappings import ExportCandidate
 from rdmo_radar.metadata.rdmo import TERMS_PREFIX, RDMOReadContext
 from rdmo_radar.metadata.types import Agent, Identifier, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
@@ -32,6 +33,13 @@ def add_attribute(path):
         parent = add_attribute(parent_path) if parent_path else None
         attribute = Attribute.objects.create(key=key, parent=parent, uri_prefix='https://rdmorganiser.github.io/terms')
     return attribute
+
+
+def add_namespaced_attribute(path, uri_prefix):
+    """Create a separate attribute tree without path-only fixture resolution."""
+    parent_path, _, key = path.rpartition('/')
+    parent = add_namespaced_attribute(parent_path, uri_prefix) if parent_path else None
+    return Attribute.objects.get_or_create(key=key, parent=parent, uri_prefix=uri_prefix)[0]
 
 
 def make_export(values=None):
@@ -140,7 +148,9 @@ def dataset_title(export, set_index):
 
 
 def configure_service(export, reader=None):
-    reader = reader if reader is not None else lambda index: RDMOReadContext({}, {}, set_index=index)
+    reader = reader if reader is not None else lambda selection: RDMOReadContext(
+        {}, {}, set_index=selection.scope['set_index'] if isinstance(selection, ExportCandidate) else selection,
+    )
     if isinstance(export, RadarExport):
         service = build_xml_export_service(None, reader=reader)
     else:

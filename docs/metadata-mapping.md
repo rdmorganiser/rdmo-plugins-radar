@@ -1,5 +1,12 @@
 # RADAR 9.3 metadata mapping
 
+The registered class selects a mapping profile. Legacy entries and explicit Template Framework classes
+use the mapping described below. Explicit project classes export one record with `Project.title` and
+leave other fields unset unless an installation supplies custom functions. They neither infer metadata
+from `Project.description` nor write results to Template Framework Attributes. Missing publication fields
+remain visible. See [mapping selection](../README.md#mapping-selection) and the
+[profile contract](architecture.md#mapping-profiles-and-candidates).
+
 The export mapping implements the conservative first version agreed from the 2026 Template Framework workbook:
 
 - [Field mapping CSV](<Mapping_radar-plugin_dmp-tf.xlsx/Mapping_radar-plugin_dmp-tf.xlsx - [neu]Mapping RADAR-RDMO.csv>)
@@ -20,7 +27,7 @@ An explicit title takes precedence over the collection label. The collection lab
 as a persistent identifier. If neither contains text, direct drafts receive `Dataset #N`; XML
 reports the missing title. ZIP filenames use the resolved label and are sanitized and made unique.
 
-The answer index reads only the selected project/snapshot and follows the catalog's page and
+Prepared Value access reads only the selected project/snapshot and follows the catalog's page and
 questionset nesting, including non-collection questionsets. For example, dataset 0's description
 can have prefix `0`, while its license has an empty prefix and set index 0. Project-level funding,
 keywords, and subjects are shared across datasets. Prefixes are matched as complete components,
@@ -28,9 +35,22 @@ so dataset 1 never receives dataset 10's answers. Attributes absent from the cat
 established flat layout (and the established nested creator layout).
 
 Collection indices may be sparse. Multiple distinct scalar answers produce a mapping warning
-instead of choosing an arbitrary value. Controlled mappings use option URI paths, not translated
-labels. Text preserved alongside `Other` uses the option's current RDMO language and any supplied
+instead of choosing an arbitrary value. Attribute paths must be unambiguous within prepared Values and
+catalog placements; otherwise access reports a mapping issue and requires an exact URI or Attribute ID.
+The Template Framework mapping retains path-based access and catalog-less flat dataset markers. No
+dataset is invented when marker Values are absent.
+
+Controlled mappings accept full Option URIs, with existing URI-path crosswalks retained for unambiguous
+scoped answers. Options from distinct namespaces sharing a path are not silently conflated, even when
+their mapped RADAR values agree. Translated labels do not identify vocabulary entries.
+Text preserved alongside `Other` uses the option's current RDMO language and any supplied
 free text. Supported person identifiers prefer `external_id` over provider display text.
+
+Export candidates retain complete dataset coordinates, including parent collections. Two nested datasets
+with index 3 under different parent entries have different selection keys and readers. The profile supplies
+labels and existing RADAR URLs; adapters do not read Template Framework paths themselves. Result writes
+use captured scalar coordinates and Attribute URIs when available. Ambiguous or non-scalar destinations
+produce the existing storage-failure result page after confirmed creation rather than an arbitrary write.
 
 ## Implemented exports
 
@@ -72,6 +92,12 @@ RADAR XML import retains its merge behavior and warnings for unsupported fields.
 are not imported into `project/dataset/format`; they produce an unsupported-mapping warning.
 Export-only crosswalks are not reversed: a RADAR category can correspond to multiple DFG
 subjects. Additional ODC license options are shared with the existing license vocabulary.
+
+Import destinations retain known-prefix precedence through RDMO's import APIs. Explicit full URIs bypass
+fallback. Ambiguous custom-prefix Attribute or Option resolution reports a mapping issue and stages no
+Value for that destination. Merge checks and collection/index allocation use the selected Attribute's
+answers; another namespace's answers cannot suppress or advance an import. Subject Option deduplication
+also follows identity. These changes do not add a general catalog import mapping or mapping profiles.
 
 Tests import the supplied catalog into an isolated database and load the prototype's values with
 their original coordinates and options. They exercise both providers, XML validation/download,

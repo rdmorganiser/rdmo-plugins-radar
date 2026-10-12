@@ -1,4 +1,6 @@
 import logging
+from dataclasses import asdict
+from functools import partial
 
 from django import forms
 from django.conf import settings
@@ -17,26 +19,48 @@ from rdmo.services.providers import OauthProviderMixin
 from rdmo_radar.client import dataset_page_url, dataset_url, workspace_choices, workspaces_url
 from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
 from rdmo_radar.factories import build_export_service
+from rdmo_radar.mappings import ExportCandidate, validate_candidates
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.metadata.validation import missing_required_fields
-from rdmo_radar.metadata.values import compute_dataset_indices
+from rdmo_radar.services import store_confirmed_result
 
-from .storage import store_export_result
 from .validation import REQUIRED_FIELD_LABELS
 
 logger = logging.getLogger(__name__)
 
 
 class RadarExportProviderBase(Export):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
+
     def get_service(self):
-        key = (id(self.project), self.snapshot, self.project.catalog_id)
+        if self.project is None and self.snapshot is not None:
+            self.project = self.snapshot.project
+        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping))
         if getattr(self, '_service_key', None) != key:
-            self._service = build_export_service(self.project, snapshot=self.snapshot)
+            self._service = build_export_service(self.project, snapshot=self.snapshot, profile=self.mapping)
             self._service_key = key
         return self._service
 
     def get_dataset_indices(self):
-        context = self.get_service().reader(0)
-        return compute_dataset_indices(context.values, context.placements)
+        return sorted({candidate.scope['set_index'] for candidate in self.get_candidates()})
+
+    def get_candidates(self):
+        service = self.get_service()
+        if getattr(self, '_candidate_service', None) is not service:
+            self._candidates = validate_candidates(self.mapping.get_datasets(self.project, service.reader))
+            self._candidate_service = service
+        return self._candidates
+
+    def get_selected_candidate(self, form):
+        if self.get_from_session(self.request, 'project_id') != self.project.pk:
+            form.add_error(None, _('The export selection has changed. Please reload the export form.'))
+            return None
+        for candidate in self.get_candidates():
+            if candidate.key == form.cleaned_data['dataset']:
+                return candidate
+        form.add_error('dataset', _('This export candidate is no longer available. Please reload the export form.'))
+        return None
 
     class Form(forms.Form):
         dataset = forms.ChoiceField(label=_('Select dataset of your project'))
@@ -69,14 +93,9 @@ class RadarExportProviderBase(Export):
             self.fields['workspace'].choices = workspace_choices
 
     def prepare_export_session(self):
-        indices = self.get_dataset_indices()
-        dataset_choices = []
-        radar_urls = []
-        for index in indices:
-            context = self.get_service().reader(index)
-            title = context.get_text('project/dataset/title') or context.get_text('project/dataset/id')
-            dataset_choices.append((index, title or f'Dataset #{index + 1}'))
-            radar_urls.append(context.get_text('project/dataset/radar_url'))
+        candidates = self.get_candidates()
+        dataset_choices = [(candidate.key, candidate.label) for candidate in candidates]
+        radar_urls = [candidate.radar_url for candidate in candidates]
 
         self.store_in_session(self.request, 'dataset_choices', dataset_choices)
         self.store_in_session(self.request, 'radar_urls', radar_urls)
@@ -93,14 +112,14 @@ class RadarExportProviderBase(Export):
 
     def get_mapping_warnings(self):
         warnings = []
-        for index in self.get_dataset_indices():
+        for candidate in self.get_candidates():
             service = self.get_service()
-            result = service.mapping(service.reader(index))
+            result = service.mapping(service.reader(candidate))
             metadata = result.metadata
             missing = missing_required_fields(metadata)
             if missing or result.issues:
                 warnings.append({
-                    'title': metadata.title or f'Dataset #{index + 1}',
+                    'title': metadata.title or candidate.label,
                     'issues': result.issues,
                     'missing': [REQUIRED_FIELD_LABELS.get(path, path) for path in missing],
                 })
@@ -157,9 +176,22 @@ class RadarExportProviderBase(Export):
         radar_url = dataset_page_url(context['radar_url'], radar_id, context['language'])
         stored = True
         try:
-            project = Project.objects.get(pk=context['project_id'])
-            store_export_result(project, context['set_index'], radar_id, radar_url)
-        except (Project.DoesNotExist, DatabaseError, ExportStoreError):
+            if 'candidate' in context:
+                candidate = ExportCandidate(**context['candidate'])
+            else:
+                # Existing TF sessions can finish after an upgrade without reading answers.
+                index = int(context['set_index'])
+                candidate = ExportCandidate(str(index), f'Dataset #{index + 1}',
+                                            {'set_prefix': '', 'set_index': index})
+            if context.get('provider', self.class_name) != self.class_name:
+                raise ExportStoreError(candidate.key, radar_id, radar_url)
+            if context.get('persist', True):
+                if self.mapping.store_result is None:
+                    raise ExportStoreError(candidate.key, radar_id, radar_url)
+                project = Project.objects.get(pk=context['project_id'])
+                writer = partial(self.mapping.store_result, project)
+                store_confirmed_result(writer, candidate, radar_id, radar_url)
+        except (Project.DoesNotExist, DatabaseError, ExportStoreError, KeyError, TypeError, ValueError):
             logger.warning('Could not store confirmed RADAR dataset %s', radar_id)
             stored = False
         self.pop_from_session(request, 'export_context')
@@ -245,14 +277,17 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
             return redirect('project', self.project.id)
 
         if form.is_valid():
-            set_index = int(form.cleaned_data['dataset'])
+            candidate = self.get_selected_candidate(form)
+            if candidate is None:
+                return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
             radar_url = self.radar_url
+            prepared = self.get_service().compute_payload(candidate, self.request.user.email)
             self.store_in_session(self.request, 'export_context', {
-                'project_id': self.project.pk, 'set_index': set_index,
+                'project_id': self.project.pk, 'candidate': asdict(candidate),
+                'provider': self.class_name, 'persist': self.mapping.store_result is not None,
                 'radar_url': radar_url, 'language': self.request.LANGUAGE_CODE,
             })
             self.store_in_session(self.request, 'operation', 'create_dataset')
-            prepared = self.get_service().compute_payload(set_index, self.request.user.email)
             return self.post(
                 self.request, dataset_url(radar_url, form.cleaned_data['workspace']), prepared.payload,
             )
@@ -332,3 +367,11 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
     def get_error_message(self, response):
         stage = 'export' if self.get_from_session(self.request, 'operation') == 'create_dataset' else 'request'
         return self.get_client_error_message(requests.HTTPError(response=response), stage=stage)
+
+
+class RadarProjectExportProvider(RadarExportProvider):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkExportProvider(RadarExportProvider):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
