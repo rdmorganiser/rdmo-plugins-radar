@@ -122,8 +122,19 @@ automatically; if the outcome is uncertain, check RADAR for an existing draft be
 
 OAuth continues to use RDMO's `OauthProviderMixin`. Its current transport does not expose timeout or
 request-injection hooks and logs some upstream response bodies itself. Improving those hooks and logs,
-and sharing RADAR's local answer index with RDMO core, are separate upstream follow-ups. Plugin-owned
-client diagnostics log only operation, HTTP status, recognized error codes, and error category.
+and adding catalog-aware value scopes to RDMO core, are separate upstream follow-ups. Plugin-owned
+error handlers log only HTTP status. The client uses standard Requests exceptions; adapters show translated
+messages based on status and workflow, without displaying raw exception text or response bodies.
+
+The registered adapters assemble the services through small factories. XML export handles current projects
+and snapshots; direct export separates payload preparation, the remote request, and confirmed-result storage.
+OAuth callbacks persist results directly without preparing project answers again. Both direct providers build
+the dataset link from the RADAR instance used for creation. If creation succeeds but local storage fails, RDMO
+shows the confirmed dataset link so users can inspect it before attempting another export.
+
+Import retains RDMO's preview and checked-value save workflow; the mapping service stages unsaved Values.
+See [the architecture audit](docs/architecture.md) for service customization, pinned compatibility checks, and
+the remaining RDMO 3 legacy presentation blocker. Backend checks on RDMO 3 do not establish frontend support.
 
 For diagnostics, RADAR administrators can use the API endpoints
 `GET /radar/api/datasets/{id}/metadata/validate` and `GET /radar/api/schemas/{contractId}/RDDM/9.3`. The plugin does
@@ -134,7 +145,7 @@ incomplete.
 OAuth troubleshooting
 ---------------------
 
-If the browser login returns to RDMO but the token exchange fails with `invalid_client`, verify with RADAR support
+If RADAR support identifies an `invalid_client` token-exchange failure after browser login, verify with them
 that the client is enabled for the authorization-code endpoints below `/radar-backend/oauth/`, that the token
 endpoint expects HTTP Basic client authentication, and that the configured secret belongs to that OAuth client.
 Successful use of the separate `/radar/api/tokens` endpoint does not by itself confirm the OAuth registration.
