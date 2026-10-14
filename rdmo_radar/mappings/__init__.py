@@ -4,8 +4,12 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class ExportCandidate:
-    """A form key, label, and mapping-owned JSON scope captured before export."""
+class ExportDataset:
+    """RDMO answers selected to create one RADAR dataset.
+
+    The key and label identify the dataset in the export form. The mapping-owned
+    scope identifies its source answers and result destinations for callbacks.
+    """
     key: str
     label: str
     scope: dict = field(default_factory=dict)
@@ -23,19 +27,19 @@ class RadarMapping:
     store_result: Callable | None = None
 
 
-def validate_candidates(candidates):
+def validate_datasets(datasets):
     """Reject ambiguous form keys or scopes that cannot survive the session round trip."""
     import json
 
-    candidates = list(candidates)
+    datasets = list(datasets)
     keys = set()
-    for candidate in candidates:
-        if not isinstance(candidate, ExportCandidate) or not isinstance(candidate.key, str) or not candidate.key:
-            raise ValueError('RADAR mappings must return candidates with nonempty string keys.')
-        if candidate.key in keys:
-            raise ValueError('RADAR export candidate keys must be unique.')
-        if (not isinstance(candidate.scope, dict) or
-                json.loads(json.dumps(candidate.scope, allow_nan=False)) != candidate.scope):
-            raise ValueError('RADAR export candidate scopes must contain JSON-compatible dictionaries and lists.')
-        keys.add(candidate.key)
-    return candidates
+    for dataset in datasets:
+        if not isinstance(dataset, ExportDataset) or not isinstance(dataset.key, str) or not dataset.key:
+            raise ValueError('RADAR mappings must return datasets with nonempty string keys.')
+        if dataset.key in keys:
+            raise ValueError('RADAR export dataset keys must be unique.')
+        if (not isinstance(dataset.scope, dict) or
+                json.loads(json.dumps(dataset.scope, allow_nan=False)) != dataset.scope):
+            raise ValueError('RADAR export dataset scopes must contain JSON-compatible dictionaries and lists.')
+        keys.add(dataset.key)
+    return datasets

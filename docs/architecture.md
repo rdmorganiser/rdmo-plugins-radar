@@ -12,9 +12,9 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `exports/providers.py`, `exports/credentials.py` | Forms, sessions, OAuth or credentials requests, and result presentation. |
 | `imports/imports.py` | File checks, existing-project requirement, and RDMO import staging integration. |
 | `factories.py` | Assemble defaults and prepare operation-scoped project data. |
-| `mappings/__init__.py` | Frozen callable profiles and export candidates; no Django dependency. |
+| `mappings/__init__.py` | Frozen callable profiles and export datasets; no Django dependency. |
 | `mappings/project.py` | One conservative project-level record, with optional custom metadata functions. |
-| `mappings/template_framework.py` | TF discovery, complete candidate coordinates, import allocation, and result destinations. |
+| `mappings/template_framework.py` | TF discovery, complete dataset coordinates, import allocation, and result destinations. |
 | `services.py` | Prepare REST payloads, generate XML files, and coordinate parsing with import mapping. |
 | `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
 | `metadata/dataset.py`, `metadata/people.py`, `metadata/funding.py` | Map their respective metadata fields. |
@@ -36,19 +36,32 @@ warnings or a ZIP. Missing metadata, mapping issues, and schema violations allow
 Generation failures produce a safe error response. Filename sanitization and collision handling belong to
 `RadarXmlExportService`; labels, templates, and responses belong to the adapter.
 
-**Credentials export:** the adapter validates the form, prepares a payload through `RadarExportService`,
+**Credentials export:** the adapter validates the form, prepares a payload through its `get_payload()` hook,
 and creates the dataset through `RadarClient`. After RADAR confirms the ID, it constructs the human-facing
 URL from that same client's base URL and the request language, then calls `service.store_result`.
 Credentials are not stored; the bearer token belongs to the export session.
 
 **OAuth export:** RDMO's `OauthProviderMixin` owns authorization, HTTP requests, and callback replay.
-After payload preparation, before creation, the adapter saves project ID, provider class, the candidate,
+After payload preparation, before creation, the adapter saves project ID, provider class, the dataset,
 storage-enabled flag, actual RADAR base URL, and language in a JSON-compatible `export_context`. The callback
 uses the registered class's profile and captured scope, never imports a profile named by session data, and
 does not construct a metadata service or load project answers. It resolves the saved project only when
 storage was enabled. Both services and callbacks use `store_confirmed_result` to handle optional writers
-and wrap actual write failures. Existing TF callback sessions containing only a dataset index can finish.
+and wrap actual write failures.
 Confirmed creation clears the saved operation context; cancellation clears it too.
+
+Both REST providers inherit `get_payload(dataset)` from `RadarExportProviderBase`. By default it returns
+`RadarExportService.compute_payload(dataset, responsible_email).payload`. A subclass can return the complete
+request dictionary directly or call `super()` and customize it. The provider checks JSON serializability,
+then sends the returned dictionary unchanged. Preparation failures produce a form error before submission
+or result storage. The hook runs only after valid dataset selection, never for warnings or OAuth replay.
+`get_context(dataset)` returns a reader using the same prepared operation and selected scope.
+
+`show_mapping_warnings = None` retains canonical mapping warnings for the default payload hook and suppresses
+them when a subclass overrides it. Explicit `True` or `False` enables or disables these profile-derived
+warnings. `get_mapping_warnings()` remains separately overridable for custom diagnostics. Raw payloads bypass
+canonical metadata validation, and context issues from custom reads are not automatically presented.
+The payload hook does not affect XML services or mapping-profile-controlled dataset discovery and storage.
 
 **Import:** RDMO selects `RadarImport` using its file check. The import service parses XML and stages unsaved
 Values through the supplied plugin's `get_attribute`, `get_option`, and `values` interfaces. RDMO owns preview
@@ -67,7 +80,7 @@ Catalog placements and complete Value coordinates supply scope information.
 
 Internal dictionaries use `attribute_values_map`, `attribute_placements_map`, and `attribute_lookup_map`
 to distinguish prepared Values, catalog scope, and reference resolution. Attribute identity keys are
-separate from `Attribute.key` and export candidate selection keys. Existing public arguments and context
+separate from `Attribute.key` and export dataset selection keys. Existing public arguments and context
 fields remain unchanged: `path` may accept a full URI or another supported Attribute reference, while
 `values`, `placements`, and `prepared` retain their established construction contracts. Function names,
 profile members such as `get_datasets`, and registered entry points also remain compatible.
@@ -131,9 +144,9 @@ constants does not change discovery, scoping, or warning output.
 One service instance represents a prepared operation. Subsequent dataset reads add no Value queries and
 select from attribute buckets. Each read gets a fresh diagnostic list; shared/group contexts within that
 read share it. Export adapters rebuild their service when the project object, snapshot, or catalog changes.
-Profile changes also rebuild the service. Candidate discovery is cached for that service operation and
+Profile changes also rebuild the service. Dataset discovery is cached for that service operation and
 recomputed when the service changes. Before submission, the selected key must still exist in the current
-project's candidates; a stale project or removed record is rejected before remote creation.
+project's datasets; a stale project or removed record is rejected before remote creation.
 For project edits, construct a new service. Preparation is not cached across requests.
 
 ## Service and mapping contracts
@@ -142,7 +155,7 @@ For project edits, construct a new service. Preparation is not cached across req
 |---|---|
 | `compute_metadata(context, *, dataset, creators, contributors, funding)` | `MappingResult(metadata, issues)` |
 | `write_metadata(plugin, metadata, set_index, *, existing_values, context, dataset, creators, contributors, funding)` | Tuple of mapping issues; Values are staged on the plugin. An optional prepared write context must match the plugin and index. |
-| `RadarExportService.compute_payload(selection, responsible_email)` | `ExportPayload(payload, issues)`; selection is a candidate or legacy numeric index. |
+| `RadarExportService.compute_payload(selection, responsible_email)` | `ExportPayload(payload, issues)`; selection is a dataset or legacy numeric index. |
 | `RadarExportService.store_result(selection, radar_id, radar_url)` | `ExportResult(radar_id, radar_url)`; an absent writer succeeds without a local write. |
 | `RadarXmlExportService.compute_files(selections)` | XML file results with completeness, schema, and mapping diagnostics. |
 | `RadarImportService.process(root)` | Mapping issues returned by the configured writer. |
@@ -152,31 +165,35 @@ operation; they are not mutable state on export instances. REST serialization ad
 email and millisecond timestamp to the fixed RDDM 9.3 technical metadata. Missing draft titles get a fallback
 without modifying the mapped metadata object. Frozen result dataclasses do not imply deep immutability.
 
-## Mapping profiles and candidates
+## Mapping profiles and datasets
+
+An `ExportDataset` describes the RDMO source answers for one RADAR dataset. It can represent the whole
+Project or one dataset collection entry with complete coordinates. It is a plugin descriptor built from
+RDMO's Project, Values, and catalog scope; the metadata and request payload are prepared separately.
 
 `RadarMapping` is a frozen group of ordinary callables, with no registry or subclass requirement:
 
 | Member | Contract |
 | --- | --- |
-| `get_datasets(project, reader)` | Return export candidates using the prepared reader. Discovery semantics belong to the profile. |
-| `build_reader(project, snapshot=None)` | Prepare Values/catalog data once and return a callable accepting the profile's candidates. |
+| `get_datasets(project, reader)` | Return export datasets using the prepared reader. Discovery semantics belong to the profile. |
+| `build_reader(project, snapshot=None)` | Prepare Values/catalog data once and return a callable accepting the profile's datasets. |
 | `compute_metadata(context)` | Return `MappingResult(RadarMetadata, issues)`. Existing component functions remain composable. |
 | `build_import_writer(plugin, *, set_index, existing_values, mapping)` | Optional hook returning a metadata-to-staged-Values callable. Owns allocation, destinations, and merging. |
-| `store_result(project, candidate, radar_id, radar_url)` | Optional hook writing a confirmed result using the captured scope. Must not require a metadata reader. |
+| `store_result(project, dataset, radar_id, radar_url)` | Optional hook writing a confirmed result using the captured scope. Must not require a metadata reader. |
 
 The optional import hook is a writer builder rather than a field-mapping function alone: allocation and
 merge preparation must belong to the selected mapping. It receives the optional `mapping=` function override
 and can preserve independently replaceable component writers. There is no generic reverse mapping engine.
 The registered importer converts unsupported profiles into an explicit validation error.
 
-`ExportCandidate(key, label, scope={}, radar_url=None, fallback_file_stem=None)` uses a unique nonempty
+`ExportDataset(key, label, scope={}, radar_url=None, fallback_file_stem=None)` uses a unique nonempty
 string key for Django forms. Its scope contains JSON-compatible dictionaries/lists and scalar values;
 the profile owns their interpretation and must treat prepared scope as read-only. Frozen dataclasses do
-not freeze nested dictionaries. Candidate scope is copied into the OAuth session before the remote POST.
+not freeze nested dictionaries. Dataset scope is copied into the OAuth session before the remote POST.
 Keys need not be numeric. An optional filename fallback preserves TF's numeric XML names when titles are
 missing; it does not populate descriptive metadata.
 
-`PROJECT_MAPPING` explicitly returns the `project` candidate and maps only `Project.title`. Custom metadata
+`PROJECT_MAPPING` explicitly returns the `project` dataset and maps only `Project.title`. Custom metadata
 functions can use the project reference, identity-aware accessors, and snapshot-filtered Values. This
 profile has no import writer or local result writer; missing required fields still produce diagnostics.
 
@@ -188,14 +205,15 @@ placements, including intervening non-collection levels. Ambiguous destinations 
 confirmed creation then follows the existing local-storage-failure presentation. Fields absent from
 prepared catalog/Values retain installed path resolution and the established flat destination fallback.
 
-Adapters use `get_candidates()` for discovery, labels, existing URLs, and selection. The legacy
-`get_dataset_indices()` convenience is specific to TF scopes; third-party workflows should use candidates.
+Adapters use `get_datasets()` for discovery, labels, existing URLs, and selection. The legacy
+`get_dataset_indices()` convenience is specific to TF scopes; third-party workflows should use datasets.
 Services still accept legacy numeric indices for direct callers. They do not inspect mapping-owned scope.
 
 Profile selection is a class attribute on a registered XML, credentials, OAuth, or import subclass. The
 callback uses that configured class and saved destination; it never rebuilds discovery or metadata after
 authorization. Profiles do not configure authentication. Distinct registered classes have distinct native
 RDMO session namespaces, allowing project and TF mappings to coexist.
+OAuth contexts store the descriptor under `dataset`, together with the provider class and persistence flag.
 
 ## Extension examples
 
@@ -206,7 +224,7 @@ For an ordinary catalog without dataset collections, the
 `replace(PROJECT_MAPPING, compute_metadata=read_metadata)`, and a registered `RadarProjectExport` subclass.
 The function uses `context.get_text()`, `get_texts()`, and, when needed, `get_option()` or `get_values()`.
 It returns `MappingResult(RadarMetadata(...), tuple(context.issues))`. Project discovery and prepared
-reading remain defaults; mapping authors do not configure services, candidates, or persistence.
+reading remain defaults; mapping authors do not configure services, datasets, or persistence.
 XML and direct export subclasses can select the same mapping without duplicating field interpretation.
 
 Simplicity is an acceptance criterion: a developer familiar with RDMO Attributes must be able to map
@@ -240,21 +258,21 @@ Explicit project-level construction:
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 
 service = build_export_service(project, profile=PROJECT_MAPPING)
-candidate = PROJECT_MAPPING.get_datasets(project, service.reader)[0]
-prepared = service.compute_payload(candidate, user.email)
+dataset = PROJECT_MAPPING.get_datasets(project, service.reader)[0]
+prepared = service.compute_payload(dataset, user.email)
 # After confirmed remote creation, omitted storage remains a successful no-op.
-result = service.store_result(candidate, confirmed_id, confirmed_url)
+result = service.store_result(dataset, confirmed_id, confirmed_url)
 ```
 
 A third-party profile can replace discovery, preparation, and metadata mapping together:
 
 ```python
-from rdmo_radar.mappings import RadarMapping, ExportCandidate
+from rdmo_radar.mappings import RadarMapping, ExportDataset
 from rdmo_radar.exports import RadarProjectExport
 from example_rdmo_plugin.mapping import discover, build_reader, compute_metadata, store_result
 
 EXAMPLE_MAPPING = RadarMapping(
-    get_datasets=discover,  # e.g. ExportCandidate('record-a', 'Record A', {'coordinate': [1, 3]})
+    get_datasets=discover,  # e.g. ExportDataset('record-a', 'Record A', {'coordinate': [1, 3]})
     build_reader=build_reader,
     compute_metadata=compute_metadata,
     store_result=store_result,
@@ -267,7 +285,7 @@ class ExampleRadarExport(RadarProjectExport):
 
 Register `example_rdmo_plugin.exports.ExampleRadarExport` using RDMO's existing dotted class mechanism. For direct
 export, subclass the corresponding provider and select the same profile. OAuth callbacks call its
-`store_result` hook with the saved candidate, rather than a service writer created in an earlier request.
+`store_result` hook with the saved dataset, rather than a service writer created in an earlier request.
 
 Replace one mapping while keeping the others:
 
@@ -359,7 +377,7 @@ cases cover explicit project/TF modes, custom profiles through native registrati
 writer precedence, unavailable imports, staging/allocation ownership, identity matching across cached URI
 labels, stale selections, and real XML/credentials/OAuth flows. Callback tests change later form state and
 disable all reader/discovery functions, while checking custom writers, disabled storage, confirmed-result
-failures, and legacy sessions. The RDMO 2.5.2 benchmark retains its metadata/diagnostic hashes, 16 setup
+failures, and captured dataset scope. The RDMO 2.5.2 benchmark retains its metadata/diagnostic hashes, 16 setup
 queries, and zero queries after preparation for 2, 50, and 100 datasets.
 
 The existing RDMO 3 backend environment uses revision `a14a08b74e91e75da9c79f0606ce6fdb5c86b64e`.
@@ -369,7 +387,7 @@ deselected legacy presentation case and one expected upstream failure. These che
 RDMO 3 frontend support. Arbitrary catalog import implementations and RDMO core improvements remain
 separate follow-ups; the profile interface provides the import boundary without guessing catalog semantics.
 
-Demonstrated upstream candidates:
+Demonstrated upstream improvements:
 
 - Boundary-safe `ValueQuerySet.filter_set`: prefix matching selects dataset `10` when requesting `1`.
   The minimized reproduction is retained in `tests/test_value_scopes.py`.

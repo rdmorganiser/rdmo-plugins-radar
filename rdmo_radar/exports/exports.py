@@ -9,7 +9,7 @@ from rdmo.projects.exports import Export
 
 from rdmo_radar.exceptions import XmlExportError
 from rdmo_radar.factories import build_xml_export_service
-from rdmo_radar.mappings import validate_candidates
+from rdmo_radar.mappings import validate_datasets
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
@@ -31,15 +31,16 @@ class RadarExport(Export):
         return self._service
 
     def get_dataset_indices(self):
-        """Legacy TF convenience; workflows use candidates with complete scope instead."""
-        return sorted({candidate.scope['set_index'] for candidate in self.get_candidates()})
+        """Legacy TF convenience; workflows use datasets with complete scope instead."""
+        return sorted({dataset.scope['set_index'] for dataset in self.get_datasets()})
 
-    def get_candidates(self):
+    def get_datasets(self):
+        """Return the datasets that this mapping can export from the RDMO project."""
         service = self.get_service()
-        if getattr(self, '_candidate_service', None) is not service:
-            self._candidates = validate_candidates(self.mapping.get_datasets(self.project, service.reader))
-            self._candidate_service = service
-        return self._candidates
+        if getattr(self, '_dataset_service', None) is not service:
+            self._datasets = validate_datasets(self.mapping.get_datasets(self.project, service.reader))
+            self._dataset_service = service
+        return self._datasets
 
     def render(self):
         try:
@@ -59,7 +60,7 @@ class RadarExport(Export):
         return self.render_zip(files)
 
     def prepare_files(self):
-        files = self.get_service().compute_files(self.get_candidates())
+        files = self.get_service().compute_files(self.get_datasets())
         return [{
             'file_name': file.file_name,
             'xml_data': file.xml_data,

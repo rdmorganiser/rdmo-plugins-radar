@@ -422,7 +422,7 @@ def test_model_identity_selection_and_diagnostics_do_not_load_deferred_fields(db
     assert 'uri' in selector.get_deferred_fields()
 
 
-def test_template_framework_candidates_keep_repeated_nested_indices_and_result_coordinates(
+def test_template_framework_datasets_keep_repeated_nested_indices_and_result_coordinates(
     scope_project, django_assert_num_queries,
 ):
     from rdmo_radar.factories import build_export_service
@@ -442,18 +442,18 @@ def test_template_framework_candidates_keep_repeated_nested_indices_and_result_c
                    set_prefix=f'{parent}|3')
     service = build_export_service(scope_project)
     with django_assert_num_queries(0):
-        candidates = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(scope_project, service.reader)
-        assert [candidate.key for candidate in candidates] == ['dataset:1|3', 'dataset:10|3']
-        assert [candidate.label for candidate in candidates] == ['Dataset 1', 'Dataset 10']
-        assert [candidate.radar_url for candidate in candidates] == [
+        datasets = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(scope_project, service.reader)
+        assert [dataset.key for dataset in datasets] == ['dataset:1|3', 'dataset:10|3']
+        assert [dataset.label for dataset in datasets] == ['Dataset 1', 'Dataset 10']
+        assert [dataset.radar_url for dataset in datasets] == [
             'https://radar.test/old-1', 'https://radar.test/old-10',
         ]
-        for candidate, parent in zip(candidates, (1, 10), strict=True):
-            mapped = service.mapping(service.reader(candidate))
+        for dataset, parent in zip(datasets, (1, 10), strict=True):
+            mapped = service.mapping(service.reader(dataset))
             assert mapped.metadata.title == f'Dataset {parent}'
             assert mapped.metadata.resource.value == f'Resource {parent}'
             assert mapped.issues == ()
-    service.store_result(candidates[1], 'confirmed', 'https://radar.test/confirmed')
+    service.store_result(datasets[1], 'confirmed', 'https://radar.test/confirmed')
     assert scope_project.values.get(attribute__path='project/dataset/radar_id').set_prefix == '10|3'
     assert scope_project.values.get(attribute__path='project/dataset/radar_id').set_index == 0
     assert scope_project.values.get(attribute__path='project/dataset/radar_url', set_prefix='1|3').text == (

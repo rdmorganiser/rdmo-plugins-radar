@@ -113,17 +113,19 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         if not form.is_valid():
             return self.render_export_form(form)
 
-        candidate = self.get_selected_candidate(form)
-        if candidate is None:
+        dataset = self.get_selected_dataset(form)
+        if dataset is None:
+            return self.render_export_form(form)
+        payload = self._prepare_payload(dataset, form)
+        if payload is None:
             return self.render_export_form(form)
         service = self.get_service()
-        prepared = service.compute_payload(candidate, self.request.user.email)
         client = self.client
         try:
             data = client.create_dataset(
                 self.get_from_session(self.request, 'access_token'),
                 form.cleaned_data['workspace'],
-                prepared.payload,
+                payload,
             )
         except (requests.RequestException, RadarProtocolError) as error:
             response = getattr(error, 'response', None)
@@ -136,7 +138,7 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         radar_url = dataset_page_url(client.radar_url, data['id'], self.request.LANGUAGE_CODE)
         stored = True
         try:
-            service.store_result(candidate, data['id'], radar_url)
+            service.store_result(dataset, data['id'], radar_url)
         except ExportStoreError:
             logger.warning('Could not store confirmed RADAR dataset %s', data['id'])
             stored = False

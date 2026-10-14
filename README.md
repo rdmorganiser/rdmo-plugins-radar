@@ -108,7 +108,7 @@ The project mapping exports one record using `Project.title`, including projects
 dataset Attributes. It leaves other metadata unset and reports missing required fields. It supplies no
 import mapping or local result storage. The Template Framework mapping discovers entered dataset records,
 preserves shared metadata and vocabulary mappings, and supports catalog-less flat markers. Empty dataset
-collections produce no candidates. Nested records with the same local index have distinct selection keys.
+collections produce no datasets. Nested records with the same local index have distinct selection keys.
 
 For direct exports, select the corresponding registered class:
 
@@ -230,7 +230,105 @@ supplies no local result storage or import mapping.
 This preserves the original exporter's straightforward mapping style. It does not restore its specific
 Template Framework field mappings: historical registrations still use that profile. More advanced catalogs
 can customize discovery, scoping, imports, and persistence through the existing
-[profile contracts and factory overrides](docs/architecture.md#mapping-profiles-and-candidates).
+[profile contracts and factory overrides](docs/architecture.md#mapping-profiles-and-datasets).
+
+### Custom RADAR request payload
+
+`get_datasets()` returns the datasets to export as `ExportDataset` objects. Each describes which RDMO
+answers will become one RADAR dataset: the project mapping exports the whole project as one dataset,
+while the Template Framework mapping exports one dataset per dataset collection entry. Its `key` and
+`label` supply the export form choices, and its `scope` identifies the source answers. RDMO provides the
+Project, Values, and collection coordinates; `ExportDataset` belongs to this plugin. `get_payload(dataset)`
+then builds the REST request for the selected dataset.
+
+For direct REST exports, override `get_payload(dataset)` to define the complete request body.
+You can keep the project-level dataset and export workflow without writing a metadata mapping.
+Save this example as `example_rdmo_plugin/exports.py`:
+
+```python
+import time
+
+from rdmo_radar.exports import RadarProjectExportProvider
+
+
+class ExampleRadarExportProvider(RadarProjectExportProvider):
+    def get_payload(self, dataset):
+        context = self.get_context(dataset)
+        timestamp = int(time.time() * 1000)
+        return {
+            'technicalMetadata': {
+                'retentionPeriod': 10,
+                'archiveDate': timestamp,
+                'publishDate': timestamp,
+                'responsibleEmail': self.request.user.email,
+                'schema': {'key': 'RDDM', 'version': '9.3'},
+            },
+            'descriptiveMetadata': {
+                'title': (
+                    context.get_text('https://example.org/terms/domain/research/title')
+                    or self.project.title
+                ),
+                'keywords': {
+                    'keyword': [
+                        {'value': keyword}
+                        for keyword in context.get_texts('https://example.org/terms/domain/research/keywords')
+                    ],
+                },
+            },
+        }
+```
+
+Register the provider in your RDMO settings:
+
+```python
+from django.utils.translation import gettext_lazy as _
+
+PROJECT_EXPORTS += [
+    (
+        'example-radar-direct',
+        _('directly to RADAR (example-catalog)'),
+        'example_rdmo_plugin.exports.ExampleRadarExportProvider',
+    ),
+]
+```
+
+For credentials authentication, use `RadarProjectCredentialsExportProvider` as the base class instead.
+Both providers inherit authentication, workspace selection, session handling, and confirmed-result
+handling; configure authentication through `RADAR_PROVIDER`. The project profile supplies one dataset
+and intentionally disables local result storage. Advanced profiles can customize discovery and storage
+independently of this payload hook.
+
+`get_context(dataset)` provides the same safe Attribute access as a metadata mapping, using prepared
+Values and the selected profile's scope. The hook runs once for the selected dataset on submission.
+OAuth saves that request and replays it after authorization without calling the hook again.
+
+The returned dictionary goes directly to the REST transport. Supply the complete body, including
+`technicalMetadata` and `descriptiveMetadata`; the plugin checks only that it is a JSON-serializable
+dictionary. Preparation errors are shown before submission. Field mapping and technical defaults are
+supplied by the default hook, when called, rather than after your override returns. To retain its defaults
+and change a field, use this alternative implementation:
+
+```python
+def get_payload(self, dataset):
+    context = self.get_context(dataset)
+    payload = super().get_payload(dataset)
+    payload['descriptiveMetadata']['title'] = (
+        context.get_text('https://example.org/terms/domain/research/title')
+        or self.project.title
+    )
+    return payload
+```
+
+Profile-derived mapping warnings are automatically disabled when `get_payload()` is overridden, so
+the form does not report missing fields from a mapping you bypassed. Set `show_mapping_warnings = True`
+on your subclass when those warnings still describe your payload, or `False` to disable them explicitly.
+The default `None` selects this automatic behavior. You can also override `get_mapping_warnings()` to
+provide your own diagnostics; payload hooks are never called to generate warnings or form previews.
+Custom payloads do not inherit canonical completeness checks, and diagnostics from custom context reads
+are available through `context.issues` for your own warning implementation.
+
+This hook serves direct REST exports. Use a `RadarMetadata` mapping when the same interpretation should
+also support XML export.
 
 
 Usage
@@ -271,7 +369,7 @@ messages based on status and workflow, without displaying raw exception text or 
 
 The registered adapters assemble the services through small factories. XML export handles current projects
 and snapshots; direct export separates payload preparation, the remote request, and confirmed-result storage.
-OAuth callbacks use the registered mapping's persistence hook and captured candidate scope without preparing
+OAuth callbacks use the registered mapping's persistence hook and captured dataset scope without preparing
 project answers again. Both direct providers build
 the dataset link from the RADAR instance used for creation. If creation succeeds but local storage fails, RDMO
 shows the confirmed dataset link so users can inspect it before attempting another export.

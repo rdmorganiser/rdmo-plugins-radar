@@ -17,14 +17,14 @@ from rdmo_radar.exceptions import ExportStoreError, UnsupportedImportMapping
 from rdmo_radar.exports import RadarProjectCredentialsExportProvider, RadarProjectExport, RadarProjectExportProvider
 from rdmo_radar.factories import build_export_service, build_import_service, build_xml_export_service
 from rdmo_radar.imports import RadarImport
-from rdmo_radar.mappings import ExportCandidate, validate_candidates
+from rdmo_radar.mappings import ExportDataset, validate_datasets
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.metadata.rdmo import RDMOWriteContext
 from rdmo_radar.metadata.types import Description, MappingResult, RadarMetadata
 from rdmo_radar.metadata.values import coordinates
 
-from .helpers import add_answer, add_attribute, add_namespaced_attribute
+from .helpers import add_answer, add_attribute, add_namespaced_attribute, export_for
 
 CUSTOM_TITLE = 'https://custom.test/domain/research/title'
 CUSTOM_URL = 'https://custom.test/domain/research/radar_url'
@@ -48,23 +48,96 @@ class ExampleRadarExport(RadarProjectExport):
     mapping = replace(PROJECT_MAPPING, compute_metadata=read_metadata)
 
 
+@pytest.mark.parametrize('provider_class', [RadarProjectExportProvider, RadarProjectCredentialsExportProvider])
+def test_direct_payload_reads_prepared_custom_attributes_without_metadata_mapping(
+    example_project, django_assert_num_queries, provider_class,
+):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            context = self.get_context(dataset)
+            return {
+                'technicalMetadata': {
+                    'retentionPeriod': 3,
+                    'archiveDate': 1234,
+                    'publishDate': 4321,
+                    'responsibleEmail': self.request.user.email,
+                    'schema': {'key': 'RDDM', 'version': '9.3'},
+                },
+                'descriptiveMetadata': {
+                    'title': context.get_text('https://example.org/terms/domain/research/title'),
+                    'keywords': {'keyword': [
+                        {'value': keyword}
+                        for keyword in context.get_texts('https://example.org/terms/domain/research/keywords')
+                    ]},
+                },
+            }
+
+    provider = export_for(example_project, ExampleRadarExportProvider)
+    dataset = provider.get_datasets()[0]
+    service = provider.get_service()
+    service.mapping = Mock(side_effect=AssertionError('Canonical mapping used for a custom request'))
+    service.serializer = Mock(side_effect=AssertionError('Canonical serializer used for a custom request'))
+    with django_assert_num_queries(0):
+        assert provider.get_payload(dataset) == {
+            'technicalMetadata': {
+                'retentionPeriod': 3, 'archiveDate': 1234, 'publishDate': 4321,
+                'responsibleEmail': 'user@example.test', 'schema': {'key': 'RDDM', 'version': '9.3'},
+            },
+            'descriptiveMetadata': {
+                'title': 'Measurements',
+                'keywords': {'keyword': [{'value': 'chemistry'}, {'value': 'measurements'}]},
+            },
+        }
+        assert provider.get_mapping_warnings() == []
+    assert dataset.key == 'project'
+    service.mapping.assert_not_called()
+    service.serializer.assert_not_called()
+
+
+@pytest.mark.parametrize('provider_class', [RadarProjectExportProvider, RadarProjectCredentialsExportProvider])
+def test_payload_override_can_reuse_defaults_and_prepared_attribute_access(
+    example_project, django_assert_num_queries, provider_class,
+):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            context = self.get_context(dataset)
+            payload = super().get_payload(dataset)
+            payload['descriptiveMetadata']['title'] = context.get_text(
+                'https://example.org/terms/domain/research/title',
+            )
+            return payload
+
+    provider = export_for(example_project, ExampleRadarExportProvider)
+    dataset = provider.get_datasets()[0]
+    provider.get_service().clock = lambda: 1_725_000_000.123
+    with django_assert_num_queries(0):
+        payload = provider.get_payload(dataset)
+    assert payload == {
+        'technicalMetadata': {
+            'retentionPeriod': 10, 'archiveDate': 1_725_000_000_123, 'publishDate': 1_725_000_000_123,
+            'responsibleEmail': 'user@example.test', 'schema': {'key': 'RDDM', 'version': '9.3'},
+        },
+        'descriptiveMetadata': {'title': 'Measurements'},
+    }
+
+
 def custom_reader(project, snapshot=None):
     read = PROJECT_MAPPING.build_reader(project, snapshot)
 
-    def selected(candidate):
-        context = read(candidate)
-        if candidate is None:
+    def selected(dataset):
+        context = read(dataset)
+        if dataset is None:
             return context
-        position = candidate.scope['coordinate']
+        position = dataset.scope['coordinate']
         return context.group('|'.join(map(str, position[:-1])), position[-1])
 
     return selected
 
 
-def custom_candidates(project, reader):
+def custom_datasets(project, reader):
     # Discovery uses a project context; custom scope is interpreted only by this package.
     context = reader(None)
-    return [ExportCandidate(f'record-{value.set_prefix}-{value.set_index}', value.text,
+    return [ExportDataset(f'record-{value.set_prefix}-{value.set_index}', value.text,
                             {'coordinate': list(map(int, coordinates(value)))})
             for value in context.get_values(CUSTOM_TITLE)]
 
@@ -73,8 +146,8 @@ def custom_metadata(context):
     return MappingResult(RadarMetadata(title=context.get_text(CUSTOM_TITLE)), tuple(context.issues))
 
 
-def custom_store(project, candidate, radar_id, radar_url):
-    position = candidate.scope['coordinate']
+def custom_store(project, dataset, radar_id, radar_url):
+    position = dataset.scope['coordinate']
     with transaction.atomic():
         for uri, text in ((CUSTOM_ID, radar_id), (CUSTOM_URL, radar_url)):
             Value.objects.update_or_create(project=project, attribute=Attribute.objects.get(uri=uri), snapshot=None,
@@ -92,7 +165,7 @@ def custom_import_writer(plugin, *, set_index=None, existing_values, mapping=Non
     return stage
 
 
-CUSTOM_MAPPING = replace(PROJECT_MAPPING, get_datasets=custom_candidates, build_reader=custom_reader,
+CUSTOM_MAPPING = replace(PROJECT_MAPPING, get_datasets=custom_datasets, build_reader=custom_reader,
                          compute_metadata=custom_metadata, store_result=custom_store,
                          build_import_writer=custom_import_writer)
 
@@ -176,12 +249,12 @@ def test_simple_mapping_from_ordinary_catalog_through_native_registration(
         keywords=['chemistry', 'measurements'],
     )
     with django_assert_num_queries(0):
-        candidates = export.get_candidates()
-        assert [candidate.key for candidate in candidates] == ['project']
-        candidate = candidates[0]
-        assert xml_service.mapping(xml_service.reader(candidate)) == MappingResult(expected)
+        datasets = export.get_datasets()
+        assert [dataset.key for dataset in datasets] == ['project']
+        dataset = datasets[0]
+        assert xml_service.mapping(xml_service.reader(dataset)) == MappingResult(expected)
         files = export.prepare_files()
-        prepared = rest_service.compute_payload(candidate, 'owner@example.test')
+        prepared = rest_service.compute_payload(dataset, 'owner@example.test')
 
     assert len(files) == 1
     assert files[0]['file_name'] == 'Measurements.xml'
@@ -220,15 +293,15 @@ def test_questions_share_attribute_values_without_duplicate_metadata(example_pro
     assert [value.text for value in keyword_values] == ['chemistry', 'measurements']
 
     service = build_export_service(example_project, profile=ExampleRadarExport.mapping)
-    candidate = ExampleRadarExport.mapping.get_datasets(example_project, service.reader)[0]
-    context = service.reader(candidate)
+    dataset = ExampleRadarExport.mapping.get_datasets(example_project, service.reader)[0]
+    context = service.reader(dataset)
     with django_assert_num_queries(0):
         assert context.get_values(original_question.attribute) == keyword_values
         assert context.get_values(shared_question.attribute) == keyword_values
         result = service.mapping(context)
         assert result.metadata.keywords == ['chemistry', 'measurements']
         assert result.issues == ()
-        assert service.compute_payload(candidate, 'owner@example.test').payload['descriptiveMetadata']['keywords'] == {
+        assert service.compute_payload(dataset, 'owner@example.test').payload['descriptiveMetadata']['keywords'] == {
             'keyword': [{'value': 'chemistry'}, {'value': 'measurements'}],
         }
 
@@ -240,13 +313,13 @@ def test_project_profile_exports_one_conservative_record_without_datasets(db, ca
                                      if catalog else None)
     add_answer(project, 'project/dataset/title', 'Ignored dataset title')
     service = build_export_service(project, profile=PROJECT_MAPPING)
-    candidates = PROJECT_MAPPING.get_datasets(project, service.reader)
-    assert [candidate.key for candidate in candidates] == ['project']
-    assert service.mapping(service.reader(candidates[0])) == MappingResult(RadarMetadata(title=project.title))
-    assert service.compute_payload(candidates[0], 'owner@test').payload['descriptiveMetadata'] == {
+    datasets = PROJECT_MAPPING.get_datasets(project, service.reader)
+    assert [dataset.key for dataset in datasets] == ['project']
+    assert service.mapping(service.reader(datasets[0])) == MappingResult(RadarMetadata(title=project.title))
+    assert service.compute_payload(datasets[0], 'owner@test').payload['descriptiveMetadata'] == {
         'title': 'Project title',
     }
-    xml = build_xml_export_service(project, profile=PROJECT_MAPPING).compute_files(candidates)[0]
+    xml = build_xml_export_service(project, profile=PROJECT_MAPPING).compute_files(datasets)[0]
     assert xml.file_name == 'Project title.xml'
     assert 'creators.creator' in xml.missing_fields
     assert xml.has_warnings
@@ -274,19 +347,19 @@ def test_project_profile_custom_metadata_reads_snapshot_and_reuses_preparation(d
     ))
     with django_assert_num_queries(1):
         service = build_xml_export_service(project, profile=profile, snapshot=snapshot)
-    candidate = profile.get_datasets(project, service.reader)[0]
+    dataset = profile.get_datasets(project, service.reader)[0]
     with django_assert_num_queries(0):
-        assert service.mapping(service.reader(candidate)).metadata.title == 'Saved'
-        assert service.mapping(service.reader(candidate)).metadata.title == 'Saved'
+        assert service.mapping(service.reader(dataset)).metadata.title == 'Saved'
+        assert service.mapping(service.reader(dataset)).metadata.title == 'Saved'
 
 
 def test_custom_scope_keys_work_through_both_serializers_and_persistence(custom_project):
     xml = build_xml_export_service(custom_project, profile=CUSTOM_MAPPING)
-    candidates = CUSTOM_MAPPING.get_datasets(custom_project, xml.reader)
-    assert [candidate.key for candidate in candidates] == ['record-1-3', 'record-10-3']
-    assert [file.file_name for file in xml.compute_files(candidates)] == ['First record.xml', 'Second record.xml']
+    datasets = CUSTOM_MAPPING.get_datasets(custom_project, xml.reader)
+    assert [dataset.key for dataset in datasets] == ['record-1-3', 'record-10-3']
+    assert [file.file_name for file in xml.compute_files(datasets)] == ['First record.xml', 'Second record.xml']
     rest = build_export_service(custom_project, profile=CUSTOM_MAPPING)
-    selected = candidates[1]
+    selected = datasets[1]
     assert rest.compute_payload(selected, 'owner@test').payload['descriptiveMetadata']['title'] == 'Second record'
     result = rest.store_result(selected, 'confirmed', 'https://radar.test/confirmed')
     assert result.radar_id == 'confirmed'
@@ -305,7 +378,7 @@ def test_native_registration_loads_legacy_and_explicit_profiles(custom_project, 
     plugins = get_plugins('PROJECT_EXPORTS')
     for key, count in (('legacy', 0), ('project', 1), ('tf', 0), ('custom', 2)):
         plugins[key].project = custom_project
-        assert len(plugins[key].get_candidates()) == count
+        assert len(plugins[key].get_datasets()) == count
     assert [file['file_name'] for file in plugins['custom'].prepare_files()] == [
         'First record.xml', 'Second record.xml',
     ]
@@ -318,17 +391,17 @@ def test_explicit_dependencies_override_profile_defaults(factory):
     profile = replace(PROJECT_MAPPING, build_reader=Mock(side_effect=AssertionError('Default reader used')),
                       compute_metadata=Mock(side_effect=AssertionError('Default mapping used')))
     service = factory(None, profile=profile, reader=reader, mapping=mapping)
-    candidate = ExportCandidate('opaque', 'Record', {'coordinate': [1, 3]})
-    assert service.mapping(service.reader(candidate)).metadata.title == 'Override'
-    reader.assert_called_once_with(candidate)
+    dataset = ExportDataset('opaque', 'Record', {'coordinate': [1, 3]})
+    assert service.mapping(service.reader(dataset)).metadata.title == 'Override'
+    reader.assert_called_once_with(dataset)
     mapping.assert_called_once_with('prepared')
 
 
 @pytest.mark.parametrize('profile', [None, PROJECT_MAPPING, TEMPLATE_FRAMEWORK_MAPPING])
 def test_explicit_none_writer_disables_storage_without_project_queries(db, django_assert_num_queries, profile):
-    service = build_export_service(None, profile=profile, reader=lambda candidate: None, writer=None)
+    service = build_export_service(None, profile=profile, reader=lambda dataset: None, writer=None)
     with django_assert_num_queries(0):
-        assert service.store_result(ExportCandidate('project', 'Project'), 'id', 'url').radar_url == 'url'
+        assert service.store_result(ExportDataset('project', 'Project'), 'id', 'url').radar_url == 'url'
 
 
 def test_profile_without_writer_never_borrows_template_framework_destinations(db):
@@ -336,30 +409,30 @@ def test_profile_without_writer_never_borrows_template_framework_destinations(db
     add_attribute('project/dataset/radar_id')
     add_attribute('project/dataset/radar_url')
     service = build_export_service(project, profile=PROJECT_MAPPING)
-    candidate = PROJECT_MAPPING.get_datasets(project, service.reader)[0]
-    assert service.store_result(candidate, 'id', 'url').radar_url == 'url'
+    dataset = PROJECT_MAPPING.get_datasets(project, service.reader)[0]
+    assert service.store_result(dataset, 'id', 'url').radar_url == 'url'
     assert not project.values.exists()
 
 
 def test_explicit_writer_replaces_profile_storage(custom_project):
     writer = Mock()
     service = build_export_service(custom_project, profile=CUSTOM_MAPPING, writer=writer)
-    candidate = ExportCandidate('chosen', 'Record', {'coordinate': [10, 3]})
-    service.store_result(candidate, 'id', 'url')
-    writer.assert_called_once_with(candidate, 'id', 'url')
+    dataset = ExportDataset('chosen', 'Record', {'coordinate': [10, 3]})
+    service.store_result(dataset, 'id', 'url')
+    writer.assert_called_once_with(dataset, 'id', 'url')
     assert not custom_project.values.filter(attribute__uri=CUSTOM_URL).exists()
 
 
 def test_custom_storage_failure_preserves_confirmed_result(custom_project):
     failure = Mock(side_effect=RuntimeError('Private database detail'))
     service = build_export_service(custom_project, profile=replace(CUSTOM_MAPPING, store_result=failure))
-    candidate = ExportCandidate('chosen', 'Record', {'coordinate': [10, 3]})
+    dataset = ExportDataset('chosen', 'Record', {'coordinate': [10, 3]})
     with pytest.raises(ExportStoreError) as caught:
-        service.store_result(candidate, 'confirmed', 'https://radar.test/confirmed')
+        service.store_result(dataset, 'confirmed', 'https://radar.test/confirmed')
     assert caught.value.radar_id == 'confirmed'
     assert caught.value.radar_url == 'https://radar.test/confirmed'
     assert 'Private database detail' not in str(caught.value)
-    failure.assert_called_once_with(custom_project, candidate, 'confirmed', 'https://radar.test/confirmed')
+    failure.assert_called_once_with(custom_project, dataset, 'confirmed', 'https://radar.test/confirmed')
 
 
 def test_profile_import_hook_owns_allocation_and_stages_native_values(custom_project):
@@ -394,14 +467,14 @@ def test_explicit_import_writer_overrides_unavailable_profile_without_preparatio
 
 
 @pytest.mark.parametrize('scope', [{'tuple': (1, 3)}, {'object': object()}, {'number': float('nan')}])
-def test_candidate_scopes_must_survive_json_round_trip(scope):
+def test_dataset_scopes_must_survive_json_round_trip(scope):
     with pytest.raises((TypeError, ValueError)):
-        validate_candidates([ExportCandidate('record', 'Record', scope)])
+        validate_datasets([ExportDataset('record', 'Record', scope)])
 
 
-def test_duplicate_candidate_keys_are_rejected():
+def test_duplicate_dataset_keys_are_rejected():
     with pytest.raises(ValueError, match='unique'):
-        validate_candidates([ExportCandidate('record', 'First'), ExportCandidate('record', 'Second')])
+        validate_datasets([ExportDataset('record', 'First'), ExportDataset('record', 'Second')])
 
 
 def test_third_party_discovery_reuses_prepared_values(custom_project, django_assert_num_queries):
@@ -409,8 +482,8 @@ def test_third_party_discovery_reuses_prepared_values(custom_project, django_ass
         service = build_xml_export_service(custom_project, profile=CUSTOM_MAPPING)
     with django_assert_num_queries(0):
         for _ in range(2):
-            candidates = CUSTOM_MAPPING.get_datasets(custom_project, service.reader)
-            assert [service.mapping(service.reader(candidate)).metadata.title for candidate in candidates] == [
+            datasets = CUSTOM_MAPPING.get_datasets(custom_project, service.reader)
+            assert [service.mapping(service.reader(dataset)).metadata.title for dataset in datasets] == [
                 'First record', 'Second record',
             ]
 
@@ -428,7 +501,7 @@ def test_registered_authentication_classes_select_profiles(custom_project, setti
     provider = get_plugins('PROJECT_EXPORTS')['provider']
     provider.project = custom_project
     assert provider.mapping is profile
-    assert [candidate.key for candidate in provider.get_candidates()] == (
+    assert [dataset.key for dataset in provider.get_datasets()] == (
         ['project'] if profile is PROJECT_MAPPING else []
     )
 
@@ -466,7 +539,7 @@ def test_oauth_rejects_result_context_from_another_provider_without_storage(cust
     request = SimpleNamespace(session={})
     provider.store_in_session(request, 'export_context', {
         'project_id': custom_project.pk,
-        'candidate': {'key': 'record-10-3', 'label': 'Record', 'scope': {'coordinate': [10, 3]}},
+        'dataset': {'key': 'record-10-3', 'label': 'Record', 'scope': {'coordinate': [10, 3]}},
         'provider': 'another.package.Provider', 'persist': True,
         'radar_url': 'https://radar.test', 'language': 'en',
     })
@@ -478,43 +551,46 @@ def test_oauth_rejects_result_context_from_another_provider_without_storage(cust
     )
 
 
-def test_legacy_oauth_session_can_finish_without_reader_after_upgrade(custom_project):
+def test_oauth_session_stores_dataset_scope_without_reader(custom_project):
     from types import SimpleNamespace
 
     from rdmo_radar.exports import RadarExportProvider
 
     add_attribute('project/dataset/radar_id')
     add_attribute('project/dataset/radar_url')
-    provider = RadarExportProvider('legacy', 'Legacy', 'rdmo_radar.exports.RadarExportProvider')
+    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider')
     request = SimpleNamespace(session={})
     provider.store_in_session(request, 'export_context', {
-        'project_id': custom_project.pk, 'set_index': 3, 'radar_url': 'https://radar.test', 'language': 'en',
+        'project_id': custom_project.pk, 'provider': provider.class_name, 'persist': True,
+        'radar_url': 'https://radar.test', 'language': 'en',
+        'dataset': {'key': 'dataset:10|3', 'label': 'Dataset', 'scope': {'set_prefix': '10', 'set_index': 3}},
     })
     provider.get_service = Mock(side_effect=AssertionError('Reader prepared'))
     provider.render_export_result = Mock(return_value='confirmed link')
     assert provider.post_success(request, SimpleNamespace(json=lambda: {'id': 'confirmed'})) == 'confirmed link'
-    assert custom_project.values.get(attribute__path='project/dataset/radar_id').text == 'confirmed'
+    stored = custom_project.values.get(attribute__path='project/dataset/radar_id')
+    assert (stored.text, stored.set_prefix, stored.set_index) == ('confirmed', '10', 3)
     provider.get_service.assert_not_called()
 
 
-def test_adapter_candidates_are_operation_scoped_and_rebuilt_for_profile_changes(custom_project):
+def test_adapter_datasets_are_operation_scoped_and_rebuilt_for_profile_changes(custom_project):
     discovery = Mock(wraps=CUSTOM_MAPPING.get_datasets)
     provider = CustomXmlExport('custom', 'Custom', 'tests.test_mapping_profiles.CustomXmlExport')
     provider.project = custom_project
     provider.mapping = replace(CUSTOM_MAPPING, get_datasets=discovery)
-    assert [candidate.key for candidate in provider.get_candidates()] == ['record-1-3', 'record-10-3']
-    assert len(provider.get_candidates()) == 2
+    assert [dataset.key for dataset in provider.get_datasets()] == ['record-1-3', 'record-10-3']
+    assert len(provider.get_datasets()) == 2
     discovery.assert_called_once()
     provider.mapping = PROJECT_MAPPING
-    assert [candidate.key for candidate in provider.get_candidates()] == ['project']
+    assert [dataset.key for dataset in provider.get_datasets()] == ['project']
 
 
-def test_template_framework_candidate_preserves_numeric_xml_fallback_without_inventing_title(db):
+def test_template_framework_dataset_preserves_numeric_xml_fallback_without_inventing_title(db):
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', '', set_index=5)
     service = build_xml_export_service(project)
-    candidate = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(project, service.reader)[0]
-    assert candidate.label == 'Dataset #6'
-    file = service.compute_files([candidate])[0]
+    dataset = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(project, service.reader)[0]
+    assert dataset.label == 'Dataset #6'
+    file = service.compute_files([dataset])[0]
     assert file.file_name == '6.xml'
     assert 'title' in file.missing_fields

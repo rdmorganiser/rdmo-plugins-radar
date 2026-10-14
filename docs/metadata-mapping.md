@@ -5,7 +5,7 @@ use the mapping described below. Explicit project classes export one record with
 leave other fields unset unless an installation supplies custom functions. They neither infer metadata
 from `Project.description` nor write results to Template Framework Attributes. Missing publication fields
 remain visible. See [mapping selection](../README.md#mapping-selection) and the
-[profile contract](architecture.md#mapping-profiles-and-candidates).
+[profile contract](architecture.md#mapping-profiles-and-datasets).
 
 The export mapping implements the conservative first version agreed from the 2026 Template Framework workbook:
 
@@ -46,7 +46,7 @@ their mapped RADAR values agree. Translated labels do not identify vocabulary en
 Text preserved alongside `Other` uses the option's current RDMO language and any supplied
 free text. Supported person identifiers prefer `external_id` over provider display text.
 
-Export candidates retain complete dataset coordinates, including parent collections. Two nested datasets
+Export datasets retain complete dataset coordinates, including parent collections. Two nested datasets
 with index 3 under different parent entries have different selection keys and readers. The profile supplies
 labels and existing RADAR URLs; adapters do not read Template Framework paths themselves. Result writes
 use captured scalar coordinates and Attribute URIs when available. Ambiguous or non-scalar destinations

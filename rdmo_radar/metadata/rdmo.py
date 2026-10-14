@@ -328,14 +328,14 @@ class RDMOWriteContext:
         attribute = self.import_plugin.get_attribute(attribute_uri)
         # Preserve installed custom URI prefixes through the public import API.
         if attribute is None and not is_uri(path):
-            attribute_candidates_map = {}
+            matching_attributes_map = {}
             for attribute_uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
-                candidate_attribute = self.import_plugin.get_attribute(attribute_uri)
-                if candidate_attribute is not None:
-                    attribute_candidates_map[model_key(candidate_attribute)] = candidate_attribute
-            if len(attribute_candidates_map) == 1:
-                attribute = next(iter(attribute_candidates_map.values()))
-            elif attribute_candidates_map:
+                matching_attribute = self.import_plugin.get_attribute(attribute_uri)
+                if matching_attribute is not None:
+                    matching_attributes_map[model_key(matching_attribute)] = matching_attribute
+            if len(matching_attributes_map) == 1:
+                attribute = next(iter(matching_attributes_map.values()))
+            elif matching_attributes_map:
                 self._ambiguous_attributes.add(path)
                 self.warn(path, 'Ambiguous RDMO Attribute import destination')
         if attribute is not None and model_key(attribute)[0] == 'object':
@@ -355,14 +355,14 @@ class RDMOWriteContext:
         option_uri = path if is_uri(path) else Option.build_uri(DEFAULT_URI_PREFIX, path)
         option = self.import_plugin.get_option(option_uri)
         if option is None and not is_uri(path):
-            option_candidates_map = {}
+            matching_options_map = {}
             for option_uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
-                candidate_option = self.import_plugin.get_option(option_uri)
-                if candidate_option is not None:
-                    option_candidates_map[model_key(candidate_option, candidate_option.uri_path)] = candidate_option
-            if len(option_candidates_map) == 1:
-                option = next(iter(option_candidates_map.values()))
-            elif option_candidates_map:
+                matching_option = self.import_plugin.get_option(option_uri)
+                if matching_option is not None:
+                    matching_options_map[model_key(matching_option, matching_option.uri_path)] = matching_option
+            if len(matching_options_map) == 1:
+                option = next(iter(matching_options_map.values()))
+            elif matching_options_map:
                 self._ambiguous_options.add(path)
                 self.warn(path, 'Ambiguous RDMO Option import destination')
         self._options[path] = option

@@ -1,6 +1,8 @@
 import io
 import zipfile
+from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
@@ -22,7 +24,7 @@ from rdmo_radar.exports.validation import (
     get_radar_validation_errors,
     validate_radar_xml,
 )
-from rdmo_radar.mappings import ExportCandidate
+from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.constants import APIVocabulary, XMLVocabulary
 from rdmo_radar.metadata.types import MappingResult, RadarMetadata
 
@@ -46,7 +48,7 @@ def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
         LANGUAGE_CODE='en'
     )
     provider.project = SimpleNamespace(id=1, pk=1)
-    provider.get_candidates = lambda: []
+    provider.get_datasets = lambda: []
     return provider
 
 
@@ -458,16 +460,161 @@ def test_cancel_clears_export_session(monkeypatch):
     assert provider.request.session == {}
 
 
-def export_provider():
-    provider = make_provider({'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'})
+def export_provider(provider_class=RadarCredentialsExportProvider):
+    provider = make_provider({'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'}, provider_class)
     for key, value in (
         ('access_token', 'bearer-token'), ('dataset_choices', [(0, 'Dataset')]),
         ('workspace_choices', [('workspace-1', 'Workspace')]), ('radar_urls', [None]), ('project_id', 1),
     ):
         provider.store_in_session(provider.request, key, value)
-    provider.get_candidates = lambda: [ExportCandidate('0', 'Dataset', {'set_prefix': '', 'set_index': 0})]
+    provider.get_datasets = lambda: [ExportDataset('0', 'Dataset', {'set_prefix': '', 'set_index': 0})]
     provider.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Dataset'))
     return provider
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('payload', [
+    {},
+    {
+        'technicalMetadata': {'retentionPeriod': 3, 'archiveDate': 0, 'responsibleEmail': 'other@example.test'},
+        'descriptiveMetadata': {'title': '', 'language': 'custom-language', 'keywords': {'keyword': []}},
+        'customField': {'enabled': False, 'values': [0, None]},
+    },
+])
+def test_payload_override_is_sent_unchanged_without_canonical_mapping(monkeypatch, provider_class, payload):
+    calls = []
+
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            calls.append(dataset)
+            return payload
+
+    provider = export_provider(ExampleRadarExportProvider)
+    service = provider.get_service()
+    service.mapping = Mock(side_effect=AssertionError('Canonical mapping called'))
+    service.serializer = Mock(side_effect=AssertionError('Canonical serializer called'))
+    service.writer = Mock()
+    original = deepcopy(payload)
+    captured = []
+
+    def create_dataset(token, workspace, body):
+        captured.append(body)
+        assert (token, workspace) == ('bearer-token', 'workspace-1')
+        return {'id': 'confirmed'}
+
+    def post(request, url, body):
+        captured.append(body)
+        assert url == 'https://radar.example.test/radar/api/workspaces/workspace-1/datasets'
+        return 'sent'
+
+    fake_client(monkeypatch, create_dataset=create_dataset)
+    monkeypatch.setattr(provider, 'post', post, raising=False)
+    monkeypatch.setattr(provider, 'render_export_result', lambda *args, **kwargs: 'sent')
+
+    assert provider.get_export_form().mapping_warnings == []
+    assert calls == []
+    assert provider.submit() == 'sent'
+    assert [dataset.key for dataset in calls] == ['0']
+    assert len(captured) == 1
+    assert captured[0] is payload
+    assert payload == original
+    service.mapping.assert_not_called()
+    service.serializer.assert_not_called()
+    if issubclass(provider_class, RadarCredentialsExportProvider):
+        service.writer.assert_called_once_with(calls[0], 'confirmed',
+                                               'https://radar.example.test/radar/en/dataset/confirmed')
+    else:
+        service.writer.assert_not_called()
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('result', [
+    None, [], {'value': object()}, {'value': float('nan')}, RuntimeError('Private payload details'),
+])
+def test_payload_preparation_failure_preserves_form_without_submission(monkeypatch, caplog, provider_class, result):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+    provider = export_provider(ExampleRadarExportProvider)
+    provider.get_service().writer = Mock()
+    no_submission = Mock(side_effect=AssertionError('Invalid payload submitted'))
+    fake_client(monkeypatch, create_dataset=no_submission)
+    monkeypatch.setattr(provider, 'post', no_submission, raising=False)
+    for module in ('credentials', 'providers'):
+        monkeypatch.setattr(f'rdmo_radar.exports.{module}.render',
+                            lambda request, template, context, status: context)
+
+    form = provider.submit()['form']
+
+    assert form.is_bound
+    assert form.cleaned_data['dataset'] == '0'
+    assert form.cleaned_data['workspace'] == 'workspace-1'
+    assert 'could not be prepared' in str(form.non_field_errors())
+    assert 'Private payload details' not in str(form.errors)
+    assert 'Private payload details' not in caplog.text
+    assert provider.get_from_session(provider.request, 'access_token') == 'bearer-token'
+    assert provider.get_from_session(provider.request, 'export_context') is None
+    assert provider.get_from_session(provider.request, 'operation') is None
+    no_submission.assert_not_called()
+    provider.get_service().writer.assert_not_called()
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('selection', ['invalid_workspace', 'stale_project', 'removed_dataset'])
+def test_payload_hook_is_not_called_for_invalid_selections(monkeypatch, provider_class, selection):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            pytest.fail('Payload hook called for an invalid selection')
+
+    provider = export_provider(ExampleRadarExportProvider)
+    if selection == 'invalid_workspace':
+        provider.request.POST['workspace'] = 'unlisted'
+    elif selection == 'stale_project':
+        provider.store_in_session(provider.request, 'project_id', 2)
+    else:
+        provider.get_datasets = lambda: []
+    for module in ('credentials', 'providers'):
+        monkeypatch.setattr(f'rdmo_radar.exports.{module}.render',
+                            lambda request, template, context, status: context)
+    assert provider.submit()['form'].errors
+
+
+@pytest.mark.parametrize('overridden', [False, True])
+@pytest.mark.parametrize('show_warnings', [None, True, False])
+def test_mapping_warnings_follow_payload_hook_and_explicit_setting(overridden, show_warnings):
+    class ExampleRadarExportProvider(RadarExportProvider):
+        show_mapping_warnings = show_warnings
+
+    if overridden:
+        ExampleRadarExportProvider.get_payload = Mock(side_effect=AssertionError('Payload hook called for warnings'))
+    provider = export_provider(ExampleRadarExportProvider)
+    service = provider.get_service()
+    service.mapping = Mock(return_value=MappingResult(RadarMetadata(title='Dataset')))
+
+    warnings = provider.get_mapping_warnings()
+
+    enabled = show_warnings if show_warnings is not None else not overridden
+    assert bool(warnings) == enabled
+    assert service.mapping.call_count == int(enabled)
+    if overridden:
+        ExampleRadarExportProvider.get_payload.assert_not_called()
+
+
+def test_custom_mapping_warnings_remain_independently_overridable():
+    class ExampleRadarExportProvider(RadarExportProvider):
+        def get_payload(self, dataset):
+            pytest.fail('Payload hook called for warnings')
+
+        def get_mapping_warnings(self):
+            return [{'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': ()}]
+
+    provider = export_provider(ExampleRadarExportProvider)
+    assert provider.get_export_form().mapping_warnings == [{
+        'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': (),
+    }]
 
 
 def test_dataset_export_clears_bearer_token(monkeypatch):
@@ -489,6 +636,7 @@ def test_dataset_export_clears_bearer_token(monkeypatch):
     assert provider.request.session == {}
 
 
+@pytest.mark.parametrize('raw_payload', [False, True])
 @pytest.mark.parametrize(('error', 'expected'), [
     (http_error(403), 'does not have permission'),
     (http_error(400), 'rejected the dataset metadata'),
@@ -497,9 +645,12 @@ def test_dataset_export_clears_bearer_token(monkeypatch):
     (requests.Timeout('Private timeout error'), 'existing draft'),
     (RadarProtocolError(), 'existing draft'),
 ])
-def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, caplog, error, expected):
+def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, caplog, error, expected, raw_payload):
     provider = export_provider()
     calls = []
+    payload = {'technicalMetadata': {}, 'descriptiveMetadata': {'title': 'Custom request'}}
+    if raw_payload:
+        monkeypatch.setattr(RadarCredentialsExportProvider, 'get_payload', lambda self, dataset: payload)
 
     def create_dataset(*args):
         calls.append(args)
@@ -509,6 +660,8 @@ def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, caplog, error, 
     monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
     context = provider.submit_export_form()
     assert len(calls) == 1
+    if raw_payload:
+        assert calls[0][2] is payload
     assert context['form'].is_bound
     assert context['form'].cleaned_data['dataset'] == '0'
     assert context['form'].cleaned_data['workspace'] == 'workspace-1'
@@ -546,11 +699,12 @@ def test_direct_export_uses_rddm_9_3_and_millisecond_timestamps(monkeypatch, pro
     provider.get_service().clock = lambda: 1_725_000_000.123
     provider.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Draft dataset'))
 
-    payload = provider.get_service().compute_payload(0, provider.request.user.email).payload
+    payload = provider.get_payload(ExportDataset('0', 'Dataset', {'set_prefix': '', 'set_index': 0}))
 
     assert payload['technicalMetadata']['schema'] == {'key': 'RDDM', 'version': '9.3'}
     assert payload['technicalMetadata']['archiveDate'] == 1_725_000_000_123
     assert payload['technicalMetadata']['publishDate'] == 1_725_000_000_123
+    assert payload['technicalMetadata']['responsibleEmail'] == provider.request.user.email
     assert payload['descriptiveMetadata'] == {'title': 'Draft dataset'}
 
 
@@ -641,7 +795,7 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
 def test_zip_export_is_complete_and_readable():
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(title='Project')
-    export.get_candidates = lambda: [0, 1]
+    export.get_datasets = lambda: [0, 1]
     export.get_service().mapping = lambda context: MappingResult(
         complete_metadata(title=f'Dataset {context.set_index + 1}'),
     )
@@ -707,7 +861,7 @@ def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_candidates = lambda: [0, 1]
+    export.get_datasets = lambda: [0, 1]
     export.get_service().mapping = lambda context: MappingResult(
         complete_metadata() if context.set_index == 0 else RadarMetadata(title='Incomplete dataset'),
     )
@@ -736,7 +890,7 @@ def test_invalid_xml_export_can_be_downloaded_after_confirmation():
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_candidates = lambda: [0]
+    export.get_datasets = lambda: [0]
     export.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Incomplete dataset'))
 
     response = export.render()
@@ -754,7 +908,7 @@ def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch)
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_candidates = lambda: [0]
+    export.get_datasets = lambda: [0]
     export.get_service().mapping = lambda context: MappingResult(RadarMetadata())
     monkeypatch.setattr(
         'rdmo_radar.exports.exports.render',
@@ -790,7 +944,7 @@ def test_xml_generation_failure_still_blocks_export(caplog):
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_candidates = lambda: [0]
+    export.get_datasets = lambda: [0]
     export.get_service().mapping = lambda context: (_ for _ in ()).throw(ValueError('internal details'))
 
     response = export.render()

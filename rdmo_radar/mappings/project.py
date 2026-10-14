@@ -2,7 +2,7 @@
 from ..metadata.rdmo import RDMOReadContext
 from ..metadata.types import MappingResult, RadarMetadata
 from ..metadata.values import fetch_catalog_placements, fetch_project_values, prepare_read_data
-from . import ExportCandidate, RadarMapping
+from . import ExportDataset, RadarMapping
 
 
 def build_reader(project, snapshot=None):
@@ -10,7 +10,7 @@ def build_reader(project, snapshot=None):
     attribute_placements_map = fetch_catalog_placements(project.catalog)
     prepared = prepare_read_data(attribute_values_map, attribute_placements_map)
 
-    def read(candidate):
+    def read(dataset):
         return RDMOReadContext(
             attribute_values_map, attribute_placements_map, scope='project', prepared=prepared, project=project
         )
@@ -19,7 +19,7 @@ def build_reader(project, snapshot=None):
 
 
 def get_datasets(project, reader):
-    return [ExportCandidate('project', project.title, {'mode': 'project'})]
+    return [ExportDataset('project', project.title, {'mode': 'project'})]
 
 
 def compute_metadata(context):

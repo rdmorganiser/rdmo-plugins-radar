@@ -13,7 +13,7 @@ from ..metadata.values import (
     matches_placement,
     prepare_read_data,
 )
-from . import ExportCandidate, RadarMapping
+from . import ExportDataset, RadarMapping
 
 
 def build_reader(project, snapshot=None):
@@ -21,12 +21,12 @@ def build_reader(project, snapshot=None):
     attribute_placements_map = fetch_catalog_placements(project.catalog)
     prepared = prepare_read_data(attribute_values_map, attribute_placements_map)
 
-    def read(candidate):
-        if isinstance(candidate, ExportCandidate):
-            set_prefix = candidate.scope['set_prefix']
-            set_index = candidate.scope['set_index']
+    def read(dataset):
+        if isinstance(dataset, ExportDataset):
+            set_prefix = dataset.scope['set_prefix']
+            set_index = dataset.scope['set_index']
         else:
-            set_prefix, set_index = None, int(candidate)
+            set_prefix, set_index = None, int(dataset)
         return RDMOReadContext(
             attribute_values_map,
             attribute_placements_map,
@@ -66,28 +66,28 @@ def get_datasets(project, reader):
                 and not value.set_prefix
             ):
                 set_positions.add(('', value.set_index))
-    candidates = []
+    datasets = []
     for set_prefix, set_index in sorted(
         set_positions,
         key=lambda position: (tuple(map(int, position[0].split('|'))) if position[0] else (), position[1]),
     ):
-        candidate_key = f'dataset:{set_prefix}|{set_index}' if set_prefix else str(set_index)
-        candidate = ExportCandidate(
-            candidate_key, f'Dataset #{set_index + 1}', {'set_prefix': set_prefix, 'set_index': set_index}
+        dataset_key = f'dataset:{set_prefix}|{set_index}' if set_prefix else str(set_index)
+        dataset = ExportDataset(
+            dataset_key, f'Dataset #{set_index + 1}', {'set_prefix': set_prefix, 'set_index': set_index}
         )
-        selected = reader(candidate)
+        selected = reader(dataset)
         title = selected.get_text('project/dataset/title') or selected.get_text('project/dataset/id')
-        candidate_scope = {**candidate.scope, 'destinations': result_destinations(selected)}
-        candidates.append(
-            ExportCandidate(
-                candidate_key,
-                title or candidate.label,
-                candidate_scope,
+        dataset_scope = {**dataset.scope, 'destinations': result_destinations(selected)}
+        datasets.append(
+            ExportDataset(
+                dataset_key,
+                title or dataset.label,
+                dataset_scope,
                 selected.get_text('project/dataset/radar_url'),
                 str(set_index + 1),
             )
         )
-    return candidates
+    return datasets
 
 
 def result_destinations(context):
@@ -127,20 +127,20 @@ def result_destinations(context):
     return destinations
 
 
-def store_result(project, candidate, radar_id, radar_url):
+def store_result(project, dataset, radar_id, radar_url):
     # Keep registered adapter imports out of mapping construction.
     from ..exports.storage import store_export_result
 
-    if isinstance(candidate, ExportCandidate):
+    if isinstance(dataset, ExportDataset):
         return store_export_result(
             project,
-            candidate.scope['set_index'],
+            dataset.scope['set_index'],
             radar_id,
             radar_url,
-            set_prefix=candidate.scope['set_prefix'],
-            destinations=candidate.scope.get('destinations'),
+            set_prefix=dataset.scope['set_prefix'],
+            destinations=dataset.scope.get('destinations'),
         )
-    return store_export_result(project, candidate, radar_id, radar_url)
+    return store_export_result(project, dataset, radar_id, radar_url)
 
 
 def build_import_writer(import_plugin, *, set_index=None, existing_values, mapping=None):

@@ -9,7 +9,7 @@ from rdmo.projects.models import Project, Value
 
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
-from rdmo_radar.mappings import ExportCandidate
+from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.rdmo import RDMOReadContext
 from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
 from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
@@ -150,7 +150,7 @@ def dataset_title(export, set_index):
 
 def configure_service(export, reader=None):
     reader = reader if reader is not None else lambda selection: RDMOReadContext(
-        {}, {}, set_index=selection.scope['set_index'] if isinstance(selection, ExportCandidate) else selection,
+        {}, {}, set_index=selection.scope['set_index'] if isinstance(selection, ExportDataset) else selection,
     )
     if isinstance(export, RadarExport):
         service = build_xml_export_service(None, reader=reader)
