@@ -1,7 +1,7 @@
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .rdmo import RDMOReadContext, RDMOWriteContext, answer_label, get_option_path, normalize
-from .types import Agent, GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea
+from .types import GeoLocation, Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, Software, SubjectArea
 from .values import model_key
 
 
@@ -28,7 +28,7 @@ def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
         processing=context.get_texts('project/dataset/method'),
         rights=_read_rights(context),
         rights_holders=[
-            Agent(name=name) for name in context.get_texts('project/dataset/ipr/owner/name')
+            PersonOrOrganization(name=name) for name in context.get_texts('project/dataset/ipr/owner/name')
         ],
     )
     return metadata
@@ -51,8 +51,9 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
     if metadata.resource:
         context.add('project/dataset/description', metadata.resource.value)
         if metadata.resource.resource_type:
-            context.warn('resource.resourceType', 'No confirmed RDMO resource type mapping',
-                         metadata.resource.resource_type)
+            context.warn(
+                'resource.resourceType', 'No confirmed RDMO resource type mapping', metadata.resource.resource_type
+            )
     if metadata.rights:
         context.add_option(
             'project/dataset/sharing/conditions',
@@ -60,21 +61,21 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
             XMLVocabulary.controlled_rights_options,
             text=metadata.rights.additional,
         )
-    for index, holder in enumerate(metadata.rights_holders):
-        context.add('project/dataset/ipr/owner/name', holder.name, collection_index=index)
-    for index, source in enumerate(metadata.data_sources):
+    for collection_index, holder in enumerate(metadata.rights_holders):
+        context.add('project/dataset/ipr/owner/name', holder.name, collection_index=collection_index)
+    for collection_index, source in enumerate(metadata.data_sources):
         if source.resource_type:
             context.add_option(
                 'project/dataset/creation_methods',
                 source.resource_type,
                 XMLVocabulary.data_source_options,
                 text=source.value,
-                collection_index=index,
+                collection_index=collection_index,
             )
         else:
-            context.add('project/dataset/creation_methods', source.value, collection_index=index)
-    for index, processing in enumerate(metadata.processing):
-        context.add('project/dataset/method', processing, collection_index=index)
+            context.add('project/dataset/creation_methods', source.value, collection_index=collection_index)
+    for collection_index, processing in enumerate(metadata.processing):
+        context.add('project/dataset/method', processing, collection_index=collection_index)
     _write_geo_location(context, metadata.geo_locations)
     _warn_unmapped_fields(context, metadata)
 
@@ -82,21 +83,32 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
 def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
     subjects = []
     values = context.shared().get_values('project/research_field/title')
-    mapped = context.map_options('project/research_field/title',
-                                 {**XMLVocabulary.controlled_subject_area_options, **SUBJECT_OPTIONS}, values=values)
+    mapped = context.map_options(
+        'project/research_field/title',
+        {**XMLVocabulary.controlled_subject_area_options, **SUBJECT_OPTIONS},
+        values=values,
+    )
     for value, controlled in zip(values, mapped, strict=True):
         if not value.is_true:
             continue
         option_path = value.option.uri_path if value.option else None
         if controlled is None:
             controlled = ('Other',)
-            context.warn('subjectAreas', 'project/research_field/title',
-                         'Unmapped subject preserved as Other', answer_label(value))
+            context.warn(
+                'subjectAreas',
+                'project/research_field/title',
+                'Unmapped subject preserved as Other',
+                answer_label(value),
+            )
         elif isinstance(controlled, str):
             controlled = (controlled,)
         if option_path == 'research_fields/211':
-            context.warn('subjectAreas', 'project/research_field/title',
-                         'Workbook mapping is uncertain; preserved as Other', answer_label(value))
+            context.warn(
+                'subjectAreas',
+                'project/research_field/title',
+                'Workbook mapping is uncertain; preserved as Other',
+                answer_label(value),
+            )
         for name in controlled:
             subject = SubjectArea(name, answer_label(value) if name == 'Other' else None)
             if subject not in subjects:
@@ -115,8 +127,9 @@ def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
             continue
         if detail is None:
             detail = 'Other'
-            context.warn('dataSources', 'project/dataset/creation_methods',
-                         'Unmapped creation method preserved as Other', source)
+            context.warn(
+                'dataSources', 'project/dataset/creation_methods', 'Unmapped creation method preserved as Other', source
+            )
         sources.append(Resource(source, detail))
     return sources
 
@@ -135,8 +148,12 @@ def _read_rights(context: RDMOReadContext) -> Rights | None:
         if right not in rights:
             rights.append(right)
     if len(rights) > 1:
-        context.warn('rights', path, 'Multiple licenses selected; choose the applicable license in RADAR',
-                     '; '.join(answer_label(value) for value in values))
+        context.warn(
+            'rights',
+            path,
+            'Multiple licenses selected; choose the applicable license in RADAR',
+            '; '.join(answer_label(value) for value in values),
+        )
         return None
     return rights[0]
 
@@ -169,7 +186,8 @@ def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
 def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> None:
     existing_options = {
         model_key(value.option, value.option.uri_path)
-        for value in context.get_values('project/research_field/title') if value.option
+        for value in context.get_values('project/research_field/title')
+        if value.option
     }
     for subject in subjects:
         option_path = get_option_path(XMLVocabulary.controlled_subject_area_options, subject.controlled_name)

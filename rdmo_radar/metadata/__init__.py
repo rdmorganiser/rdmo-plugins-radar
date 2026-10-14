@@ -1,12 +1,12 @@
 from .types import (
     Affiliation,
-    Agent,
     Description,
     FundingReference,
     GeoLocation,
     Identifier,
     MappingIssue,
     MappingResult,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -16,13 +16,13 @@ from .types import (
 
 __all__ = (
     'Affiliation',
-    'Agent',
     'Description',
     'FundingReference',
     'GeoLocation',
     'Identifier',
     'MappingIssue',
     'MappingResult',
+    'PersonOrOrganization',
     'RadarMetadata',
     'Resource',
     'Rights',

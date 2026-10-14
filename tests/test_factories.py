@@ -14,7 +14,7 @@ from rdmo_radar.factories import build_export_service, build_import_service, bui
 from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.template_framework import compute_next_dataset_index
-from rdmo_radar.metadata.types import Agent, MappingIssue, MappingResult, RadarMetadata
+from rdmo_radar.metadata.types import MappingIssue, MappingResult, PersonOrOrganization, RadarMetadata
 from rdmo_radar.metadata.xml import to_xml_payload
 
 from .helpers import add_answer, add_attribute, complete_metadata, make_import
@@ -81,7 +81,7 @@ def test_rest_defaults_prepare_and_store_supplied_url_without_provider_settings(
 def test_custom_mapping_partial_for_rest_preserves_other_fields(db):
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', 'Dataset')
-    mapping = partial(compute_metadata, creators=lambda context: [Agent('Custom')])
+    mapping = partial(compute_metadata, creators=lambda context: [PersonOrOrganization('Custom')])
     service = build_export_service(project, mapping=mapping)
     result = service.compute_payload(0, 'owner@test')
     assert result.payload['descriptiveMetadata']['title'] == 'Dataset'
@@ -93,11 +93,11 @@ def test_custom_mapping_partial_and_xml_defaults_without_radar_settings(db, sett
     del settings.RADAR_PROVIDER
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', 'Dataset')
-    mapping = partial(compute_metadata, creators=lambda context: [Agent('Custom')])
+    mapping = partial(compute_metadata, creators=lambda context: [PersonOrOrganization('Custom')])
     service = build_xml_export_service(project, mapping=mapping)
     result = service.mapping(service.reader(0))
     assert result.metadata.title == 'Dataset'
-    assert result.metadata.creators == [Agent('Custom')]
+    assert result.metadata.creators == [PersonOrOrganization('Custom')]
     xml_file = service.compute_files([0])[0]
     assert b'Custom' in xml_file.xml_data
     assert not xml_file.validation_failed
@@ -148,7 +148,7 @@ def test_import_accepts_independent_funding_mapping():
     service = build_import_service(
         plugin, existing_values={}, parser=lambda root: root, mapping=mapping,
     )
-    service.process(RadarMetadata(title='Dataset', creators=[Agent('Creator')]))
+    service.process(RadarMetadata(title='Dataset', creators=[PersonOrOrganization('Creator')]))
     assert {(value.attribute.path, value.text) for value in plugin.values} == {
         ('project/dataset/title', 'Dataset'), ('project/dataset/creator/name', 'Creator'),
         ('project/funder/name', 'Custom funding'),

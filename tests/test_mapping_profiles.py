@@ -1,6 +1,7 @@
 """Built-in profiles and a third-party mapping exercised through native registration."""
 from dataclasses import replace
 from unittest.mock import Mock
+from xml.etree import ElementTree
 
 import pytest
 
@@ -10,7 +11,7 @@ from django.db import transaction
 from rdmo.core.plugins import get_plugins
 from rdmo.domain.models import Attribute
 from rdmo.projects.models import Project, Snapshot, Value
-from rdmo.questions.models import Catalog
+from rdmo.questions.models import Catalog, CatalogSection, Page, PageQuestion, Question, Section, SectionPage
 
 from rdmo_radar.exceptions import ExportStoreError, UnsupportedImportMapping
 from rdmo_radar.exports import RadarProjectCredentialsExportProvider, RadarProjectExport, RadarProjectExportProvider
@@ -20,7 +21,7 @@ from rdmo_radar.mappings import ExportCandidate, validate_candidates
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.metadata.rdmo import RDMOWriteContext
-from rdmo_radar.metadata.types import MappingResult, RadarMetadata
+from rdmo_radar.metadata.types import Description, MappingResult, RadarMetadata
 from rdmo_radar.metadata.values import coordinates
 
 from .helpers import add_answer, add_attribute, add_namespaced_attribute
@@ -28,6 +29,23 @@ from .helpers import add_answer, add_attribute, add_namespaced_attribute
 CUSTOM_TITLE = 'https://custom.test/domain/research/title'
 CUSTOM_URL = 'https://custom.test/domain/research/radar_url'
 CUSTOM_ID = 'https://custom.test/domain/research/radar_id'
+
+
+def read_metadata(context):
+    """The README example: field mapping needs no custom discovery or reader."""
+    description = context.get_text('https://example.org/terms/domain/research/description')
+    return MappingResult(
+        RadarMetadata(
+            title=context.get_text('https://example.org/terms/domain/research/title') or context.project.title,
+            descriptions=[Description(description)] if description else [],
+            keywords=context.get_texts('https://example.org/terms/domain/research/keywords'),
+        ),
+        tuple(context.issues),
+    )
+
+
+class ExampleRadarExport(RadarProjectExport):
+    mapping = replace(PROJECT_MAPPING, compute_metadata=read_metadata)
 
 
 def custom_reader(project, snapshot=None):
@@ -104,6 +122,115 @@ def custom_project(db):
     for parent, name in ((1, 'First record'), (10, 'Second record')):
         Value.objects.create(project=project, attribute=title, text=name, set_prefix=str(parent), set_index=3)
     return project
+
+
+@pytest.fixture
+def example_project(db):
+    catalog = Catalog.objects.create(uri_prefix='https://example.org/terms', uri_path='example-catalog')
+    section = Section.objects.create(uri_prefix='https://example.org/terms', uri_path='example-catalog/overview')
+    CatalogSection.objects.create(catalog=catalog, section=section, order=0)
+    page = Page.objects.create(
+        uri_prefix='https://example.org/terms',
+        uri_path='example-catalog/overview/metadata',
+        is_collection=False,
+    )
+    SectionPage.objects.create(section=section, page=page, order=0)
+    project = Project.objects.create(title='Research project', description='Project administration', catalog=catalog)
+    for order, (key, attribute_values) in enumerate(
+        (
+            ('title', ['Measurements']),
+            ('description', ['An abstract about the measurements.']),
+            ('keywords', ['chemistry', 'measurements']),
+        )
+    ):
+        attribute = add_namespaced_attribute(f'research/{key}', 'https://example.org/terms')
+        question = Question.objects.create(
+            uri_prefix='https://example.org/terms',
+            uri_path=f'example-catalog/overview/metadata/{key}',
+            attribute=attribute,
+            widget_type='text',
+            value_type='text',
+            is_collection=(key == 'keywords'),
+        )
+        PageQuestion.objects.create(page=page, question=question, order=order)
+        for collection_index, text in enumerate(attribute_values):
+            Value.objects.create(project=project, attribute=attribute, text=text, collection_index=collection_index)
+    return project
+
+
+def test_simple_mapping_from_ordinary_catalog_through_native_registration(
+    example_project,
+    settings,
+    django_assert_num_queries,
+):
+    settings.PROJECT_EXPORTS = [
+        ('simple-radar', 'Simple RADAR', 'tests.test_mapping_profiles.ExampleRadarExport'),
+    ]
+    export = get_plugins('PROJECT_EXPORTS')['simple-radar']
+    export.project = example_project
+    xml_service = export.get_service()
+    rest_service = build_export_service(example_project, profile=export.mapping)
+    expected = RadarMetadata(
+        title='Measurements',
+        descriptions=[Description('An abstract about the measurements.')],
+        keywords=['chemistry', 'measurements'],
+    )
+    with django_assert_num_queries(0):
+        candidates = export.get_candidates()
+        assert [candidate.key for candidate in candidates] == ['project']
+        candidate = candidates[0]
+        assert xml_service.mapping(xml_service.reader(candidate)) == MappingResult(expected)
+        files = export.prepare_files()
+        prepared = rest_service.compute_payload(candidate, 'owner@example.test')
+
+    assert len(files) == 1
+    assert files[0]['file_name'] == 'Measurements.xml'
+    assert files[0]['has_warnings']
+    assert 'creators.creator' in [field['path'] for field in files[0]['missing_fields']]
+    assert files[0]['mapping_issues'] == prepared.issues == ()
+    root = ElementTree.fromstring(files[0]['xml_data'])
+    assert root.findtext('{*}title') == expected.title
+    abstract = root.find('{*}descriptions/{*}description')
+    assert abstract.text == expected.descriptions[0].value
+    assert abstract.get('descriptionType') == 'Abstract'
+    assert [keyword.text for keyword in root.findall('{*}keywords/{*}keyword')] == expected.keywords
+    assert prepared.payload['descriptiveMetadata'] == {
+        'title': expected.title,
+        'descriptions': {'description': [{'value': expected.descriptions[0].value, 'descriptionType': 'ABSTRACT'}]},
+        'keywords': {'keyword': [{'value': keyword} for keyword in expected.keywords]},
+    }
+
+
+def test_questions_share_attribute_values_without_duplicate_metadata(example_project, django_assert_num_queries):
+    original_question = Question.objects.get(
+        uri='https://example.org/terms/questions/example-catalog/overview/metadata/keywords',
+    )
+    shared_question = Question.objects.create(
+        uri_prefix='https://example.org/terms',
+        uri_path='example-catalog/overview/metadata/keywords-again',
+        attribute=original_question.attribute,
+        widget_type='text',
+        value_type='text',
+        is_collection=True,
+    )
+    PageQuestion.objects.create(page=original_question.pages.get(), question=shared_question, order=3)
+    assert shared_question.uri != original_question.uri
+    assert shared_question.attribute_id == original_question.attribute_id
+    keyword_values = list(example_project.values.filter(attribute_id=original_question.attribute_id))
+    assert [value.text for value in keyword_values] == ['chemistry', 'measurements']
+
+    service = build_export_service(example_project, profile=ExampleRadarExport.mapping)
+    candidate = ExampleRadarExport.mapping.get_datasets(example_project, service.reader)[0]
+    context = service.reader(candidate)
+    with django_assert_num_queries(0):
+        assert context.get_values(original_question.attribute) == keyword_values
+        assert context.get_values(shared_question.attribute) == keyword_values
+        result = service.mapping(context)
+        assert result.metadata.keywords == ['chemistry', 'measurements']
+        assert result.issues == ()
+        assert service.compute_payload(candidate, 'owner@example.test').payload['descriptiveMetadata']['keywords'] == {
+            'keyword': [{'value': 'chemistry'}, {'value': 'measurements'}],
+        }
 
 
 @pytest.mark.parametrize('catalog', [False, True])

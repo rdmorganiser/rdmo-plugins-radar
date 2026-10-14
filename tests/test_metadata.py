@@ -12,10 +12,10 @@ from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.constants import XMLVocabulary
 from rdmo_radar.metadata.types import (
     Affiliation,
-    Agent,
     Description,
     GeoLocation,
     Identifier,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -94,7 +94,7 @@ def test_creator_name_is_derived_from_structured_parts(db):
 def test_xml_and_api_adapters_share_canonical_model_but_not_wire_values():
     metadata = RadarMetadata(
         identifier=Identifier('10.1234/example', 'DOI'),
-        creators=[Agent(
+        creators=[PersonOrOrganization(
             name='Doe, Jane',
             name_type='Personal',
             affiliations=[Affiliation('First University'), Affiliation('Second University')],
@@ -140,20 +140,20 @@ def test_xml_parser_preserves_canonical_rddm_values():
 def test_semantic_metadata_serializes_to_valid_rddm_9_3_xml():
     metadata = RadarMetadata(
         identifier=Identifier('10.1234/example', 'DOI'),
-        creators=[Agent(
+        creators=[PersonOrOrganization(
             name='Doe, Jane',
             affiliations=[Affiliation('Example University', 'https://ror.org/example', 'ROR')],
         )],
         title='Dataset',
         additional_titles=['DATA'],
         descriptions=[Description('Description')],
-        publishers=[Agent('Example Repository')],
+        publishers=[PersonOrOrganization('Example Repository')],
         production_year='2026',
         subject_areas=[SubjectArea('Chemistry')],
         resource=Resource('Research data', 'Dataset'),
         geo_locations=[GeoLocation(region='Berlin')],
         rights=Rights('CC BY 4.0 Attribution'),
-        rights_holders=[Agent('Example University')],
+        rights_holders=[PersonOrOrganization('Example University')],
     )
 
     payload = to_xml_payload(metadata)

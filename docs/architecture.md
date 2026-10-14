@@ -59,6 +59,19 @@ optional writer-building hook; missing import support raises a clear validation 
 
 ## Value access and operation lifetime
 
+Attributes connect Questions to project Values through their foreign keys. An Attribute can be reused
+by multiple Questions and catalogs; Values do not identify one originating Question. Catalog XML uses
+full Attribute URIs for these shared references, separately from the Question URIs under `/questions/`.
+The domain hierarchy under `/domain/` does not prescribe questionnaire layout or dataset collections.
+Catalog placements and complete Value coordinates supply scope information.
+
+Internal dictionaries use `attribute_values_map`, `attribute_placements_map`, and `attribute_lookup_map`
+to distinguish prepared Values, catalog scope, and reference resolution. Attribute identity keys are
+separate from `Attribute.key` and export candidate selection keys. Existing public arguments and context
+fields remain unchanged: `path` may accept a full URI or another supported Attribute reference, while
+`values`, `placements`, and `prepared` retain their established construction contracts. Function names,
+profile members such as `get_datasets`, and registered entry points also remain compatible.
+
 Factories load project Values once with `filter(snapshot=...).select_related('attribute', 'option')` and group
 them by Attribute identity. Persisted models use their primary key; unsaved models use a full URI or object
 identity. The internal dictionary keys also retain path/URI labels for operation-local aliases. Catalog
@@ -90,18 +103,30 @@ returns one mapped result per Value, using `None` for unresolved entries. Specia
 readers use the same mechanism and preserve unresolved descriptive labels as `Other` where applicable.
 
 Generic coordinate matching in `metadata/values.py` accepts explicit identity-based constraints and has
-no Template Framework paths. `metadata/template_framework.py` owns dataset anchors, flat/creator fallbacks,
-title-only import allocation, namespace defaults, and scalar diagnostic target labels. The existing dataset
-scope on `RDMOReadContext` delegates to this compatibility module; project/group scopes remain generic.
+no Template Framework paths. `metadata/template_framework.py` owns dataset discovery Attributes,
+flat/creator fallbacks, title-only import allocation, the default namespace, and Attribute-to-RADAR
+diagnostic field names. The existing dataset scope on `RDMOReadContext` delegates to this compatibility
+module; project/group scopes remain generic.
 M7a established these access functions; M7b/M7c select their interpretation through profiles below.
 
 Import contexts resolve destinations through RDMO's `get_attribute()` / `get_option()` APIs. Full URIs
-resolve exactly. Path resolution retains known-prefix precedence; custom-prefix fallback must identify
-one destination, otherwise it reports ambiguity and stages nothing for that destination. Successful,
-missing, and ambiguous resolutions are cached per write context. Existing and staged answers are merged
+resolve exactly. For short paths, `Attribute.build_uri()` and `Option.build_uri()` construct the preferred
+URI from the fixed plugin constant `DEFAULT_URI_PREFIX = 'https://rdmorganiser.github.io/terms/'`.
+The respective models supply `/domain/` and `/options/`; the plugin does not concatenate those segments.
+This constant is independent of Django's `DEFAULT_URI_PREFIX` setting and adds no installation setting
+or prefix list. If the official URI is absent, the installed-path fallback must identify one destination,
+otherwise it reports ambiguity and stages nothing for that destination. Full URIs never use fallback;
+empty paths return no destination. Successful, missing, and ambiguous resolutions are cached per write
+context. Existing and staged answers are merged
 only for the resolved Attribute, and Option deduplication uses identity. The default import factory shares
 one write context between title-index allocation and staging, retaining both caches and diagnostics.
 Import resolution may query installed models; staged Values remain unsaved for RDMO preview/apply.
+
+`DATASET_ATTRIBUTES` contains only `project/dataset/id` and `project/dataset/title`, the Attributes used
+for Template Framework dataset discovery and scoping. It is not the complete metadata mapping.
+`ATTRIBUTE_TO_RADAR_FIELDS` translates Attribute paths into RADAR field names in diagnostics, including
+list fields such as `additionalTitles`; it does not enforce scalar values. Renaming these internal
+constants does not change discovery, scoping, or warning output.
 
 One service instance represents a prepared operation. Subsequent dataset reads add no Value queries and
 select from attribute buckets. Each read gets a fresh diagnostic list; shared/group contexts within that
@@ -174,6 +199,24 @@ RDMO session namespaces, allowing project and TF mappings to coexist.
 
 ## Extension examples
 
+### Simple project mappings
+
+For an ordinary catalog without dataset collections, the
+[complete simple mapping example](../README.md#simple-custom-mapping) needs only a metadata function,
+`replace(PROJECT_MAPPING, compute_metadata=read_metadata)`, and a registered `RadarProjectExport` subclass.
+The function uses `context.get_text()`, `get_texts()`, and, when needed, `get_option()` or `get_values()`.
+It returns `MappingResult(RadarMetadata(...), tuple(context.issues))`. Project discovery and prepared
+reading remain defaults; mapping authors do not configure services, candidates, or persistence.
+XML and direct export subclasses can select the same mapping without duplicating field interpretation.
+
+Simplicity is an acceptance criterion: a developer familiar with RDMO Attributes must be able to map
+three fields without learning the internal architecture. The integration test uses a real catalog with
+ordinary questions and no dataset collections, loads the example through native registration, and checks both
+XML and REST output. The example preserves the original accessor-based programming style; the selected
+profile continues to determine mapping behavior. Legacy registrations retain Template Framework defaults.
+
+### Advanced profiles and services
+
 Factories use explicit dependency overrides first, then the selected `profile`. Only an omitted/`None`
 profile selects legacy TF defaults. `mapping=` remains the metadata-function override, separate from
 `profile=`. Omitting an export `writer` uses the profile hook; explicitly passing `writer=None` disables
@@ -208,9 +251,9 @@ A third-party profile can replace discovery, preparation, and metadata mapping t
 ```python
 from rdmo_radar.mappings import RadarMapping, ExportCandidate
 from rdmo_radar.exports import RadarProjectExport
-from my_rdmo_plugin.mapping import discover, build_reader, compute_metadata, store_result
+from example_rdmo_plugin.mapping import discover, build_reader, compute_metadata, store_result
 
-MY_MAPPING = RadarMapping(
+EXAMPLE_MAPPING = RadarMapping(
     get_datasets=discover,  # e.g. ExportCandidate('record-a', 'Record A', {'coordinate': [1, 3]})
     build_reader=build_reader,
     compute_metadata=compute_metadata,
@@ -218,11 +261,11 @@ MY_MAPPING = RadarMapping(
 )
 
 
-class MyRadarExport(RadarProjectExport):
-    mapping = MY_MAPPING
+class ExampleRadarExport(RadarProjectExport):
+    mapping = EXAMPLE_MAPPING
 ```
 
-Register `my_rdmo_plugin.exports.MyRadarExport` using RDMO's existing dotted class mechanism. For direct
+Register `example_rdmo_plugin.exports.ExampleRadarExport` using RDMO's existing dotted class mechanism. For direct
 export, subclass the corresponding provider and select the same profile. OAuth callbacks call its
 `store_result` hook with the saved candidate, rather than a service writer created in an earlier request.
 
@@ -233,11 +276,11 @@ from functools import partial
 
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.types import Agent
+from rdmo_radar.metadata.types import PersonOrOrganization
 
 
 def read_creators(context):
-    return [Agent('Example University')]
+    return [PersonOrOrganization('Example University')]
 
 
 mapping = partial(compute_metadata, creators=read_creators)
@@ -246,7 +289,7 @@ xml_service = build_xml_export_service(project, mapping=mapping)
 ```
 
 Import mappings use the same callable pattern, for example
-`build_import_service(import_plugin, mapping=partial(write_metadata, funding=my_funding_writer))`.
+`build_import_service(import_plugin, mapping=partial(write_metadata, funding=example_funding_writer))`.
 The writer receives the mapping context and funding references and stages Values through that context.
 When a profile has no import builder, an explicit import `mapping=` owns its allocation and receives the
 supplied `set_index` unchanged, including `None`. An explicit import `writer=` bypasses profile preparation.

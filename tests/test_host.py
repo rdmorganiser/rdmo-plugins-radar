@@ -44,6 +44,10 @@ def host(settings, db, tmp_path):
     ]
     settings.PROJECT_SNAPSHOT_EXPORTS = [settings.PROJECT_EXPORTS[0]]
     settings.PROJECT_IMPORTS = [('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')]
+    settings.RADAR_PROVIDER = {
+        **settings.RADAR_PROVIDER,
+        'redirect_uri': 'http://testserver/services/oauth/radar-oauth/callback/',
+    }
     user = get_user_model().objects.create_superuser('owner', 'owner@example.test', 'password')
     client = Client()
     client.force_login(user)
@@ -179,6 +183,29 @@ def test_credentials_local_failure_shows_confirmation_and_rolls_back(host, monke
     assert b'name="dataset"' not in result.content
     assert not project.values.filter(attribute__path__startswith='project/dataset/radar_').exists()
     assert len(calls) == 2
+
+
+def test_oauth_export_with_callback_on_another_deployment_shows_configuration_error(host, settings, monkeypatch):
+    project = Project.objects.create(title='Project')
+    add_answer(project, 'project/dataset/title', 'Dataset')
+    settings.RADAR_PROVIDER = {
+        **settings.RADAR_PROVIDER,
+        'redirect_uri': 'https://staging.example.test/services/oauth/radar-oauth/callback/',
+    }
+
+    def no_remote_request(*args, **kwargs):
+        pytest.fail('An export with a callback on another deployment must not contact RADAR')
+
+    monkeypatch.setattr('rdmo.services.providers.requests.get', no_remote_request)
+    monkeypatch.setattr('rdmo.services.providers.requests.post', no_remote_request)
+
+    result = host.get(export_url(project, 'radar-oauth'))
+
+    assert result.status_code == 200
+    assert b'RADAR OAuth configuration error' in result.content
+    assert b'different RDMO instance' in result.content
+    assert 'Location' not in result
+    assert 'rdmo_radar.exports.RadarExportProvider.state' not in host.session
 
 
 @pytest.mark.parametrize('outcome', ['success', 'http_error', 'malformed', 'storage_error', 'missing_project'])

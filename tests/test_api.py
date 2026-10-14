@@ -6,11 +6,11 @@ from pathlib import Path
 from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.types import (
     Affiliation,
-    Agent,
     Description,
     FundingReference,
     GeoLocation,
     Identifier,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -24,16 +24,19 @@ def full_metadata():
         identifier=Identifier('10.1234/example', 'DOI'),
         alternate_identifiers=[Identifier('local-1', 'Local catalogue')],
         related_identifiers=[Identifier('10.1234/related', 'DOI', 'IsCitedBy')],
-        creators=[Agent('Doe, Jane', 'Jane', 'Doe', 'Personal',
+        creators=[PersonOrOrganization('Doe, Jane', 'Jane', 'Doe', 'Personal',
                         [Identifier('0000-0001', 'ORCID')],
                         [Affiliation('University', 'https://ror.org/example', 'ROR')])],
-        contributors=[Agent('Example organization', name_type='Organizational',
+        contributors=[PersonOrOrganization('Example organization', name_type='Organizational',
                             affiliations=[Affiliation('Institute')], contributor_type='DataManager')],
         title='Dataset',
         additional_titles=['DATA', 'Alternative title'],
         descriptions=[Description('Abstract'), Description('Changes', 'VersionNotes')],
         keywords=['FAIR', 'Science'],
-        publishers=[Agent('Repository'), Agent('University', identifiers=[Identifier('ror-1', 'ROR')])],
+        publishers=[
+            PersonOrOrganization('Repository'),
+            PersonOrOrganization('University', identifiers=[Identifier('ror-1', 'ROR')]),
+        ],
         production_year='2025',
         publication_year='2026',
         language='eng',
@@ -44,7 +47,10 @@ def full_metadata():
         software=[Software('Viewer', 'Resource Viewing', '1.0', 'Alternative viewer', '2.0')],
         processing=['Cleaned', 'Aggregated'],
         rights=Rights('CC BY 4.0 Attribution', 'Attribution details'),
-        rights_holders=[Agent('University'), Agent('Doe, Jane', identifiers=[Identifier('0000-0001', 'ORCID')])],
+        rights_holders=[
+            PersonOrOrganization('University'),
+            PersonOrOrganization('Doe, Jane', identifiers=[Identifier('0000-0001', 'ORCID')]),
+        ],
         related_information=['Project website'],
         funding_references=[FundingReference('Funder', Identifier('ror-2', 'ROR'),
                                              'ABC-123', 'https://example.test/award', 'Award title')],
@@ -81,6 +87,8 @@ def test_api_serialization_does_not_call_xml_adapter(monkeypatch):
 
 
 def test_only_first_affiliation_is_serialized_without_mutating_metadata():
-    metadata = RadarMetadata(creators=[Agent('Creator', affiliations=[Affiliation('First'), Affiliation('Second')])])
+    metadata = RadarMetadata(creators=[
+        PersonOrOrganization('Creator', affiliations=[Affiliation('First'), Affiliation('Second')]),
+    ])
     assert to_api_payload(metadata)['creators']['creator'][0]['creatorAffiliation'] == {'value': 'First'}
     assert len(metadata.creators[0].affiliations) == 2

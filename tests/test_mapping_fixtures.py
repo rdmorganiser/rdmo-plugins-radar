@@ -20,7 +20,15 @@ from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvid
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors
 from rdmo_radar.metadata.crosswalks import SUBJECT_OPTIONS
-from rdmo_radar.metadata.types import Agent, FundingReference, Identifier, RadarMetadata, Resource, Rights, SubjectArea
+from rdmo_radar.metadata.types import (
+    FundingReference,
+    Identifier,
+    PersonOrOrganization,
+    RadarMetadata,
+    Resource,
+    Rights,
+    SubjectArea,
+)
 from rdmo_radar.metadata.validation import missing_required_fields
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
@@ -365,11 +373,11 @@ def test_complete_mapped_metadata_validates_against_rddm(prototype):
     metadata = result.metadata
     # Supply the fields deliberately absent from the interview prototype.
     metadata.identifier = Identifier('10.1234/example', 'DOI')
-    metadata.creators = [Agent('Example creator')]
-    metadata.publishers = [Agent('Example publisher')]
+    metadata.creators = [PersonOrOrganization('Example creator')]
+    metadata.publishers = [PersonOrOrganization('Example publisher')]
     metadata.production_year = '2026'
     metadata.resource.resource_type = 'Dataset'
-    metadata.rights_holders = [Agent('Example rights holder')]
+    metadata.rights_holders = [PersonOrOrganization('Example rights holder')]
     xml = RadarExportRenderer().render(to_xml_payload(metadata))
     assert get_radar_validation_errors(xml) == ()
 
@@ -390,11 +398,11 @@ def test_partner_groups_use_names_and_external_identifiers_not_role_labels(proto
     add_value(prototype, 'project/partner/name', option=role, set_prefix='0|0', set_index=7)
     result = read_metadata(export_for(prototype), 0)
     metadata = result.metadata
-    assert [agent.name for agent in metadata.contributors] == ['Doe, Jane', 'Smith, John']
-    assert [agent.identifiers[0].value for agent in metadata.contributors] == [
+    assert [contributor.name for contributor in metadata.contributors] == ['Doe, Jane', 'Smith, John']
+    assert [contributor.identifiers[0].value for contributor in metadata.contributors] == [
         '0000-0001-2345-6789', '0000-0002-2345-6789',
     ]
-    assert all(agent.contributor_type == 'Other' for agent in metadata.contributors)
+    assert all(person_or_organization.contributor_type == 'Other' for person_or_organization in metadata.contributors)
     assert '&lt;a ' not in RadarExportRenderer().render(to_xml_payload(metadata))
 
 

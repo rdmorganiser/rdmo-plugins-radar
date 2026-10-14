@@ -15,7 +15,14 @@ from rdmo_radar.metadata.funding import merge_funding
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.people import merge_contributors, write_creators
 from rdmo_radar.metadata.rdmo import RDMOReadContext
-from rdmo_radar.metadata.types import Agent, FundingReference, MappingIssue, MappingResult, RadarMetadata, Resource
+from rdmo_radar.metadata.types import (
+    FundingReference,
+    MappingIssue,
+    MappingResult,
+    PersonOrOrganization,
+    RadarMetadata,
+    Resource,
+)
 from rdmo_radar.metadata.xml import to_xml_payload
 
 from .helpers import configure_service, dataset_payload, make_import, make_read_context, read_metadata
@@ -23,8 +30,8 @@ from .helpers import configure_service, dataset_payload, make_import, make_read_
 
 @pytest.mark.parametrize(('component', 'replacement', 'changes'), [
     ('dataset', RadarMetadata(title='Custom', resource=Resource('Description')), {'title': 'Custom'}),
-    ('creators', [Agent('Custom')], {'creators': [Agent('Custom')]}),
-    ('contributors', [Agent('Custom')], {'contributors': [Agent('Custom')]}),
+    ('creators', [PersonOrOrganization('Custom')], {'creators': [PersonOrOrganization('Custom')]}),
+    ('contributors', [PersonOrOrganization('Custom')], {'contributors': [PersonOrOrganization('Custom')]}),
     ('funding', [FundingReference('Custom')], {'funding_references': [FundingReference('Custom')]}),
 ])
 def test_reader_can_be_replaced_without_changing_other_fields(component, replacement, changes):
@@ -49,7 +56,7 @@ def test_readers_run_in_order_and_snapshot_diagnostics():
         assert ctx is context
         calls.append('people')
         ctx.warn('title', 'project/dataset/title', 'First warning')
-        return [Agent('Person')]
+        return [PersonOrOrganization('Person')]
 
     def funding(ctx):
         assert ctx is context
@@ -103,7 +110,7 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
 def test_writer_can_be_replaced_without_changing_other_staged_values(component, changed_paths):
     metadata = RadarMetadata(
         title='Dataset', resource=Resource('Description'), keywords=['Keyword'],
-        creators=[Agent('Creator')], contributors=[Agent('Partner')],
+        creators=[PersonOrOrganization('Creator')], contributors=[PersonOrOrganization('Partner')],
         funding_references=[FundingReference('Funder', award_number='Award')],
     )
     original = deepcopy(metadata)
@@ -114,9 +121,9 @@ def test_writer_can_be_replaced_without_changing_other_staged_values(component, 
         if component == 'dataset':
             write_dataset_fields(context, replace(data, title='Custom'))
         elif component == 'creators':
-            write_creators(context, [Agent('Custom')])
+            write_creators(context, [PersonOrOrganization('Custom')])
         elif component == 'contributors':
-            merge_contributors(context, [Agent('Custom')])
+            merge_contributors(context, [PersonOrOrganization('Custom')])
         else:
             merge_funding(context, [FundingReference('Custom', award_number='Award')])
 
@@ -135,7 +142,7 @@ def test_writer_can_be_replaced_without_changing_other_staged_values(component, 
 
 
 def test_writers_run_in_order_and_return_only_a_diagnostic_snapshot():
-    metadata = RadarMetadata(creators=[Agent('Creator')], contributors=[Agent('Partner')],
+    metadata = RadarMetadata(creators=[PersonOrOrganization('Creator')], contributors=[PersonOrOrganization('Partner')],
                              funding_references=[FundingReference('Funder')])
     calls = []
     contexts = []

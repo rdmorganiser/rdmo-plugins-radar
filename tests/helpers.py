@@ -10,8 +10,9 @@ from rdmo.projects.models import Project, Value
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportCandidate
-from rdmo_radar.metadata.rdmo import TERMS_PREFIX, RDMOReadContext
-from rdmo_radar.metadata.types import Agent, Identifier, RadarMetadata, Resource, Rights, SubjectArea
+from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
 
 
@@ -53,15 +54,15 @@ def make_export(values=None):
 def complete_metadata(**overrides):
     values = {
         'identifier': Identifier('10.1234/example', 'DOI'),
-        'creators': [Agent('Doe, Jane')],
+        'creators': [PersonOrOrganization('Doe, Jane')],
         'title': 'Dataset',
-        'publishers': [Agent('Example Repository')],
+        'publishers': [PersonOrOrganization('Example Repository')],
         'production_year': '2026',
         'language': 'eng',
         'subject_areas': [SubjectArea('Chemistry')],
         'resource': Resource('Research data', 'Dataset'),
         'rights': Rights('CC BY 4.0 Attribution'),
-        'rights_holders': [Agent('Example University')],
+        'rights_holders': [PersonOrOrganization('Example University')],
         'version': '1.0',
     }
     values.update(overrides)
@@ -86,14 +87,14 @@ def make_read_context():
 
 
 def make_import():
-    attributes = {path: Attribute(path=path) for path in (
+    attributes = {Attribute.build_uri(DEFAULT_URI_PREFIX, path): Attribute(path=path) for path in (
         'project/dataset/title', 'project/dataset/description', 'project/research_question/keywords',
         'project/dataset/creator/name', 'project/partner/name',
         'project/funder/id', 'project/funder/name', 'project/funder/grant_nr',
     )}
     return SimpleNamespace(
         values=[], current_project=None,
-        get_attribute=lambda uri: attributes.get(uri.removeprefix(TERMS_PREFIX)),
+        get_attribute=attributes.get,
         get_option=lambda uri: None,
     )
 

@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from xml.etree import ElementTree
 
 import pytest
@@ -12,8 +12,9 @@ from rdmo_radar.imports import RadarImport
 from rdmo_radar.metadata.funding import merge_funding
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.people import write_creators
-from rdmo_radar.metadata.rdmo import OPTION_PREFIXES, TERMS_PREFIX, RDMOWriteContext
-from rdmo_radar.metadata.types import Agent, FundingReference, Identifier, RadarMetadata
+from rdmo_radar.metadata.rdmo import RDMOWriteContext
+from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.types import FundingReference, Identifier, PersonOrOrganization, RadarMetadata
 from rdmo_radar.metadata.xml import parse_xml
 
 from .helpers import add_answer, add_attribute, add_namespaced_attribute
@@ -32,11 +33,10 @@ def make_context(existing=None, staged=None):
         'project/dataset/creator/name',
         'project/dataset/creator/name_type',
     }
-    attributes = {path: Attribute(path=path) for path in paths}
+    attributes = {Attribute.build_uri(DEFAULT_URI_PREFIX, path): Attribute(path=path) for path in paths}
     plugin = SimpleNamespace(
         values=list(staged or []),
-        get_attribute=lambda uri: attributes.get(uri.removeprefix(
-            'https://rdmorganiser.github.io/terms/domain/')),
+        get_attribute=attributes.get,
         get_option=lambda uri: None,
     )
     values = {}
@@ -111,10 +111,15 @@ def test_staged_text_and_options_keep_creator_coordinates(db, django_assert_num_
     context = make_context()
     context.dataset_index = 10
     option = Option(uri_path='name_type/personal')
-    context.import_plugin.get_option = lambda uri: option if uri == OPTION_PREFIXES[0] + option.uri_path else None
+    context.import_plugin.get_option = lambda uri: option if uri == Option.build_uri(
+        DEFAULT_URI_PREFIX, option.uri_path,
+    ) else None
 
     with django_assert_num_queries(0):
-        write_creators(context, [Agent('First', name_type='Personal'), Agent('Second', name_type='Personal')])
+        write_creators(context, [
+            PersonOrOrganization('First', name_type='Personal'),
+            PersonOrOrganization('Second', name_type='Personal'),
+        ])
 
     assert [(value.attribute.path, value.text, value.option, value.set_prefix, value.set_index,
              value.collection_index, value.pk) for value in context.import_plugin.values] == [
@@ -231,8 +236,8 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
     custom_attribute.uri_prefix = 'https://custom.example.test/terms'
     custom_attribute.save()
     option_path = 'name_type/personal'
-    options = [Option.objects.create(uri_prefix=prefix.removesuffix('/options/'), uri_path=option_path)
-               for prefix in (*OPTION_PREFIXES, 'https://custom.example.test/terms/options/')]
+    options = [Option.objects.create(uri_prefix=prefix, uri_path=option_path)
+               for prefix in (DEFAULT_URI_PREFIX, 'https://custom.example.test/terms/')]
     custom_option = Option.objects.create(uri_prefix='https://custom.example.test/terms', uri_path='custom/type')
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
@@ -257,18 +262,59 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
         for path in (option_path, custom_option.uri_path, 'missing'):
             context.fetch_option(path)
     assert (plugin.get_attribute.call_count, plugin.get_option.call_count) == calls
-    assert plugin.get_attribute.call_args_list[0].args == (TERMS_PREFIX + attribute.path,)
+    assert plugin.get_attribute.call_args_list[0].args == (Attribute.build_uri(DEFAULT_URI_PREFIX, attribute.path),)
 
-    # A later operation sees newly installed objects and retains the historical second-prefix fallback.
+    # A later operation sees new objects and the remaining unique custom-namespace Option.
     new_attribute = add_attribute('missing')
     new_option = Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path='missing')
     Option.objects.filter(pk=options[0].pk).delete()
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     context = RDMOWriteContext(plugin, 0, existing_values={})
-    with django_assert_num_queries(0):
+    with django_assert_num_queries(1):
         assert context.fetch_option(option_path) == options[1]
         assert context.fetch_attribute('missing') == new_attribute
         assert context.fetch_option('missing') == new_option
+
+
+def test_short_import_paths_use_model_builders_and_the_official_default(db, settings, django_assert_num_queries):
+    settings.DEFAULT_URI_PREFIX = 'https://installation.example.test/terms/'
+    attribute = add_attribute('research/type')
+    add_namespaced_attribute(attribute.path, settings.DEFAULT_URI_PREFIX)
+    option = Option.objects.create(uri_prefix=DEFAULT_URI_PREFIX, uri_path='type/example')
+    Option.objects.create(uri_prefix=settings.DEFAULT_URI_PREFIX, uri_path=option.uri_path)
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin.get_attribute = Mock(wraps=plugin.get_attribute)
+    plugin.get_option = Mock(wraps=plugin.get_option)
+    context = RDMOWriteContext(plugin, 0, {})
+
+    with (
+        patch.object(Attribute, 'build_uri', wraps=Attribute.build_uri) as build_attribute_uri,
+        patch.object(Option, 'build_uri', wraps=Option.build_uri) as build_option_uri,
+        django_assert_num_queries(0),
+    ):
+        assert context.fetch_attribute(attribute.path) == attribute
+        assert context.fetch_option(option.uri_path) == option
+        assert context.fetch_attribute(attribute.path) == attribute
+        assert context.fetch_option(option.uri_path) == option
+
+    build_attribute_uri.assert_called_once_with(DEFAULT_URI_PREFIX, attribute.path)
+    build_option_uri.assert_called_once_with(DEFAULT_URI_PREFIX, option.uri_path)
+    plugin.get_attribute.assert_called_once_with(attribute.uri)
+    plugin.get_option.assert_called_once_with(option.uri)
+    assert attribute.uri == 'https://rdmorganiser.github.io/terms/domain/research/type'
+    assert option.uri == 'https://rdmorganiser.github.io/terms/options/type/example'
+
+
+@pytest.mark.parametrize('method_name', ('fetch_attribute', 'fetch_option'))
+def test_empty_import_paths_return_none_without_queries_or_uri_construction(db, django_assert_num_queries, method_name):
+    plugin = SimpleNamespace(values=[], get_attribute=Mock(), get_option=Mock())
+    context = RDMOWriteContext(plugin, 0, {})
+    with django_assert_num_queries(0):
+        assert getattr(context, method_name)('') is None
+        assert getattr(context, method_name)('') is None
+    plugin.get_attribute.assert_not_called()
+    plugin.get_option.assert_not_called()
+    assert plugin.values == []
 
 
 def test_unmapped_options_and_missing_fields_warn_without_staging(db, django_assert_num_queries):
@@ -374,7 +420,7 @@ def test_template_framework_import_allocates_only_after_selected_title_namespace
     service = build_import_service(plugin, parser=lambda root: root)
     assert service.process(RadarMetadata(title='Imported')) == ()
     assert len(plugin.values) == 1
-    assert plugin.values[0].attribute.uri == TERMS_PREFIX + 'project/dataset/title'
+    assert plugin.values[0].attribute.uri == Attribute.build_uri(DEFAULT_URI_PREFIX, 'project/dataset/title')
     assert plugin.values[0].set_index == 3
 
 
@@ -456,7 +502,7 @@ def test_subject_import_does_not_deduplicate_options_from_another_namespace(db):
 def test_import_merging_uses_primary_key_when_cached_attribute_labels_differ():
     path = 'research/title'
     current = Attribute(pk=17, path=path, uri='https://current.test/domain/research/title')
-    cached = Attribute(pk=17, path=path, uri=TERMS_PREFIX + path)
+    cached = Attribute(pk=17, path=path, uri=Attribute.build_uri(DEFAULT_URI_PREFIX, path))
     existing = Value(attribute=current, text='Existing', collection_index=2)
     staged = Value(attribute=cached, text='Staged', collection_index=4)
     plugin = SimpleNamespace(values=[staged], get_attribute=lambda uri: cached, get_option=lambda uri: None)

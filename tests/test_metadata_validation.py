@@ -3,7 +3,15 @@ import pytest
 from rdmo_radar.exports import RadarExportProvider
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.mappings import ExportCandidate
-from rdmo_radar.metadata.types import Agent, Identifier, MappingResult, RadarMetadata, Resource, Rights, SubjectArea
+from rdmo_radar.metadata.types import (
+    Identifier,
+    MappingResult,
+    PersonOrOrganization,
+    RadarMetadata,
+    Resource,
+    Rights,
+    SubjectArea,
+)
 from rdmo_radar.metadata.validation import missing_required_fields
 
 from .helpers import complete_metadata, configure_service
@@ -19,12 +27,12 @@ def test_empty_metadata_reports_all_required_paths_in_order():
 
 @pytest.mark.parametrize(('changes', 'missing'), [
     ({'identifier': Identifier('', None)}, ('identifier', 'identifier.identifierType')),
-    ({'creators': [Agent('')]}, ('creators.creator',)),
-    ({'publishers': [Agent('')]}, ('publishers.publisher',)),
+    ({'creators': [PersonOrOrganization('')]}, ('creators.creator',)),
+    ({'publishers': [PersonOrOrganization('')]}, ('publishers.publisher',)),
     ({'subject_areas': [SubjectArea('')]}, ('subjectAreas.subjectArea',)),
     ({'resource': Resource('Description')}, ('resource.resourceType',)),
     ({'rights': Rights('')}, ('rights.controlledRights',)),
-    ({'rights_holders': [Agent('')]}, ('rightsHolders.rightsHolder',)),
+    ({'rights_holders': [PersonOrOrganization('')]}, ('rightsHolders.rightsHolder',)),
 ])
 def test_canonical_checks_validate_content_not_only_containers(changes, missing):
     assert missing_required_fields(complete_metadata(**changes)) == missing

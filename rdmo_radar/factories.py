@@ -11,8 +11,15 @@ _UNSET = object()
 
 
 def build_export_service(
-    project, *, snapshot=None, profile=None, reader=None, mapping=None, serializer=None,
-    writer=_UNSET, clock=None,
+    project,
+    *,
+    snapshot=None,
+    profile=None,
+    reader=None,
+    mapping=None,
+    serializer=None,
+    writer=_UNSET,
+    clock=None,
 ):
     """Explicit dependencies win; an omitted profile retains legacy TF defaults."""
     if profile is None:
@@ -30,8 +37,15 @@ def build_export_service(
 
 
 def build_xml_export_service(
-    project, *, snapshot=None, profile=None, reader=None, mapping=None, serializer=None,
-    renderer=None, validator=None,
+    project,
+    *,
+    snapshot=None,
+    profile=None,
+    reader=None,
+    mapping=None,
+    serializer=None,
+    renderer=None,
+    validator=None,
 ):
     if profile is None:
         profile = TEMPLATE_FRAMEWORK_MAPPING
@@ -48,15 +62,23 @@ def build_xml_export_service(
 
         def renderer(payload):
             return prettify_xml(RadarExportRenderer().render(payload))
+
     if validator is None:
         from .exports.validation import get_radar_validation_errors
+
         validator = get_radar_validation_errors
     return RadarXmlExportService(reader, mapping, serializer, renderer, validator)
 
 
 def build_import_service(
-    import_plugin, *, profile=None, set_index=None, existing_values=None, parser=None,
-    mapping=None, writer=None,
+    import_plugin,
+    *,
+    profile=None,
+    set_index=None,
+    existing_values=None,
+    parser=None,
+    mapping=None,
+    writer=None,
 ):
     """A profile owns destination/allocation rules; an explicit writer skips preparation."""
     if profile is None:
@@ -70,10 +92,12 @@ def build_import_service(
             if import_plugin.current_project is None:
                 raise ValueError('RADAR import requires an existing project.')
             from .metadata.values import fetch_project_values
+
             existing_values = fetch_project_values(import_plugin.current_project)
         if profile.build_import_writer is not None:
-            writer = profile.build_import_writer(import_plugin, set_index=set_index,
-                                                 existing_values=existing_values, mapping=mapping)
+            writer = profile.build_import_writer(
+                import_plugin, set_index=set_index, existing_values=existing_values, mapping=mapping
+            )
         else:
             # An explicit custom mapping owns allocation; never borrow TF coordinates.
             writer = partial(mapping, import_plugin, set_index=set_index, existing_values=existing_values)

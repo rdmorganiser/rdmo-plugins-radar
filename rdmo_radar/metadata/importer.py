@@ -6,7 +6,7 @@ from .dataset import write_dataset_fields
 from .funding import merge_funding
 from .people import merge_contributors, write_creators
 from .rdmo import RDMOWriteContext
-from .types import Agent, FundingReference, MappingIssue, RadarMetadata
+from .types import FundingReference, MappingIssue, PersonOrOrganization, RadarMetadata
 from .values import fetch_project_values
 
 
@@ -18,8 +18,8 @@ def write_metadata(
     existing_values: dict | None = None,
     context: RDMOWriteContext | None = None,
     dataset: Callable[[RDMOWriteContext, RadarMetadata], None] = write_dataset_fields,
-    creators: Callable[[RDMOWriteContext, list[Agent]], None] = write_creators,
-    contributors: Callable[[RDMOWriteContext, list[Agent]], None] = merge_contributors,
+    creators: Callable[[RDMOWriteContext, list[PersonOrOrganization]], None] = write_creators,
+    contributors: Callable[[RDMOWriteContext, list[PersonOrOrganization]], None] = merge_contributors,
     funding: Callable[[RDMOWriteContext, list[FundingReference]], None] = merge_funding,
 ) -> tuple[MappingIssue, ...]:
     if context is None:

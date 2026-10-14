@@ -85,9 +85,11 @@ def test_oauth_provider_uses_authorization_code_configuration():
     assert provider.get_callback_data(None) == {}
 
 
+@override_settings(ALLOWED_HOSTS=['rdmo.example.test'])
 def test_oauth_render_redirects_and_preserves_workspace_request():
     provider = make_provider(provider_class=RadarExportProvider)
-    provider.get_candidates = lambda: []
+    provider.request = RequestFactory().get('/', secure=True, HTTP_HOST='rdmo.example.test')
+    provider.request.session = {}
 
     response = provider.render()
 
@@ -100,6 +102,45 @@ def test_oauth_render_redirects_and_preserves_workspace_request():
         'get', 'https://radar.example.test/radar/api/workspaces',
     )
     assert provider.get_from_session(provider.request, 'state') == query['state'][0]
+
+
+@pytest.mark.parametrize(('host', 'secure'), [
+    ('localhost:8000', False),
+    ('staging.example.test', True),
+    ('rdmo.example.test:8443', True),
+    ('rdmo.example.test', False),
+])
+def test_oauth_authorization_rejects_callback_on_different_origin(monkeypatch, host, secure):
+    provider = make_provider(provider_class=RadarExportProvider)
+    request = RequestFactory().get('/', secure=secure, HTTP_HOST=host)
+    request.session = {}
+    monkeypatch.setattr('rdmo_radar.exports.providers.render',
+                        lambda request, template, context, status: (template, context, status))
+
+    with override_settings(ALLOWED_HOSTS=[host.split(':')[0]]):
+        template, context, status = provider.get(request, provider.get_get_url())
+
+    assert template == 'core/error.html'
+    assert status == 200
+    assert context['title'] == 'RADAR OAuth configuration error'
+    assert 'different RDMO instance' in str(context['errors'][0])
+    assert provider.get_from_session(request, 'state') is None
+    assert provider.get_from_session(request, 'access_token') is None
+
+
+@pytest.mark.parametrize('host', ['rdmo.example.test', 'rdmo.example.test:443', 'RDMO.EXAMPLE.TEST'])
+@override_settings(ALLOWED_HOSTS=['rdmo.example.test'])
+def test_oauth_authorization_accepts_same_origin(host):
+    provider = make_provider(provider_class=RadarExportProvider)
+    request = RequestFactory().get('/', secure=True, HTTP_HOST=host)
+    request.session = {}
+
+    response = provider.authorize(request)
+
+    assert response.status_code == 302
+    query = parse_qs(urlparse(response.url).query)
+    assert query['state'] == [provider.get_from_session(request, 'state')]
+    assert query['redirect_uri'] == [provider.redirect_uri]
 
 
 def test_oauth_callback_exchanges_code_and_resumes_request(monkeypatch):

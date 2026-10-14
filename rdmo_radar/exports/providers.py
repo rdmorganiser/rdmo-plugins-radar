@@ -1,6 +1,7 @@
 import logging
 from dataclasses import asdict
 from functools import partial
+from urllib.parse import urlsplit
 
 from django import forms
 from django.conf import settings
@@ -241,6 +242,23 @@ class RadarExportProviderBase(Export):
 class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
     oauth_token_auth_methods = ('client_secret_basic', 'client_secret_post')
+
+    def authorize(self, request):
+        callback = urlsplit(self.redirect_uri)
+        current = urlsplit(request.build_absolute_uri('/'))
+        default_ports = {'http': 80, 'https': 443}
+        callback_origin = (callback.scheme, callback.hostname, callback.port or default_ports.get(callback.scheme))
+        current_origin = (current.scheme, current.hostname, current.port or default_ports.get(current.scheme))
+        if callback_origin != current_origin:
+            return render(request, 'core/error.html', {
+                'title': _('RADAR OAuth configuration error'),
+                'errors': [_(
+                    'The configured RADAR OAuth callback points to a different RDMO instance. '
+                    'Start the export on that instance or ask an administrator to configure '
+                    'and register a callback URL for this instance.'
+                )],
+            }, status=200)
+        return super().authorize(request)
 
     def callback(self, request):
         self.request = request

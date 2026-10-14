@@ -1,50 +1,62 @@
 from .constants import XMLVocabulary
 from .rdmo import RDMOReadContext, RDMOWriteContext, normalize
-from .types import Affiliation, Agent, Identifier
+from .types import Affiliation, Identifier, PersonOrOrganization
 
 CREATOR_NAME = 'project/dataset/creator/name'
 CONTRIBUTOR_NAME = 'project/partner/name'
 
 
-def read_creators(context: RDMOReadContext) -> list[Agent]:
-    return [agent for group in context.groups(CREATOR_NAME, 'project/dataset/creator/given_name',
-                                              'project/dataset/creator/family_name')
-            if (agent := _read_agent(group, 'project/dataset/creator')) is not None]
+def read_creators(context: RDMOReadContext) -> list[PersonOrOrganization]:
+    return [
+        person_or_organization
+        for group in context.groups(
+            CREATOR_NAME, 'project/dataset/creator/given_name', 'project/dataset/creator/family_name'
+        )
+        if (person_or_organization := _read_person_or_organization(group, 'project/dataset/creator')) is not None
+    ]
 
 
-def read_contributors(context: RDMOReadContext) -> list[Agent]:
-    return [agent for group in context.shared().groups(CONTRIBUTOR_NAME, 'project/partner/given_name',
-                                                       'project/partner/family_name')
-            if (agent := _read_partner(group)) is not None]
+def read_contributors(context: RDMOReadContext) -> list[PersonOrOrganization]:
+    return [
+        person_or_organization
+        for group in context.shared().groups(
+            CONTRIBUTOR_NAME, 'project/partner/given_name', 'project/partner/family_name'
+        )
+        if (person_or_organization := _read_partner(group)) is not None
+    ]
 
 
-def write_creators(context: RDMOWriteContext, creators: list[Agent]) -> None:
-    prefix = str(context.dataset_index)
-    for index, creator in enumerate(creators):
-        context.add(CREATOR_NAME, creator.name, set_prefix=prefix, set_index=index)
-        context.add('project/dataset/creator/given_name', creator.given_name, set_prefix=prefix, set_index=index)
-        context.add('project/dataset/creator/family_name', creator.family_name, set_prefix=prefix, set_index=index)
+def write_creators(context: RDMOWriteContext, creators: list[PersonOrOrganization]) -> None:
+    set_prefix = str(context.dataset_index)
+    for set_index, creator in enumerate(creators):
+        context.add(CREATOR_NAME, creator.name, set_prefix=set_prefix, set_index=set_index)
+        context.add(
+            'project/dataset/creator/given_name', creator.given_name, set_prefix=set_prefix, set_index=set_index
+        )
+        context.add(
+            'project/dataset/creator/family_name', creator.family_name, set_prefix=set_prefix, set_index=set_index
+        )
         context.add_option(
             'project/dataset/creator/name_type',
             creator.name_type,
             XMLVocabulary.name_type_options,
-            set_prefix=prefix,
-            set_index=index,
+            set_prefix=set_prefix,
+            set_index=set_index,
         )
         if creator.identifiers:
             identifier = creator.identifiers[0]
             context.add(
                 'project/dataset/creator/name_identifier',
                 identifier.value,
-                set_prefix=prefix,
-                set_index=index,
+                set_prefix=set_prefix,
+                set_index=set_index,
             )
             context.add_option(
                 'project/dataset/creator/name_identifier_scheme',
                 identifier.identifier_type,
                 XMLVocabulary.name_identifier_scheme_options,
-                set_prefix=prefix,
-                set_index=index,
+                set_prefix=set_prefix,
+                set_index=set_index,
             )
             if len(creator.identifiers) > 1:
                 context.warn('creators.nameIdentifier', 'Only the first creator identifier was imported')
@@ -53,14 +65,14 @@ def write_creators(context: RDMOWriteContext, creators: list[Agent]) -> None:
             context.add(
                 'project/dataset/creator/affiliation',
                 affiliation.name,
-                set_prefix=prefix,
-                set_index=index,
+                set_prefix=set_prefix,
+                set_index=set_index,
             )
             if len(creator.affiliations) > 1:
                 context.warn('creators.affiliation', 'Only the first creator affiliation was imported')
 
 
-def merge_contributors(context: RDMOWriteContext, contributors: list[Agent]) -> None:
+def merge_contributors(context: RDMOWriteContext, contributors: list[PersonOrOrganization]) -> None:
     for contributor in contributors:
         set_index = _find_partner(context, contributor)
         if set_index is None:
@@ -93,7 +105,7 @@ def merge_contributors(context: RDMOWriteContext, contributors: list[Agent]) -> 
             )
 
 
-def _read_agent(context: RDMOReadContext, base: str) -> Agent | None:
+def _read_person_or_organization(context: RDMOReadContext, base: str) -> PersonOrOrganization | None:
     name = context.get_text(f'{base}/name')
     given_name = context.get_text(f'{base}/given_name')
     family_name = context.get_text(f'{base}/family_name')
@@ -107,7 +119,7 @@ def _read_agent(context: RDMOReadContext, base: str) -> Agent | None:
         XMLVocabulary.name_identifier_scheme_options,
     )
     affiliations = [Affiliation(name=value) for value in context.get_texts(f'{base}/affiliation')]
-    return Agent(
+    return PersonOrOrganization(
         name=name,
         given_name=given_name,
         family_name=family_name,
@@ -121,7 +133,7 @@ def _read_agent(context: RDMOReadContext, base: str) -> Agent | None:
     )
 
 
-def _read_partner(context: RDMOReadContext) -> Agent | None:
+def _read_partner(context: RDMOReadContext) -> PersonOrOrganization | None:
     name = context.get_text(CONTRIBUTOR_NAME)
     given_name = context.get_text('project/partner/given_name')
     family_name = context.get_text('project/partner/family_name')
@@ -131,7 +143,7 @@ def _read_partner(context: RDMOReadContext) -> Agent | None:
         return None
     identifier = context.get_identifier('project/partner/orcid')
     organization = context.get_text('project/partner/organization')
-    return Agent(
+    return PersonOrOrganization(
         name=name,
         given_name=given_name,
         family_name=family_name,
@@ -142,7 +154,7 @@ def _read_partner(context: RDMOReadContext) -> Agent | None:
     )
 
 
-def _find_partner(context: RDMOWriteContext, contributor: Agent) -> int | None:
+def _find_partner(context: RDMOWriteContext, contributor: PersonOrOrganization) -> int | None:
     identifier = contributor.identifiers[0].value if contributor.identifiers else None
     if identifier:
         for value in context.get_values('project/partner/orcid'):

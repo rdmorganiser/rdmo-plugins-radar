@@ -7,21 +7,30 @@ FUNDER_NAME = 'project/funder/name'
 
 def read_funding(context: RDMOReadContext) -> list[FundingReference]:
     references = []
-    funders = context.shared().groups(FUNDER_NAME, 'project/funder/grant_nr',
-                                     'project/funder/programme/title', 'project/funder/programme/url')
+    funders = context.shared().groups(
+        FUNDER_NAME, 'project/funder/grant_nr', 'project/funder/programme/title', 'project/funder/programme/url'
+    )
     for funder in funders:
-        references.append(FundingReference(
-            funder_name=funder.get_text(FUNDER_NAME),
-            award_number=funder.get_text('project/funder/grant_nr'),
-            award_uri=funder.get_text('project/funder/programme/url'),
-            award_title=funder.get_text('project/funder/programme/title'),
-        ))
-    return [reference for reference in references if any((
-        reference.funder_name,
-        reference.award_number,
-        reference.award_uri,
-        reference.award_title,
-    ))]
+        references.append(
+            FundingReference(
+                funder_name=funder.get_text(FUNDER_NAME),
+                award_number=funder.get_text('project/funder/grant_nr'),
+                award_uri=funder.get_text('project/funder/programme/url'),
+                award_title=funder.get_text('project/funder/programme/title'),
+            )
+        )
+    return [
+        reference
+        for reference in references
+        if any(
+            (
+                reference.funder_name,
+                reference.award_number,
+                reference.award_uri,
+                reference.award_title,
+            )
+        )
+    ]
 
 
 def merge_funding(context: RDMOWriteContext, references: list[FundingReference]) -> None:

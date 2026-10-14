@@ -45,58 +45,77 @@ def prepare_values(values):
     A path-keyed bucket of path-only synthetic models explicitly represents one fixture
     Attribute. Outside that compatibility input, URI-less unsaved objects keep object identity.
     """
-    prepared = defaultdict(list)
-    identities = {}
-    for source, answers in values.items():
-        if isinstance(source, tuple):
-            prepared[identities.setdefault(source[:2], source)].extend(answers)
+    attribute_values_map = defaultdict(list)
+    attribute_identity_map = {}
+    for attribute_reference, attribute_values in values.items():
+        if isinstance(attribute_reference, tuple):
+            attribute_key = attribute_identity_map.setdefault(attribute_reference[:2], attribute_reference)
+            attribute_values_map[attribute_key].extend(attribute_values)
             continue
-        for value in answers:
+        for value in attribute_values:
             attribute = getattr(value, 'attribute', None)
-            if attribute is None and not isinstance(source, str):
+            if attribute is None and not isinstance(attribute_reference, str):
                 continue
-            key = model_key(attribute) if attribute is not None else ('path', source, source, None)
-            if key[0] == 'object' and isinstance(source, str):
-                key = ('path', source, source, None)
-            key = identities.setdefault(key[:2], key)
-            prepared[key].append(value)
-    return dict(prepared)
+            attribute_key = (
+                model_key(attribute)
+                if attribute is not None
+                else ('path', attribute_reference, attribute_reference, None)
+            )
+            if attribute_key[0] == 'object' and isinstance(attribute_reference, str):
+                attribute_key = ('path', attribute_reference, attribute_reference, None)
+            attribute_key = attribute_identity_map.setdefault(attribute_key[:2], attribute_key)
+            attribute_values_map[attribute_key].append(value)
+    return dict(attribute_values_map)
 
 
 def prepare_read_data(values, placements):
     """Prepare buckets and local aliases once, including attributes with no answers."""
-    values = prepare_values(values)
-    identities = {key[:2]: key for key in values}
-    paths = defaultdict(set)
-    for key in values:
-        paths[key[2]].add(key)
+    attribute_values_map = prepare_values(values)
+    attribute_identity_map = {attribute_key[:2]: attribute_key for attribute_key in attribute_values_map}
+    attribute_paths_map = defaultdict(set)
+    for attribute_key in attribute_values_map:
+        attribute_paths_map[attribute_key[2]].add(attribute_key)
 
-    def placement_key(key):
-        if not isinstance(key, str):
+    def placement_key(attribute_reference):
+        if not isinstance(attribute_reference, str):
             # Catalog prefetch objects may have stale URI labels. The PK still identifies
             # the same Attribute; prefer labels from freshly prepared Value relations.
-            return identities.setdefault(key[:2], key)
-        matches = paths[key]
+            return attribute_identity_map.setdefault(attribute_reference[:2], attribute_reference)
+        matches = attribute_paths_map[attribute_reference]
         # Do not assign a path-only placement to one of several identifiable Attributes.
-        return next(iter(matches)) if len(matches) == 1 else ('path', key, key, None)
+        return next(iter(matches)) if len(matches) == 1 else ('path', attribute_reference, attribute_reference, None)
 
-    prepared_placements = defaultdict(list)
-    for key, scopes in placements.items():
-        prepared_placements[placement_key(key)].extend(
-            tuple((placement_key(anchor) if anchor is not None else None, collection)
-                  for anchor, collection in scope)
-            for scope in scopes
+    attribute_placements_map = defaultdict(list)
+    for attribute_reference, attribute_placements in placements.items():
+        attribute_placements_map[placement_key(attribute_reference)].extend(
+            tuple(
+                (placement_key(anchor) if anchor is not None else None, is_collection)
+                for anchor, is_collection in placement
+            )
+            for placement in attribute_placements
         )
-    aliases = defaultdict(set)
-    keys = set(values) | set(prepared_placements)
-    keys.update(anchor for scopes in prepared_placements.values() for scope in scopes
-                for anchor, _ in scope if anchor is not None)
-    for key in keys:
-        aliases[('path', key[2])].add(key)
-        aliases[key[:2]].add(key)
-        if key[3]:
-            aliases[('uri', key[3])].add(key)
-    return values, dict(prepared_placements), {alias: tuple(keys) for alias, keys in aliases.items()}
+    attribute_lookup_map = defaultdict(set)
+    attribute_keys = set(attribute_values_map) | set(attribute_placements_map)
+    attribute_keys.update(
+        anchor
+        for attribute_placements in attribute_placements_map.values()
+        for placement in attribute_placements
+        for anchor, _ in placement
+        if anchor is not None
+    )
+    for attribute_key in attribute_keys:
+        attribute_lookup_map[('path', attribute_key[2])].add(attribute_key)
+        attribute_lookup_map[attribute_key[:2]].add(attribute_key)
+        if attribute_key[3]:
+            attribute_lookup_map[('uri', attribute_key[3])].add(attribute_key)
+    return (
+        attribute_values_map,
+        dict(attribute_placements_map),
+        {
+            attribute_reference: tuple(attribute_keys)
+            for attribute_reference, attribute_keys in attribute_lookup_map.items()
+        },
+    )
 
 
 def coordinates(value):
@@ -105,34 +124,41 @@ def coordinates(value):
 
 def fetch_project_values(project, snapshot=None):
     """Load Values and their Attributes/Options once, grouped by Attribute identity."""
-    values = defaultdict(list)
+    attribute_values_map = defaultdict(list)
     for value in project.values.filter(snapshot=snapshot).select_related('attribute', 'option'):
         if value.attribute is not None:
-            values[model_key(value.attribute)].append(value)
-    for answers in values.values():
-        answers.sort(key=lambda value: (tuple(int(part) for part in coordinates(value)), value.collection_index))
-    return dict(values)
+            attribute_values_map[model_key(value.attribute)].append(value)
+    for attribute_values in attribute_values_map.values():
+        attribute_values.sort(
+            key=lambda value: (tuple(int(part) for part in coordinates(value)), value.collection_index)
+        )
+    return dict(attribute_values_map)
 
 
 def fetch_catalog_placements(catalog):
     """Convert core preorder to identity-aware ancestry, retaining empty markers."""
-    placements = defaultdict(set)
+    attribute_placements_map = defaultdict(set)
     if catalog is not None:
         catalog.prefetch_elements()
         for page in catalog.pages:
             parents = defaultdict(set, {page: {()}})
             for element in (page, *page.descendants):
                 attribute = getattr(element, 'attribute', None)
-                key = model_key(attribute) if attribute is not None else None
+                attribute_key = model_key(attribute) if attribute is not None else None
                 for ancestors in tuple(parents[element]):
-                    scope = (*ancestors, (key, element.is_collection)) if isinstance(
-                        element, Page | QuestionSet
-                    ) else ancestors
-                    if key is not None:
-                        placements[key].add(scope)
+                    placement = (
+                        (*ancestors, (attribute_key, element.is_collection))
+                        if isinstance(element, Page | QuestionSet)
+                        else ancestors
+                    )
+                    if attribute_key is not None:
+                        attribute_placements_map[attribute_key].add(placement)
                     for child in getattr(element, 'elements', ()):
-                        parents[child].add(scope)
-    return {key: tuple(scopes) for key, scopes in placements.items()}
+                        parents[child].add(placement)
+    return {
+        attribute_key: tuple(attribute_placements)
+        for attribute_key, attribute_placements in attribute_placements_map.items()
+    }
 
 
 def matches_placement(value, placement, constraints=None):
@@ -140,18 +166,19 @@ def matches_placement(value, placement, constraints=None):
     constraints = constraints or {}
     position = coordinates(value)
     return len(position) == len(placement) and all(
-        (collection or coordinate == '0') and
-        (anchor not in constraints or coordinate == str(constraints[anchor]))
-        for coordinate, (anchor, collection) in zip(position, placement, strict=True)
+        (is_collection or coordinate == '0') and (anchor not in constraints or coordinate == str(constraints[anchor]))
+        for coordinate, (anchor, is_collection) in zip(position, placement, strict=True)
     )
 
 
 def get_scoped_values(values, placements, key, *, constraints=None, group=None):
-    answers = values.get(key, ())
+    attribute_values = values.get(key, ())
     if group is not None:
-        return [value for value in answers if (value.set_prefix, value.set_index) == group]
+        return [value for value in attribute_values if (value.set_prefix, value.set_index) == group]
     if placements.get(key):
-        return [value for value in answers if any(
-            matches_placement(value, placement, constraints) for placement in placements[key]
-        )]
-    return list(answers)
+        return [
+            value
+            for value in attribute_values
+            if any(matches_placement(value, placement, constraints) for placement in placements[key])
+        ]
+    return list(attribute_values)

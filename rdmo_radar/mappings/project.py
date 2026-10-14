@@ -6,12 +6,14 @@ from . import ExportCandidate, RadarMapping
 
 
 def build_reader(project, snapshot=None):
-    values = fetch_project_values(project, snapshot)
-    placements = fetch_catalog_placements(project.catalog)
-    prepared = prepare_read_data(values, placements)
+    attribute_values_map = fetch_project_values(project, snapshot)
+    attribute_placements_map = fetch_catalog_placements(project.catalog)
+    prepared = prepare_read_data(attribute_values_map, attribute_placements_map)
 
     def read(candidate):
-        return RDMOReadContext(values, placements, scope='project', prepared=prepared, project=project)
+        return RDMOReadContext(
+            attribute_values_map, attribute_placements_map, scope='project', prepared=prepared, project=project
+        )
 
     return read
 
