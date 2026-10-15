@@ -301,6 +301,8 @@ independently of this payload hook.
 `get_context(dataset)` returns a `ProjectReadContext`, which provides safe Attribute access to prepared
 project Values within the selected profile's scope. The hook runs once for the selected dataset on submission.
 OAuth saves that request and replays it after authorization without calling the hook again.
+Canceling clears the pending request. Dataset creation requires a complete saved export context, and a
+confirmed RADAR ID remains available even if its local destination can no longer be recovered.
 
 The returned dictionary goes directly to the REST transport. Supply the complete body, including
 `technicalMetadata` and `descriptiveMetadata`; the plugin checks only that it is a JSON-serializable

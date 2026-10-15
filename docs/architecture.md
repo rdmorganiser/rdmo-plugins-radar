@@ -107,7 +107,9 @@ answers. The established catalog-less fallback remains. There is no separate ans
 `ProjectReadContext` provides scoped access to prepared project Values and collects lookup diagnostics.
 It accepts paths, full URIs, Attribute primary keys, and identifiable Attribute objects in its
 read accessors. It also exposes `get_values_by_uri(uri)` and `get_values_by_attribute_id(pk)`. `shared()` and
-`group()` retain the prepared dictionaries and diagnostic list. Legacy path-keyed inputs remain supported:
+`group()` retain the prepared dictionaries, selection function, diagnostic field names, and diagnostic list.
+The default context reads project Values; a mapping can supply `value_selector(context, attribute_key)`
+and `field_names` when it needs specialized scoping or diagnostic names. Legacy path-keyed inputs remain supported:
 a bucket containing only path-only synthetic Attributes explicitly represents one fixture Attribute.
 Identifiable models in such a bucket are still split by identity; independently keyed URI-less unsaved
 models retain object identity. Synthetic inputs never establish equivalence between persisted models.
@@ -121,8 +123,9 @@ readers use the same mechanism and preserve unresolved descriptive labels as `Ot
 Generic coordinate matching in `metadata/values.py` accepts explicit identity-based constraints and has
 no Template Framework paths. `metadata/template_framework.py` owns dataset discovery Attributes,
 flat/creator fallbacks, title-only import allocation, the default namespace, and Attribute-to-RADAR
-diagnostic field names. The existing dataset scope on `ProjectReadContext` delegates to this compatibility
-module; project/group scopes remain generic.
+diagnostic field names. The Template Framework profile explicitly supplies its dataset selector and field
+names to `ProjectReadContext`; that selector delegates project/group scopes to generic placement matching.
+The generic context has no Template Framework dependency.
 M7a established these access functions; M7b/M7c select their interpretation through profiles below.
 
 `ProjectWriteContext` merges prepared answers, stages unsaved Values, and collects import diagnostics.
@@ -209,8 +212,8 @@ placements, including intervening non-collection levels. Ambiguous destinations 
 confirmed creation then follows the existing local-storage-failure presentation. Fields absent from
 prepared catalog/Values retain installed path resolution and the established flat destination fallback.
 
-Adapters use `get_datasets()` for discovery, labels, existing URLs, and selection. The legacy
-`get_dataset_indices()` convenience is specific to TF scopes; third-party workflows should use datasets.
+Adapters use complete `ExportDataset` objects from `get_datasets()` for discovery, labels, existing URLs,
+and selection. Each mapping owns its scope representation.
 Services still accept legacy numeric indices for direct callers. They do not inspect mapping-owned scope.
 
 Profile selection is a class attribute on a registered XML, credentials, OAuth, or import subclass. The
@@ -218,6 +221,13 @@ callback uses that configured class and saved destination; it never rebuilds dis
 authorization. Profiles do not configure authentication. Distinct registered classes have distinct native
 RDMO session namespaces, allowing project and TF mappings to coexist.
 OAuth contexts store the descriptor under `dataset`, together with the provider class and persistence flag.
+The callback validates the saved request and destination before replay; the POST checks the destination
+again after token exchange. During the POST, an independent copy of the destination is tied to that
+request and discarded afterward. A confirmed RADAR ID is always shown if storage cannot be completed;
+without a known destination, the confirmation displays the ID without guessing a RADAR URL.
+Cancellation clears the pending request, state, operation, and destination while retaining the access token.
+RDMO core dispatches callbacks only when a saved state exists, so a late callback after cancellation
+receives core's generic integration error without submitting a dataset.
 
 ## Extension examples
 

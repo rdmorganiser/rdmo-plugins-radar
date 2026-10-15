@@ -187,6 +187,17 @@ def get_scoped_values(values, placements, key, *, constraints=None, group=None):
     return list(attribute_values)
 
 
+def select_values(context, attribute_key):
+    """Select project or group Values using their prepared catalog placements."""
+    attribute_values_map, attribute_placements_map, _ = context.prepared
+    return get_scoped_values(
+        attribute_values_map,
+        attribute_placements_map,
+        attribute_key,
+        group=(context.set_prefix, context.set_index) if context.scope == 'group' else None,
+    )
+
+
 def get_option_path(options: dict[str, str], canonical_value: str) -> str | None:
     return next((option_reference for option_reference, value in options.items() if value == canonical_value), None)
 

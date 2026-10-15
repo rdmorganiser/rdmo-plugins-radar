@@ -209,7 +209,10 @@ def test_oauth_export_with_callback_on_another_deployment_shows_configuration_er
 
 
 @pytest.mark.parametrize('raw_payload', [False, True])
-@pytest.mark.parametrize('outcome', ['success', 'http_error', 'malformed', 'storage_error', 'missing_project'])
+@pytest.mark.parametrize('outcome', [
+    'success', 'http_error', 'malformed', 'storage_error', 'missing_project', 'missing_context',
+    'canceled', 'context_removed_during_token', 'context_removed_during_post',
+])
 def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, outcome, raw_payload):
     from rdmo_radar.exports import RadarExportProvider
 
@@ -262,7 +265,30 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, outcome,
     # The saved operation, rather than later form state, identifies the destination.
     session = host.session
     session['rdmo_radar.exports.RadarExportProvider.project_id'] = 999999
+    if outcome == 'missing_context':
+        del session['rdmo_radar.exports.RadarExportProvider.export_context']
     session.save()
+    if outcome == 'canceled':
+        assert host.post(url, {'cancel': '1'}).status_code == 302
+        for key in ('request', 'state', 'operation', 'export_context'):
+            assert f'rdmo_radar.exports.RadarExportProvider.{key}' not in host.session
+    elif outcome == 'context_removed_during_token':
+        store = RadarExportProvider.store_in_session
+
+        def remove_context(provider, request, key, data):
+            store(provider, request, key, data)
+            if key == 'access_token':
+                provider.pop_from_session(request, 'export_context')
+
+        monkeypatch.setattr(RadarExportProvider, 'store_in_session', remove_context)
+    elif outcome == 'context_removed_during_post':
+        post_success = RadarExportProvider.post_success
+
+        def remove_context_after_creation(provider, request, response):
+            provider.pop_from_session(request, 'export_context')
+            return post_success(provider, request, response)
+
+        monkeypatch.setattr(RadarExportProvider, 'post_success', remove_context_after_creation)
     if outcome == 'missing_project':
         project.delete()
     elif outcome == 'storage_error':
@@ -275,11 +301,23 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, outcome,
 
         monkeypatch.setattr(Value, 'save', fail_url)
     result = host.get(callback, {'state': state, 'code': 'creation-code'})
-    assert len(calls) == 3
-    if raw_payload:
+    blocked = outcome in ('missing_context', 'canceled', 'context_removed_during_token')
+    assert len(calls) == (2 if outcome == 'context_removed_during_token' else 1 if blocked else 3)
+    if raw_payload and not blocked:
         assert calls[-1][1]['json'] == payload
         assert payload_calls == ['0']
-    if outcome == 'success':
+    if outcome == 'canceled':
+        # Core dispatch requires a saved OAuth state and returns its generic
+        # integration error after cancellation has removed that state.
+        assert result.status_code == 500
+        assert b'Integration Error' in result.content
+        assert not Value.objects.filter(attribute__path='project/dataset/radar_id').exists()
+    elif blocked:
+        assert result.status_code == 200
+        assert b'incomplete or was canceled' in result.content
+        assert not Value.objects.filter(attribute__path='project/dataset/radar_id').exists()
+        assert not any('/datasets' in target for target, _ in calls)
+    elif outcome in ('success', 'context_removed_during_post'):
         assert result.status_code == 302
         assert result.url == 'https://radar.example.test/radar/en/dataset/confirmed'
         assert project.values.get(attribute__path='project/dataset/radar_id').text == 'confirmed'

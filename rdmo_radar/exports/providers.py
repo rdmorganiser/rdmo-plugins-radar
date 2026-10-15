@@ -59,14 +59,14 @@ class RadarExportProviderBase(Export):
             if not isinstance(payload, dict):
                 raise TypeError('The RADAR request payload must be a dictionary.')
             json.dumps(payload, allow_nan=False)
-        except Exception:
-            logger.warning('Could not prepare RADAR export payload: provider=%s', self.class_name)
+        except Exception as error:
+            logger.warning(
+                'Could not prepare RADAR export payload: provider=%s error_type=%s',
+                self.class_name, type(error).__name__,
+            )
             form.add_error(None, _('The RADAR export could not be prepared. Please contact an administrator.'))
             return None
         return payload
-
-    def get_dataset_indices(self):
-        return sorted({dataset.scope['set_index'] for dataset in self.get_datasets()})
 
     def get_datasets(self):
         """Return the datasets that this mapping can export from the RDMO project."""
@@ -163,6 +163,9 @@ class RadarExportProviderBase(Export):
             'project_id',
             'operation',
             'export_context',
+            'request',
+            'state',
+            'get',
         ):
             self.pop_from_session(request, key)
 
@@ -190,6 +193,31 @@ class RadarExportProviderBase(Export):
     def get_get_url(self):
         return workspaces_url(self.radar_url)
 
+    def get_export_context(self, request):
+        """Validate the saved destination without preparing project Values again."""
+        context = self.get_from_session(request, 'export_context')
+        if not isinstance(context, dict):
+            return None
+        try:
+            dataset = ExportDataset(**context['dataset'])
+            validate_datasets([dataset])
+            radar_url = urlsplit(context['radar_url'])
+            if (
+                context['provider'] != self.class_name
+                or not isinstance(context['project_id'], int) or isinstance(context['project_id'], bool)
+                or context['project_id'] <= 0
+                or not isinstance(context['persist'], bool)
+                or not isinstance(context['language'], str) or not context['language'].strip()
+                or not isinstance(dataset.label, str)
+                or radar_url.scheme not in ('http', 'https') or not radar_url.hostname
+                or radar_url.query or radar_url.fragment
+            ):
+                return None
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return None
+        # A POST may outlive its session context. Preserve independent scope data.
+        return {**context, 'dataset': asdict(dataset)}
+
     def post_success(self, request, response):
         try:
             data = response.json()
@@ -201,19 +229,23 @@ class RadarExportProviderBase(Export):
                 'title': _('RADAR error'),
                 'errors': [self.get_client_error_message(RadarProtocolError(), stage='export')],
             }, status=200)
-        context = self.get_from_session(request, 'export_context')
-        radar_url = dataset_page_url(context['radar_url'], radar_id, context['language'])
-        stored = True
+        active_request, context = getattr(self, '_active_export', (None, None))
+        if active_request is not request:
+            context = self.get_export_context(request)
+        radar_url = None
+        stored = False
         try:
+            if context is None:
+                raise ValueError('The confirmed export has no usable destination context.')
+            radar_url = dataset_page_url(context['radar_url'], radar_id, context['language'])
             dataset = ExportDataset(**context['dataset'])
-            if context['provider'] != self.class_name:
-                raise ExportStoreError(dataset.key, radar_id, radar_url)
             if context['persist']:
                 if self.mapping.store_result is None:
                     raise ExportStoreError(dataset.key, radar_id, radar_url)
                 project = Project.objects.get(pk=context['project_id'])
                 writer = partial(self.mapping.store_result, project)
                 store_confirmed_result(writer, dataset, radar_id, radar_url)
+            stored = True
         except (Project.DoesNotExist, DatabaseError, ExportStoreError, KeyError, TypeError, ValueError):
             logger.warning('Could not store confirmed RADAR dataset %s', radar_id)
             stored = False
@@ -265,6 +297,32 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
     oauth_token_auth_methods = ('client_secret_basic', 'client_secret_post')
 
+    def clear_pending_request(self, request):
+        for key in ('request', 'state', 'operation', 'export_context'):
+            self.pop_from_session(request, key)
+
+    def export_session_error(self, request):
+        self.clear_pending_request(request)
+        return render(request, 'core/error.html', {
+            'title': _('RADAR export session expired'),
+            'errors': [_('The RADAR export session is incomplete or was canceled. Start the export again.')],
+        }, status=200)
+
+    def post(self, request, url, json=None, files=None, multipart=None):
+        context = self.get_export_context(request)
+        if (
+            self.get_from_session(request, 'operation') != 'create_dataset' or context is None
+            or not isinstance(url, str)
+            or not url.startswith(f'{context["radar_url"].rstrip("/")}/radar/api/workspaces/')
+            or not url.endswith('/datasets')
+        ):
+            return self.export_session_error(request)
+        self._active_export = (request, context)
+        try:
+            return super().post(request, url, json=json, files=files, multipart=multipart)
+        finally:
+            self._active_export = (None, None)
+
     def authorize(self, request):
         callback = urlsplit(self.redirect_uri)
         current = urlsplit(request.build_absolute_uri('/'))
@@ -284,6 +342,20 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
     def callback(self, request):
         self.request = request
+        pending = self.get_from_session(request, 'request')
+        if (
+            not isinstance(pending, list | tuple) or not pending
+            or pending[0] not in ('get', 'post')
+            or len(pending) != (2 if pending[0] == 'get' else 5)
+            or not isinstance(pending[1], str)
+        ):
+            return self.export_session_error(request)
+        if pending[0] == 'post' and (
+            self.get_from_session(request, 'operation') != 'create_dataset'
+            or self.get_export_context(request) is None
+            or not isinstance(pending[2], dict) or pending[3:] not in ([None, None], (None, None))
+        ):
+            return self.export_session_error(request)
         try:
             return super().callback(request)
         except requests.RequestException as error:
@@ -308,14 +380,13 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
         return self.get(self.request, self.get_get_url())
 
     def submit(self):
-        form = self.get_export_form(data=self.request.POST)
-
         if 'cancel' in self.request.POST:
+            self.clear_pending_request(self.request)
             self.pop_from_session(self.request, 'get')
             self.pop_from_session(self.request, 'workspace_choices')
-            self.pop_from_session(self.request, 'export_context')
             return redirect('project', self.project.id)
 
+        form = self.get_export_form(data=self.request.POST)
         if form.is_valid():
             dataset = self.get_selected_dataset(form)
             if dataset is None:

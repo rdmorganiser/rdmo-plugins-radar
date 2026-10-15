@@ -25,9 +25,16 @@ from rdmo.views.utils import ProjectWrapper
 from rdmo_radar.factories import build_xml_export_service
 from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.read_context import ProjectReadContext
-from rdmo_radar.metadata.values import model_key
+from rdmo_radar.metadata.values import model_key, select_values
 
-from .helpers import add_answer, add_attribute, add_namespaced_attribute, export_for, read_metadata
+from .helpers import (
+    add_answer,
+    add_attribute,
+    add_namespaced_attribute,
+    export_for,
+    read_metadata,
+    template_framework_context,
+)
 
 
 @pytest.fixture
@@ -88,7 +95,9 @@ def test_empty_dataset_collection_is_discovered_without_questions(scope_project,
     add_answer(scope_project, 'project/dataset/id', 'Marker only', set_prefix=prefix, set_index=10)
     assert ProjectWrapper(scope_project).questions == []
     export = export_for(scope_project)
-    assert export.get_dataset_indices() == [10]
+    assert [(dataset.scope['set_prefix'], dataset.scope['set_index']) for dataset in export.get_datasets()] == [
+        (prefix, 10),
+    ]
     assert read_metadata(export, 10).metadata.title == 'Marker only'
 
 
@@ -104,7 +113,7 @@ def test_custom_attribute_uris_preserve_nested_dataset_scope(scope_project):
         add_answer(scope_project, 'project/dataset/id', f'Dataset {index}', set_index=index)
         add_answer(scope_project, 'project/dataset/description', f'Resource {index}', set_prefix=str(index))
     export = export_for(scope_project)
-    assert export.get_dataset_indices() == [1, 10]
+    assert [dataset.key for dataset in export.get_datasets()] == ['1', '10']
     assert read_metadata(export, 1).metadata.resource.value == 'Resource 1'
     assert read_metadata(export, 10).metadata.resource.value == 'Resource 10'
 
@@ -150,7 +159,7 @@ def test_reused_questionset_retains_each_catalog_placement(scope_project):
 def test_catalog_project_with_no_values_has_no_datasets(scope_project):
     add_page(scope_project, 'project/dataset/id', collection=True)
     export = export_for(scope_project)
-    assert export.get_dataset_indices() == []
+    assert export.get_datasets() == []
     assert read_metadata(export, 0).metadata.title is None
 
 
@@ -169,10 +178,62 @@ def test_core_filter_set_respects_dataset_prefix_boundary(scope_project):
 def test_mapping_context_accepts_prepared_values_without_export_or_queries(db, django_assert_num_queries):
     title = Value(attribute=Attribute(path='project/dataset/title'), text='Injected title', set_index=10)
     with django_assert_num_queries(0):
-        context = ProjectReadContext(values={'project/dataset/title': [title]}, placements={}, set_index=10)
+        context = template_framework_context(values={'project/dataset/title': [title]}, set_index=10)
         assert compute_metadata(context).metadata.title == 'Injected title'
         assert context.shared().values is context.values
         assert context.group('', 10).issues is context.issues
+
+
+def test_generic_context_does_not_interpret_template_framework_attributes():
+    attribute = Attribute(path='project/dataset/title')
+    values = [Value(attribute=attribute, text=f'Title {index}', set_index=index) for index in (1, 10)]
+    context = ProjectReadContext({attribute.path: values}, {})
+    assert context.scope == 'project'
+    assert context.get_values(attribute.path) == values
+    assert context.get_text(attribute.path) is None
+    assert context.issues[0].field == attribute.path
+    assert context.group('', 10).get_text(attribute.path) == 'Title 10'
+    template_framework = template_framework_context({attribute.path: values}, set_index=1)
+    assert template_framework.get_text(attribute.path) == 'Title 1'
+    template_framework.warn(attribute.path, attribute.path, 'Example warning')
+    assert template_framework.issues[0].field == 'title'
+
+
+def test_scoped_contexts_preserve_mapping_selection_and_diagnostics(monkeypatch):
+    attribute = Attribute(path='research/title')
+    values = [Value(attribute=attribute, text='Shared'),
+              Value(attribute=attribute, text='Nested', set_prefix='3', set_index=10)]
+    calls = []
+
+    def selector(context, attribute_key):
+        calls.append(context.scope)
+        if context.scope == 'record':
+            return [values[1]]
+        return select_values(context, attribute_key)
+
+    context = ProjectReadContext(
+        {attribute.path: values}, {}, set_prefix='3', set_index=10, scope='record', dataset_prefix='7',
+        value_selector=selector, field_names={attribute.path: 'title'},
+    )
+    monkeypatch.setattr('rdmo_radar.metadata.read_context.prepare_read_data',
+                        lambda *args: pytest.fail('Scoped contexts must reuse prepared data'))
+    shared = context.shared()
+    group = context.group('', 0)
+    for child in (shared, group):
+        assert child.value_selector is selector
+        assert child.field_names is context.field_names
+        assert child.prepared is context.prepared
+        assert child.values is context.values
+        assert child.placements is context.placements
+        assert child.issues is context.issues
+        assert child.dataset_prefix is None
+    assert (shared.set_prefix, shared.set_index) == ('', 0)
+    assert context.get_text(attribute.path) == 'Nested'
+    assert shared.get_values(attribute.path) == values
+    assert group.get_text(attribute.path) == 'Shared'
+    assert calls == ['record', 'project', 'group']
+    group.warn(attribute.path, attribute.path, 'Example warning')
+    assert context.issues[0].field == 'title'
 
 
 @pytest.mark.parametrize('count', [2, 50, 100])
@@ -191,7 +252,7 @@ def test_value_queries_are_constant_across_datasets(scope_project, count, django
     with django_assert_num_queries(0):
         for index in range(count):
             assert read_metadata(export, index).metadata.resource.value == f'Resource {index}'
-        assert export.get_dataset_indices() == list(range(count))
+        assert [dataset.key for dataset in export.get_datasets()] == [str(index) for index in range(count)]
 
 
 def test_prepared_attribute_access_distinguishes_namespaces_without_queries(db, django_assert_num_queries):
@@ -326,11 +387,11 @@ def test_unrelated_installed_options_do_not_make_read_mapping_ambiguous(db):
 def test_catalogless_discovery_preserves_flat_markers_and_does_not_invent_datasets(db):
     project = Project.objects.create(title='No catalog')
     export = export_for(project)
-    assert export.get_dataset_indices() == []
+    assert export.get_datasets() == []
     for index in (1, 10):
         add_answer(project, 'project/dataset/title', f'Dataset {index}', set_index=index)
     export = export_for(project)
-    assert export.get_dataset_indices() == [1, 10]
+    assert [dataset.key for dataset in export.get_datasets()] == ['1', '10']
     assert read_metadata(export, 10).metadata.title == 'Dataset 10'
 
 
@@ -340,7 +401,7 @@ def test_ambiguous_dataset_markers_are_not_combined(db):
         attribute = add_namespaced_attribute('project/dataset/title', f'https://{namespace}.test')
         Value.objects.create(project=project, attribute=attribute, text='Dataset', set_index=index)
     export = export_for(project)
-    assert export.get_dataset_indices() == []
+    assert export.get_datasets() == []
     context = export.get_service().reader(0)
     assert context.get_values('project/dataset/title') == []
     assert [issue.reason for issue in context.issues] == ['Ambiguous Attribute']
@@ -387,7 +448,7 @@ def test_option_path_ambiguity_is_scoped_to_selected_answers():
     values = [Value(attribute=attribute, option=Option(uri=f'https://{namespace}.test/options/language/example',
                                                      uri_path='language/example'), text='Selected', set_index=index)
               for namespace, index in (('first', 1), ('second', 10))]
-    context = ProjectReadContext({attribute.path: values}, {}, set_index=1)
+    context = template_framework_context({attribute.path: values}, set_index=1)
     assert context.get_option(attribute.path, {'language/example': 'eng'}) == 'eng'
     assert context.issues == []
     assert context.shared().get_option(attribute.path, {'language/example': 'eng'}) is None
@@ -403,7 +464,7 @@ def test_specialized_template_framework_option_mapping_reports_namespace_collisi
     values = [Value(attribute=attribute, option=Option(uri=f'https://{namespace}.test/options/{option_path}',
                                                      uri_path=option_path), text=namespace)
               for namespace in ('first', 'second')]
-    result = compute_metadata(ProjectReadContext({path: values}, {}))
+    result = compute_metadata(template_framework_context({path: values}))
     assert [source.resource_type for source in result.metadata.data_sources] == ['Other', 'Other']
     assert any(issue.reason == 'Ambiguous Option path' for issue in result.issues)
 

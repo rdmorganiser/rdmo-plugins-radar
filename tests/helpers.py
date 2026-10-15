@@ -11,7 +11,11 @@ from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.read_context import ProjectReadContext
-from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.template_framework import (
+    ATTRIBUTE_TO_RADAR_FIELDS,
+    DEFAULT_URI_PREFIX,
+    select_template_framework_values,
+)
 from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
 
@@ -73,6 +77,13 @@ XML_DIRECTORY = Path(__file__).parent / 'xml'
 URI = '{http://purl.org/dc/elements/1.1/}uri'
 
 
+def template_framework_context(values, placements=None, **kwargs):
+    return ProjectReadContext(
+        values, placements or {}, scope='dataset', value_selector=select_template_framework_values,
+        field_names=ATTRIBUTE_TO_RADAR_FIELDS, **kwargs,
+    )
+
+
 def make_read_context():
     values = {}
     for path, text, prefix in (
@@ -83,7 +94,7 @@ def make_read_context():
         ('project/funder/name', 'Funder', ''),
     ):
         values[path] = [Value(attribute=Attribute(path=path), text=text, set_prefix=prefix)]
-    return ProjectReadContext(values, placements={})
+    return template_framework_context(values)
 
 
 def make_import():
@@ -130,9 +141,9 @@ def export_for(project, cls=RadarExport):
 
 
 
-def read_metadata(export, set_index):
+def read_metadata(export, dataset):
     service = export.get_service()
-    return service.mapping(service.reader(int(set_index)))
+    return service.mapping(service.reader(dataset if isinstance(dataset, ExportDataset) else int(dataset)))
 
 
 def dataset_payload(export, set_index):

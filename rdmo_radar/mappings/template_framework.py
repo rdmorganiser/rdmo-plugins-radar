@@ -4,7 +4,12 @@ from functools import partial
 from ..metadata.builder import compute_metadata
 from ..metadata.importer import write_metadata
 from ..metadata.read_context import ProjectReadContext
-from ..metadata.template_framework import DATASET_ATTRIBUTES, compute_next_dataset_index
+from ..metadata.template_framework import (
+    ATTRIBUTE_TO_RADAR_FIELDS,
+    DATASET_ATTRIBUTES,
+    compute_next_dataset_index,
+    select_template_framework_values,
+)
 from ..metadata.values import (
     coordinates,
     fetch_catalog_placements,
@@ -32,8 +37,11 @@ def build_reader(project, snapshot=None):
             attribute_values_map,
             attribute_placements_map,
             set_index=set_index,
+            scope='dataset',
             dataset_prefix=set_prefix,
             prepared=prepared,
+            value_selector=select_template_framework_values,
+            field_names=ATTRIBUTE_TO_RADAR_FIELDS,
         )
 
     return read

@@ -547,7 +547,7 @@ def test_oauth_rejects_result_context_from_another_provider_without_storage(cust
     assert provider.post_success(request, SimpleNamespace(json=lambda: {'id': 'confirmed'})) == 'confirmed link'
     writer.assert_not_called()
     provider.render_export_result.assert_called_once_with(
-        request, 'confirmed', 'https://radar.test/radar/en/dataset/confirmed', stored=False,
+        request, 'confirmed', None, stored=False,
     )
 
 

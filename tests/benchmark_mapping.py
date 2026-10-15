@@ -68,8 +68,9 @@ def run_benchmark():
         with CaptureQueriesContext(connection) as warm_queries:
             for _ in range(5):
                 started = perf_counter()
-                mapped = [read_metadata(export, index) for index in range(count)]
-                assert export.get_dataset_indices() == list(range(count))
+                datasets = export.get_datasets()
+                mapped = [read_metadata(export, dataset) for dataset in datasets]
+                assert [dataset.key for dataset in datasets] == [str(index) for index in range(count)]
                 samples.append(perf_counter() - started)
         metadata_data = [asdict(result.metadata) for result in mapped]
         issues_data = [[asdict(issue) for issue in result.issues] for result in mapped]

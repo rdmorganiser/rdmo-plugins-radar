@@ -160,7 +160,7 @@ def test_both_providers_export_observed_radar_draft(observed_draft_project, cls)
 
 def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
     export = export_for(prototype)
-    assert export.get_dataset_indices() == [0, 1]
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1']
     first = read_metadata(export, 0).metadata
     second = read_metadata(export, 1).metadata
     assert first.title == 'Radar Testdatensatz Nr 1'
@@ -242,7 +242,7 @@ def test_explicit_title_precedes_collection_label_and_zip_names_are_safe(prototy
     add_value(prototype, 'project/dataset/title', '../same/name', set_index=1)
     export = export_for(prototype)
     assert read_metadata(export, 0).metadata.title == '../same/name'
-    assert export.get_dataset_indices() == [0, 1]
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1']
     files = export.prepare_files()
     assert len({file['file_name'] for file in files}) == 2
     assert all('/' not in file['file_name'] and '\\' not in file['file_name'] for file in files)
@@ -253,7 +253,7 @@ def test_nested_prefixes_do_not_mix_dataset_one_and_ten(prototype):
     add_value(prototype, 'project/dataset/description', 'Second dataset', set_prefix='1')
     add_value(prototype, 'project/dataset/description', 'Tenth dataset', set_prefix='10')
     export = export_for(prototype)
-    assert export.get_dataset_indices() == [0, 1, 10]
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1', '10']
     assert read_metadata(export, 1).metadata.resource.value == 'Second dataset'
     assert read_metadata(export, 10).metadata.resource.value == 'Tenth dataset'
 
@@ -447,7 +447,7 @@ def test_legacy_flat_layout_and_nested_creators_without_catalog(db):
     add_value(project, 'project/dataset/creator/given_name', 'Unrelated', set_prefix='20')
     add_value(project, 'project/funder/name', 'Funder without ID', set_index=4)
     export = export_for(project)
-    assert export.get_dataset_indices() == [2]
+    assert [dataset.key for dataset in export.get_datasets()] == ['2']
     result = read_metadata(export, 2)
     metadata = result.metadata
     assert metadata.title == 'Legacy dataset'
@@ -461,7 +461,7 @@ def test_answers_are_loaded_once_per_project_snapshot(prototype, django_assert_n
     read_metadata(export, 0)
     with django_assert_num_queries(0):
         read_metadata(export, 1)
-        export.get_dataset_indices()
+        export.get_datasets()
         dataset_title(export, 0)
 
 

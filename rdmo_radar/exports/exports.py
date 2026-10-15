@@ -30,10 +30,6 @@ class RadarExport(Export):
             self._service_key = key
         return self._service
 
-    def get_dataset_indices(self):
-        """Legacy TF convenience; workflows use datasets with complete scope instead."""
-        return sorted({dataset.scope['set_index'] for dataset in self.get_datasets()})
-
     def get_datasets(self):
         """Return the datasets that this mapping can export from the RDMO project."""
         service = self.get_service()

@@ -1,5 +1,5 @@
 """Established Template Framework scope and allocation rules; no mapping profiles."""
-from .values import coordinates, get_scoped_values, matches_placement, prepare_read_data
+from .values import coordinates, get_scoped_values, matches_placement, prepare_read_data, select_values
 
 # Attributes used to discover dataset records and constrain their collection scope.
 DATASET_ATTRIBUTES = ('project/dataset/id', 'project/dataset/title')
@@ -23,7 +23,10 @@ ATTRIBUTE_TO_RADAR_FIELDS = {
 }
 
 
-def get_dataset_values(context, key):
+def select_template_framework_values(context, key):
+    """Constrain dataset answers, retaining generic project and group selection."""
+    if context.scope != 'dataset':
+        return select_values(context, key)
     attribute_values_map, attribute_placements_map, attribute_lookup_map = context.prepared
     constraints = {
         anchor: context.set_index
@@ -65,35 +68,6 @@ def get_dataset_values(context, key):
         for value in attribute_values
         if value.set_prefix == (context.dataset_prefix or '') and value.set_index == context.set_index
     ]
-
-
-def compute_dataset_indices(context):
-    attribute_values_map, attribute_placements_map, _ = context.prepared
-    dataset_attribute_keys = {
-        attribute_key
-        for attribute_path in DATASET_ATTRIBUTES
-        if (attribute_key := context.resolve_attribute(attribute_path)) is not None
-    }
-    set_indices = set()
-    for attribute_key in dataset_attribute_keys:
-        attribute_placements = attribute_placements_map.get(attribute_key, ())
-        for value in get_scoped_values(attribute_values_map, attribute_placements_map, attribute_key):
-            for placement in attribute_placements:
-                if matches_placement(value, placement):
-                    for level, (anchor, _) in enumerate(placement):
-                        if anchor in dataset_attribute_keys:
-                            set_indices.add(int(coordinates(value)[level]))
-                            break
-            if (
-                not any(
-                    anchor in dataset_attribute_keys
-                    for placement in attribute_placements
-                    for anchor, _ in placement
-                )
-                and not value.set_prefix
-            ):
-                set_indices.add(value.set_index)
-    return sorted(set_indices)
 
 
 def compute_next_dataset_index(values, import_plugin=None, *, context=None):

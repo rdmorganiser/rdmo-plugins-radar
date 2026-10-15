@@ -1,12 +1,12 @@
 """Scoped access to prepared project Values and mapping diagnostics."""
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
 
-from .template_framework import ATTRIBUTE_TO_RADAR_FIELDS, get_dataset_values
 from .types import MappingIssue
-from .values import get_scoped_values, is_uri, model_key, prepare_read_data, selector_key, selector_label
+from .values import is_uri, model_key, prepare_read_data, select_values, selector_key, selector_label
 
 
 @dataclass
@@ -21,11 +21,13 @@ class ProjectReadContext:
     placements: dict
     set_prefix: str = ''
     set_index: int = 0
-    scope: str = 'dataset'
+    scope: str = 'project'
     issues: list[MappingIssue] = field(default_factory=list)
     prepared: tuple | None = field(default=None, repr=False)
     dataset_prefix: str | None = None
     project: object | None = field(default=None, repr=False)
+    value_selector: Callable | None = field(default=None, repr=False)
+    field_names: dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
         if self.prepared is None:
@@ -39,6 +41,8 @@ class ProjectReadContext:
             issues=self.issues,
             prepared=self.prepared,
             project=self.project,
+            value_selector=self.value_selector,
+            field_names=self.field_names,
         )
 
     def group(self, prefix, index):
@@ -51,6 +55,8 @@ class ProjectReadContext:
             issues=self.issues,
             prepared=self.prepared,
             project=self.project,
+            value_selector=self.value_selector,
+            field_names=self.field_names,
         )
 
     def resolve_attribute(self, selector):
@@ -79,7 +85,7 @@ class ProjectReadContext:
     def warn(self, target, source, reason, value=None):
         target = selector_label(target)
         source = selector_label(source)
-        issue = MappingIssue(ATTRIBUTE_TO_RADAR_FIELDS.get(target, target), reason, value, source)
+        issue = MappingIssue(self.field_names.get(target, target), reason, value, source)
         if issue not in self.issues:
             self.issues.append(issue)
 
@@ -94,15 +100,7 @@ class ProjectReadContext:
         attribute_key = self.resolve_attribute(path)
         if attribute_key is None:
             return []
-        if self.scope == 'dataset':
-            return get_dataset_values(self, attribute_key)
-        attribute_values_map, attribute_placements_map, _ = self.prepared
-        return get_scoped_values(
-            attribute_values_map,
-            attribute_placements_map,
-            attribute_key,
-            group=(self.set_prefix, self.set_index) if self.scope == 'group' else None,
-        )
+        return (self.value_selector or select_values)(self, attribute_key)
 
     def get_values_by_uri(self, uri: str) -> list[Value]:
         if not is_uri(uri):
@@ -169,4 +167,3 @@ class ProjectReadContext:
         if identifiers:
             self.warn('nameIdentifier', path, 'Identifier is ambiguous or contains display markup')
         return None
-
