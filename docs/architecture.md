@@ -18,7 +18,9 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `services.py` | Prepare REST payloads, generate XML files, and coordinate parsing with import mapping. |
 | `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
 | `metadata/dataset.py`, `metadata/people.py`, `metadata/funding.py` | Map their respective metadata fields. |
-| `metadata/values.py`, `metadata/rdmo.py` | Prepare native Values/catalog placements, select scopes, and collect mapping issues. |
+| `metadata/values.py` | Prepare native Values/catalog placements, match coordinates, and provide shared answer helpers. |
+| `metadata/read_context.py` | Scoped project Value access and mapping diagnostics through `ProjectReadContext`. |
+| `metadata/write_context.py` | Resolve import destinations, merge answers, and stage unsaved Values through `ProjectWriteContext`. |
 | `metadata/api.py`, `metadata/xml.py` | Convert canonical metadata to the RADAR REST/XML contracts and parse XML. |
 | `client.py` | Credentials HTTP requests, RADAR response interpretation, and shared URL construction. |
 | `exports/storage.py` | Atomically persist a confirmed RADAR ID and complete URL. |
@@ -102,7 +104,8 @@ available even when a path is ambiguous. No installed-model lookup occurs during
 
 Component-wise scope matching keeps dataset indices `1` and `10` distinct and supports nested and shared
 answers. The established catalog-less fallback remains. There is no separate answer tree or reader hierarchy.
-`RDMOReadContext` accepts paths, full URIs, Attribute primary keys, and identifiable Attribute objects in its
+`ProjectReadContext` provides scoped access to prepared project Values and collects lookup diagnostics.
+It accepts paths, full URIs, Attribute primary keys, and identifiable Attribute objects in its
 read accessors. It also exposes `get_values_by_uri(uri)` and `get_values_by_attribute_id(pk)`. `shared()` and
 `group()` retain the prepared dictionaries and diagnostic list. Legacy path-keyed inputs remain supported:
 a bucket containing only path-only synthetic Attributes explicitly represents one fixture Attribute.
@@ -118,21 +121,22 @@ readers use the same mechanism and preserve unresolved descriptive labels as `Ot
 Generic coordinate matching in `metadata/values.py` accepts explicit identity-based constraints and has
 no Template Framework paths. `metadata/template_framework.py` owns dataset discovery Attributes,
 flat/creator fallbacks, title-only import allocation, the default namespace, and Attribute-to-RADAR
-diagnostic field names. The existing dataset scope on `RDMOReadContext` delegates to this compatibility
+diagnostic field names. The existing dataset scope on `ProjectReadContext` delegates to this compatibility
 module; project/group scopes remain generic.
 M7a established these access functions; M7b/M7c select their interpretation through profiles below.
 
-Import contexts resolve destinations through RDMO's `get_attribute()` / `get_option()` APIs. Full URIs
+`ProjectWriteContext` merges prepared answers, stages unsaved Values, and collects import diagnostics.
+It resolves destinations through RDMO's `get_attribute()` / `get_option()` APIs. Full URIs
 resolve exactly. For short paths, `Attribute.build_uri()` and `Option.build_uri()` construct the preferred
 URI from the fixed plugin constant `DEFAULT_URI_PREFIX = 'https://rdmorganiser.github.io/terms/'`.
 The respective models supply `/domain/` and `/options/`; the plugin does not concatenate those segments.
 This constant is independent of Django's `DEFAULT_URI_PREFIX` setting and adds no installation setting
 or prefix list. If the official URI is absent, the installed-path fallback must identify one destination,
 otherwise it reports ambiguity and stages nothing for that destination. Full URIs never use fallback;
-empty paths return no destination. Successful, missing, and ambiguous resolutions are cached per write
+empty paths return no destination. Successful, missing, and ambiguous resolutions are cached per import
 context. Existing and staged answers are merged
 only for the resolved Attribute, and Option deduplication uses identity. The default import factory shares
-one write context between title-index allocation and staging, retaining both caches and diagnostics.
+one import context between title-index allocation and staging, retaining both caches and diagnostics.
 Import resolution may query installed models; staged Values remain unsaved for RDMO preview/apply.
 
 `DATASET_ATTRIBUTES` contains only `project/dataset/id` and `project/dataset/title`, the Attributes used
@@ -154,7 +158,7 @@ For project edits, construct a new service. Preparation is not cached across req
 | Operation | Result |
 |---|---|
 | `compute_metadata(context, *, dataset, creators, contributors, funding)` | `MappingResult(metadata, issues)` |
-| `write_metadata(plugin, metadata, set_index, *, existing_values, context, dataset, creators, contributors, funding)` | Tuple of mapping issues; Values are staged on the plugin. An optional prepared write context must match the plugin and index. |
+| `write_metadata(plugin, metadata, set_index, *, existing_values, context, dataset, creators, contributors, funding)` | Tuple of mapping issues; Values are staged on the plugin. An optional prepared import context must match the plugin and index. |
 | `RadarExportService.compute_payload(selection, responsible_email)` | `ExportPayload(payload, issues)`; selection is a dataset or legacy numeric index. |
 | `RadarExportService.store_result(selection, radar_id, radar_url)` | `ExportResult(radar_id, radar_url)`; an absent writer succeeds without a local write. |
 | `RadarXmlExportService.compute_files(selections)` | XML file results with completeness, schema, and mapping diagnostics. |
@@ -227,7 +231,7 @@ It returns `MappingResult(RadarMetadata(...), tuple(context.issues))`. Project d
 reading remain defaults; mapping authors do not configure services, datasets, or persistence.
 XML and direct export subclasses can select the same mapping without duplicating field interpretation.
 
-Simplicity is an acceptance criterion: a developer familiar with RDMO Attributes must be able to map
+Simplicity is an acceptance criterion: a developer familiar withAttributes must be able to map
 three fields without learning the internal architecture. The integration test uses a real catalog with
 ordinary questions and no dataset collections, loads the example through native registration, and checks both
 XML and REST output. The example preserves the original accessor-based programming style; the selected
@@ -334,7 +338,12 @@ prepared = service.compute_payload(0, user.email)
 The caller supplies the transport. The credentials adapter uses `RadarClient`; OAuth keeps RDMO's transport.
 Both call `dataset_page_url(actual_base_url, confirmed_id, language)` and pass the resulting URL to persistence.
 Direct services and canonical metadata remain importable without Django initialization. Mapping contexts are
-imported explicitly from `rdmo_radar.metadata.rdmo`.
+imported explicitly from `rdmo_radar.metadata.read_context` and `rdmo_radar.metadata.write_context`:
+
+```python
+from rdmo_radar.metadata.read_context import ProjectReadContext
+from rdmo_radar.metadata.write_context import ProjectWriteContext
+```
 
 ## Persistence and failures
 

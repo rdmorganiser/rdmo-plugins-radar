@@ -14,7 +14,7 @@ from rdmo_radar.metadata.dataset import write_dataset_fields
 from rdmo_radar.metadata.funding import merge_funding
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.people import merge_contributors, write_creators
-from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
     FundingReference,
     MappingIssue,
@@ -83,7 +83,7 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
         attribute=Attribute(path='project/dataset/title'), text='Second dataset', set_index=1,
     ))
     export = configure_service(RadarExport('radar', 'RADAR', 'rdmo_radar.exports.RadarExport'))
-    configure_service(export, reader=lambda set_index: RDMOReadContext(context.values, {}, set_index=set_index))
+    configure_service(export, reader=lambda set_index: ProjectReadContext(context.values, {}, set_index=set_index))
 
     first = read_metadata(export, 0)
     second = read_metadata(export, 1)

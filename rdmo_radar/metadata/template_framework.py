@@ -101,9 +101,9 @@ def compute_next_dataset_index(values, import_plugin=None, *, context=None):
     if context is not None:
         attribute_values = context.get_values('project/dataset/title')
     elif import_plugin is not None:
-        from .rdmo import RDMOWriteContext
+        from .write_context import ProjectWriteContext
 
-        attribute_values = RDMOWriteContext(import_plugin, 0, values).get_values('project/dataset/title')
+        attribute_values = ProjectWriteContext(import_plugin, 0, values).get_values('project/dataset/title')
     else:
         attribute_values_map, _, attribute_lookup_map = prepare_read_data(values, {})
         attribute_keys = attribute_lookup_map.get(('path', 'project/dataset/title'), ())

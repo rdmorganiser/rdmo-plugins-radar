@@ -24,7 +24,7 @@ from rdmo.views.utils import ProjectWrapper
 
 from rdmo_radar.factories import build_xml_export_service
 from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.values import model_key
 
 from .helpers import add_answer, add_attribute, add_namespaced_attribute, export_for, read_metadata
@@ -169,7 +169,7 @@ def test_core_filter_set_respects_dataset_prefix_boundary(scope_project):
 def test_mapping_context_accepts_prepared_values_without_export_or_queries(db, django_assert_num_queries):
     title = Value(attribute=Attribute(path='project/dataset/title'), text='Injected title', set_index=10)
     with django_assert_num_queries(0):
-        context = RDMOReadContext(values={'project/dataset/title': [title]}, placements={}, set_index=10)
+        context = ProjectReadContext(values={'project/dataset/title': [title]}, placements={}, set_index=10)
         assert compute_metadata(context).metadata.title == 'Injected title'
         assert context.shared().values is context.values
         assert context.group('', 10).issues is context.issues
@@ -206,7 +206,7 @@ def test_prepared_attribute_access_distinguishes_namespaces_without_queries(db, 
         assert context.get_values('research/title') == []
         assert context.get_text('research/title') is None
         assert len(context.issues) == 1
-        assert context.issues[0].reason == 'Ambiguous RDMO Attribute'
+        assert context.issues[0].reason == 'Ambiguous Attribute'
         for attribute, answer in zip(attributes, answers, strict=True):
             assert context.get_values_by_uri(attribute.uri) == [answer]
             assert context.get_values_by_attribute_id(attribute.pk) == [answer]
@@ -269,7 +269,7 @@ def test_unsaved_uri_attributes_are_distinct_in_legacy_buckets():
     attributes = [Attribute(path='research/title', uri=f'https://{namespace}.test/domain/research/title')
                   for namespace in ('first', 'second')]
     values = [Value(attribute=attribute, text=str(index)) for index, attribute in enumerate(attributes)]
-    context = RDMOReadContext({'research/title': values}, {}, scope='project')
+    context = ProjectReadContext({'research/title': values}, {}, scope='project')
     assert context.get_values('research/title') == []
     for attribute, value in zip(attributes, values, strict=True):
         assert context.get_values_by_uri(attribute.uri) == [value]
@@ -279,7 +279,7 @@ def test_unsaved_uri_attributes_are_distinct_in_legacy_buckets():
 def test_uri_less_unsaved_attributes_keep_explicit_object_identity():
     attributes = [Attribute(path='research/title'), Attribute(path='research/title')]
     values = [Value(attribute=attribute, text=str(index)) for index, attribute in enumerate(attributes)]
-    context = RDMOReadContext({model_key(attribute): [value]
+    context = ProjectReadContext({model_key(attribute): [value]
                                for attribute, value in zip(attributes, values, strict=True)}, {}, scope='project')
     assert context.get_values('research/title') == []
     for attribute, value in zip(attributes, values, strict=True):
@@ -288,7 +288,7 @@ def test_uri_less_unsaved_attributes_keep_explicit_object_identity():
 
 def test_legacy_path_only_fixture_bucket_retains_scalar_diagnostics():
     values = [Value(attribute=Attribute(path='research/title'), text=text) for text in ('First', 'Second')]
-    context = RDMOReadContext({'research/title': values}, {}, scope='project')
+    context = ProjectReadContext({'research/title': values}, {}, scope='project')
     assert context.get_values('research/title') == values
     assert context.get_text('research/title') is None
     assert [issue.reason for issue in context.issues] == ['Multiple answers for a scalar field']
@@ -304,7 +304,7 @@ def test_explicit_option_uris_do_not_collapse_equal_paths(db, django_assert_num_
     context = build_xml_export_service(project).reader(0).shared()
     with django_assert_num_queries(0):
         assert context.get_option('research/type', {'type/example': 'Example'}) is None
-        assert any(issue.reason == 'Ambiguous RDMO Option path' for issue in context.issues)
+        assert any(issue.reason == 'Ambiguous Option path' for issue in context.issues)
         context.issues.clear()
         assert context.get_option(attribute.uri, {option.uri: 'Example' for option in options}) == 'Example'
         assert context.issues == []
@@ -343,7 +343,7 @@ def test_ambiguous_dataset_markers_are_not_combined(db):
     assert export.get_dataset_indices() == []
     context = export.get_service().reader(0)
     assert context.get_values('project/dataset/title') == []
-    assert [issue.reason for issue in context.issues] == ['Ambiguous RDMO Attribute']
+    assert [issue.reason for issue in context.issues] == ['Ambiguous Attribute']
 
 
 def test_explicit_identity_access_honors_snapshots(db, django_assert_num_queries):
@@ -387,11 +387,11 @@ def test_option_path_ambiguity_is_scoped_to_selected_answers():
     values = [Value(attribute=attribute, option=Option(uri=f'https://{namespace}.test/options/language/example',
                                                      uri_path='language/example'), text='Selected', set_index=index)
               for namespace, index in (('first', 1), ('second', 10))]
-    context = RDMOReadContext({attribute.path: values}, {}, set_index=1)
+    context = ProjectReadContext({attribute.path: values}, {}, set_index=1)
     assert context.get_option(attribute.path, {'language/example': 'eng'}) == 'eng'
     assert context.issues == []
     assert context.shared().get_option(attribute.path, {'language/example': 'eng'}) is None
-    assert any(issue.reason == 'Ambiguous RDMO Option path' for issue in context.issues)
+    assert any(issue.reason == 'Ambiguous Option path' for issue in context.issues)
 
 
 def test_specialized_template_framework_option_mapping_reports_namespace_collisions():
@@ -403,9 +403,9 @@ def test_specialized_template_framework_option_mapping_reports_namespace_collisi
     values = [Value(attribute=attribute, option=Option(uri=f'https://{namespace}.test/options/{option_path}',
                                                      uri_path=option_path), text=namespace)
               for namespace in ('first', 'second')]
-    result = compute_metadata(RDMOReadContext({path: values}, {}))
+    result = compute_metadata(ProjectReadContext({path: values}, {}))
     assert [source.resource_type for source in result.metadata.data_sources] == ['Other', 'Other']
-    assert any(issue.reason == 'Ambiguous RDMO Option path' for issue in result.issues)
+    assert any(issue.reason == 'Ambiguous Option path' for issue in result.issues)
 
 
 def test_model_identity_selection_and_diagnostics_do_not_load_deferred_fields(db, django_assert_num_queries):
@@ -475,7 +475,7 @@ def test_primary_key_scope_matching_survives_stale_attribute_labels(native_ids):
     values = {current.pk if native_ids else model_key(current): [answer, wrong]}
     if native_ids:
         values[None] = [Value(attribute=None, text='Unattached')]
-    context = RDMOReadContext(values,
+    context = ProjectReadContext(values,
                               {model_key(cached): (((None, False),),)}, scope='project')
     assert context.get_values_by_attribute_id(17) == [answer]
     assert context.get_values_by_uri(current.uri) == [answer]

@@ -1,12 +1,14 @@
 from .constants import XMLVocabulary
-from .rdmo import RDMOReadContext, RDMOWriteContext, normalize
+from .read_context import ProjectReadContext
 from .types import Affiliation, Identifier, PersonOrOrganization
+from .values import normalize
+from .write_context import ProjectWriteContext
 
 CREATOR_NAME = 'project/dataset/creator/name'
 CONTRIBUTOR_NAME = 'project/partner/name'
 
 
-def read_creators(context: RDMOReadContext) -> list[PersonOrOrganization]:
+def read_creators(context: ProjectReadContext) -> list[PersonOrOrganization]:
     return [
         person_or_organization
         for group in context.groups(
@@ -16,7 +18,7 @@ def read_creators(context: RDMOReadContext) -> list[PersonOrOrganization]:
     ]
 
 
-def read_contributors(context: RDMOReadContext) -> list[PersonOrOrganization]:
+def read_contributors(context: ProjectReadContext) -> list[PersonOrOrganization]:
     return [
         person_or_organization
         for group in context.shared().groups(
@@ -26,7 +28,7 @@ def read_contributors(context: RDMOReadContext) -> list[PersonOrOrganization]:
     ]
 
 
-def write_creators(context: RDMOWriteContext, creators: list[PersonOrOrganization]) -> None:
+def write_creators(context: ProjectWriteContext, creators: list[PersonOrOrganization]) -> None:
     set_prefix = str(context.dataset_index)
     for set_index, creator in enumerate(creators):
         context.add(CREATOR_NAME, creator.name, set_prefix=set_prefix, set_index=set_index)
@@ -72,7 +74,7 @@ def write_creators(context: RDMOWriteContext, creators: list[PersonOrOrganizatio
                 context.warn('creators.affiliation', 'Only the first creator affiliation was imported')
 
 
-def merge_contributors(context: RDMOWriteContext, contributors: list[PersonOrOrganization]) -> None:
+def merge_contributors(context: ProjectWriteContext, contributors: list[PersonOrOrganization]) -> None:
     for contributor in contributors:
         set_index = _find_partner(context, contributor)
         if set_index is None:
@@ -105,7 +107,7 @@ def merge_contributors(context: RDMOWriteContext, contributors: list[PersonOrOrg
             )
 
 
-def _read_person_or_organization(context: RDMOReadContext, base: str) -> PersonOrOrganization | None:
+def _read_person_or_organization(context: ProjectReadContext, base: str) -> PersonOrOrganization | None:
     name = context.get_text(f'{base}/name')
     given_name = context.get_text(f'{base}/given_name')
     family_name = context.get_text(f'{base}/family_name')
@@ -133,7 +135,7 @@ def _read_person_or_organization(context: RDMOReadContext, base: str) -> PersonO
     )
 
 
-def _read_partner(context: RDMOReadContext) -> PersonOrOrganization | None:
+def _read_partner(context: ProjectReadContext) -> PersonOrOrganization | None:
     name = context.get_text(CONTRIBUTOR_NAME)
     given_name = context.get_text('project/partner/given_name')
     family_name = context.get_text('project/partner/family_name')
@@ -154,7 +156,7 @@ def _read_partner(context: RDMOReadContext) -> PersonOrOrganization | None:
     )
 
 
-def _find_partner(context: RDMOWriteContext, contributor: PersonOrOrganization) -> int | None:
+def _find_partner(context: ProjectWriteContext, contributor: PersonOrOrganization) -> int | None:
     identifier = contributor.identifiers[0].value if contributor.identifiers else None
     if identifier:
         for value in context.get_values('project/partner/orcid'):
@@ -167,7 +169,7 @@ def _find_partner(context: RDMOWriteContext, contributor: PersonOrOrganization) 
 
 
 def _add_missing_partner_value(
-    context: RDMOWriteContext,
+    context: ProjectWriteContext,
     path: str,
     text: str | None,
     set_index: int,

@@ -10,7 +10,7 @@ from rdmo.projects.models import Project, Value
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
-from rdmo_radar.metadata.rdmo import RDMOReadContext
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
 from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
@@ -83,7 +83,7 @@ def make_read_context():
         ('project/funder/name', 'Funder', ''),
     ):
         values[path] = [Value(attribute=Attribute(path=path), text=text, set_prefix=prefix)]
-    return RDMOReadContext(values, placements={})
+    return ProjectReadContext(values, placements={})
 
 
 def make_import():
@@ -149,7 +149,7 @@ def dataset_title(export, set_index):
 
 
 def configure_service(export, reader=None):
-    reader = reader if reader is not None else lambda selection: RDMOReadContext(
+    reader = reader if reader is not None else lambda selection: ProjectReadContext(
         {}, {}, set_index=selection.scope['set_index'] if isinstance(selection, ExportDataset) else selection,
     )
     if isinstance(export, RadarExport):

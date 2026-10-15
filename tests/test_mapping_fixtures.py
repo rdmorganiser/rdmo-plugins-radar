@@ -467,7 +467,7 @@ def test_answers_are_loaded_once_per_project_snapshot(prototype, django_assert_n
 
 def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     from rdmo_radar.imports import RadarImport
-    from rdmo_radar.metadata.rdmo import RDMOWriteContext
+    from rdmo_radar.metadata.write_context import ProjectWriteContext
 
     attribute = Attribute.objects.get(path='project/dataset/description')
     attribute.uri_prefix = 'https://custom.example.test/terms'
@@ -479,7 +479,7 @@ def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     option.save()
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.current_project = prototype
-    context = RDMOWriteContext(plugin, 2, existing_values={})
+    context = ProjectWriteContext(plugin, 2, existing_values={})
     assert context.fetch_attribute('project/dataset/description') == attribute
     assert context.fetch_option('radar_data_source/survey') == option
     assert context.fetch_attribute('project/missing') is None

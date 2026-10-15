@@ -3,7 +3,7 @@ from functools import partial
 
 from ..metadata.builder import compute_metadata
 from ..metadata.importer import write_metadata
-from ..metadata.rdmo import RDMOReadContext, RDMOWriteContext
+from ..metadata.read_context import ProjectReadContext
 from ..metadata.template_framework import DATASET_ATTRIBUTES, compute_next_dataset_index
 from ..metadata.values import (
     coordinates,
@@ -13,6 +13,7 @@ from ..metadata.values import (
     matches_placement,
     prepare_read_data,
 )
+from ..metadata.write_context import ProjectWriteContext
 from . import ExportDataset, RadarMapping
 
 
@@ -27,7 +28,7 @@ def build_reader(project, snapshot=None):
             set_index = dataset.scope['set_index']
         else:
             set_prefix, set_index = None, int(dataset)
-        return RDMOReadContext(
+        return ProjectReadContext(
             attribute_values_map,
             attribute_placements_map,
             set_index=set_index,
@@ -148,7 +149,7 @@ def build_import_writer(import_plugin, *, set_index=None, existing_values, mappi
         mapping = write_metadata
     kwargs = {}
     if mapping is write_metadata:
-        context = RDMOWriteContext(import_plugin, 0 if set_index is None else set_index, existing_values)
+        context = ProjectWriteContext(import_plugin, 0 if set_index is None else set_index, existing_values)
         if set_index is None:
             set_index = compute_next_dataset_index(existing_values, context=context)
             context.dataset_index = set_index

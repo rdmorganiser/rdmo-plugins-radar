@@ -1,11 +1,13 @@
-from .rdmo import RDMOReadContext, RDMOWriteContext, normalize
+from .read_context import ProjectReadContext
 from .types import FundingReference
+from .values import normalize
+from .write_context import ProjectWriteContext
 
 FUNDER_ANCHOR = 'project/funder/id'
 FUNDER_NAME = 'project/funder/name'
 
 
-def read_funding(context: RDMOReadContext) -> list[FundingReference]:
+def read_funding(context: ProjectReadContext) -> list[FundingReference]:
     references = []
     funders = context.shared().groups(
         FUNDER_NAME, 'project/funder/grant_nr', 'project/funder/programme/title', 'project/funder/programme/url'
@@ -33,7 +35,7 @@ def read_funding(context: RDMOReadContext) -> list[FundingReference]:
     ]
 
 
-def merge_funding(context: RDMOWriteContext, references: list[FundingReference]) -> None:
+def merge_funding(context: ProjectWriteContext, references: list[FundingReference]) -> None:
     for reference in references:
         set_index = _find_funder(context, reference)
         if set_index is None:
@@ -52,7 +54,7 @@ def merge_funding(context: RDMOWriteContext, references: list[FundingReference])
             )
 
 
-def _find_funder(context: RDMOWriteContext, reference: FundingReference) -> int | None:
+def _find_funder(context: ProjectWriteContext, reference: FundingReference) -> int | None:
     if reference.funder_identifier:
         for value in context.get_values('project/funder/name_identifier'):
             if normalize(value.text) == normalize(reference.funder_identifier.value):
@@ -64,7 +66,7 @@ def _find_funder(context: RDMOWriteContext, reference: FundingReference) -> int 
     return None
 
 
-def _add_missing(context: RDMOWriteContext, path: str, text: str | None, set_index: int) -> None:
+def _add_missing(context: ProjectWriteContext, path: str, text: str | None, set_index: int) -> None:
     if text in (None, ''):
         return
     existing = [value for value in context.get_values(path) if value.set_index == set_index]

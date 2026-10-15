@@ -12,9 +12,9 @@ from rdmo_radar.imports import RadarImport
 from rdmo_radar.metadata.funding import merge_funding
 from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.people import write_creators
-from rdmo_radar.metadata.rdmo import RDMOWriteContext
 from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
 from rdmo_radar.metadata.types import FundingReference, Identifier, PersonOrOrganization, RadarMetadata
+from rdmo_radar.metadata.write_context import ProjectWriteContext
 from rdmo_radar.metadata.xml import parse_xml
 
 from .helpers import add_answer, add_attribute, add_namespaced_attribute
@@ -42,7 +42,7 @@ def make_context(existing=None, staged=None):
     values = {}
     for value in existing:
         values.setdefault(value.attribute.path, []).append(value)
-    return RDMOWriteContext(plugin, dataset_index=0, existing_values=values)
+    return ProjectWriteContext(plugin, dataset_index=0, existing_values=values)
 
 
 def test_funder_identifier_uses_rddm_type_attribute():
@@ -242,7 +242,7 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = RDMOWriteContext(plugin, 0, existing_values={})
+    context = ProjectWriteContext(plugin, 0, existing_values={})
 
     with django_assert_num_queries(0):
         assert context.fetch_attribute(attribute.path) == attribute
@@ -269,7 +269,7 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
     new_option = Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path='missing')
     Option.objects.filter(pk=options[0].pk).delete()
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = RDMOWriteContext(plugin, 0, existing_values={})
+    context = ProjectWriteContext(plugin, 0, existing_values={})
     with django_assert_num_queries(1):
         assert context.fetch_option(option_path) == options[1]
         assert context.fetch_attribute('missing') == new_attribute
@@ -285,7 +285,7 @@ def test_short_import_paths_use_model_builders_and_the_official_default(db, sett
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = RDMOWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, 0, {})
 
     with (
         patch.object(Attribute, 'build_uri', wraps=Attribute.build_uri) as build_attribute_uri,
@@ -308,7 +308,7 @@ def test_short_import_paths_use_model_builders_and_the_official_default(db, sett
 @pytest.mark.parametrize('method_name', ('fetch_attribute', 'fetch_option'))
 def test_empty_import_paths_return_none_without_queries_or_uri_construction(db, django_assert_num_queries, method_name):
     plugin = SimpleNamespace(values=[], get_attribute=Mock(), get_option=Mock())
-    context = RDMOWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, 0, {})
     with django_assert_num_queries(0):
         assert getattr(context, method_name)('') is None
         assert getattr(context, method_name)('') is None
@@ -340,7 +340,7 @@ def test_ambiguous_custom_attribute_fallback_is_cached_and_stages_nothing(db, dj
         add_namespaced_attribute(path, f'https://{namespace}.test')
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
-    context = RDMOWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, 0, {})
     with django_assert_num_queries(1):
         assert context.add(path, 'First') is None
     calls = plugin.get_attribute.call_count
@@ -349,7 +349,7 @@ def test_ambiguous_custom_attribute_fallback_is_cached_and_stages_nothing(db, dj
         assert context.fetch_attribute(path) is None
     assert plugin.get_attribute.call_count == calls
     assert plugin.values == []
-    assert [issue.reason for issue in context.issues] == ['Ambiguous RDMO Attribute import destination']
+    assert [issue.reason for issue in context.issues] == ['Ambiguous Attribute import destination']
 
 
 def test_ambiguous_custom_option_fallback_is_cached_and_stages_nothing(db, django_assert_num_queries):
@@ -359,7 +359,7 @@ def test_ambiguous_custom_option_fallback_is_cached_and_stages_nothing(db, djang
         Option.objects.create(uri_prefix=f'https://{namespace}.test', uri_path='type/example')
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = RDMOWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, 0, {})
     with django_assert_num_queries(1):
         assert context.add_option(path, 'Example', {'type/example': 'Example'}) is None
     calls = plugin.get_option.call_count
@@ -367,7 +367,7 @@ def test_ambiguous_custom_option_fallback_is_cached_and_stages_nothing(db, djang
         assert context.add_option(path, 'Example', {'type/example': 'Example'}) is None
     assert plugin.get_option.call_count == calls
     assert plugin.values == []
-    assert [issue.reason for issue in context.issues] == ['Ambiguous RDMO Option import destination']
+    assert [issue.reason for issue in context.issues] == ['Ambiguous Option import destination']
 
 
 def test_exact_import_uris_override_legacy_prefixes_without_fallback(db, django_assert_num_queries):
@@ -377,7 +377,7 @@ def test_exact_import_uris_override_legacy_prefixes_without_fallback(db, django_
     Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path='type/example')
     option = Option.objects.create(uri_prefix='https://custom.test', uri_path='type/example')
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = RDMOWriteContext(plugin, 10, {})
+    context = ProjectWriteContext(plugin, 10, {})
     with django_assert_num_queries(0):
         value = context.add_option(attribute.uri, 'Example', {option.uri: 'Example'}, text='Details')
         assert context.get_values(attribute.uri) == [value]
@@ -395,7 +395,7 @@ def test_import_merging_and_allocation_ignore_other_attribute_namespaces(db, dja
     existing = Value(attribute=canonical, text='Keep', collection_index=2)
     foreign = Value(attribute=other, text='New', collection_index=99)
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = RDMOWriteContext(plugin, 0, {path: [existing, foreign]})
+    context = ProjectWriteContext(plugin, 0, {path: [existing, foreign]})
     with django_assert_num_queries(0):
         value = context.add_unique_text(path, 'New')
         assert value is not None
@@ -429,10 +429,10 @@ def test_ambiguous_fallback_does_not_merge_existing_foreign_answers(db):
     attributes = [add_namespaced_attribute(path, f'https://{namespace}.test') for namespace in ('first', 'second')]
     values = [Value(attribute=attribute, text='Existing') for attribute in attributes]
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = RDMOWriteContext(plugin, 0, {path: values})
+    context = ProjectWriteContext(plugin, 0, {path: values})
     assert context.add_unique_text(path, 'Existing') is None
     assert plugin.values == []
-    assert [issue.reason for issue in context.issues] == ['Ambiguous RDMO Attribute import destination']
+    assert [issue.reason for issue in context.issues] == ['Ambiguous Attribute import destination']
 
 
 def test_default_import_reuses_custom_destination_resolution_for_allocation_and_staging(db, django_assert_num_queries):
@@ -464,7 +464,7 @@ def test_ambiguous_title_allocation_retains_diagnostics_and_stages_nothing(db, d
         service = build_import_service(plugin, parser=lambda root: root)
     with django_assert_num_queries(0):
         issues = service.process(RadarMetadata(title='Imported'))
-    assert [issue.reason for issue in issues] == ['Ambiguous RDMO Attribute import destination']
+    assert [issue.reason for issue in issues] == ['Ambiguous Attribute import destination']
     assert plugin.values == []
 
 
@@ -473,7 +473,7 @@ def test_distinct_uri_less_staged_attributes_are_not_combined():
     attributes = [Attribute(path=path), Attribute(path=path)]
     staged = [Value(attribute=attribute, text='Existing') for attribute in attributes]
     plugin = SimpleNamespace(values=staged, get_attribute=lambda uri: attributes[0], get_option=lambda uri: None)
-    context = RDMOWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, 0, {})
     assert context.get_values(path) == []
     assert context.add(path, 'New') is None
     assert plugin.values == staged
@@ -491,7 +491,7 @@ def test_subject_import_does_not_deduplicate_options_from_another_namespace(db):
     other = Option.objects.create(uri_prefix='https://other.test', uri_path=path)
     existing = Value(attribute=attribute, option=other)
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = RDMOWriteContext(plugin, 0, {attribute.path: [existing]})
+    context = ProjectWriteContext(plugin, 0, {attribute.path: [existing]})
     write_dataset_fields(context, RadarMetadata(subject_areas=[SubjectArea('Chemistry')]))
     assert len(plugin.values) == 1
     assert plugin.values[0].option_id == canonical.pk
@@ -506,7 +506,7 @@ def test_import_merging_uses_primary_key_when_cached_attribute_labels_differ():
     existing = Value(attribute=current, text='Existing', collection_index=2)
     staged = Value(attribute=cached, text='Staged', collection_index=4)
     plugin = SimpleNamespace(values=[staged], get_attribute=lambda uri: cached, get_option=lambda uri: None)
-    context = RDMOWriteContext(plugin, 0, {path: [existing]})
+    context = ProjectWriteContext(plugin, 0, {path: [existing]})
     assert context.add_unique_text(path, 'existing') is None
     added = context.add_unique_text(path, 'New')
     assert added.collection_index == 5

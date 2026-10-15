@@ -20,9 +20,9 @@ from rdmo_radar.imports import RadarImport
 from rdmo_radar.mappings import ExportDataset, validate_datasets
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
-from rdmo_radar.metadata.rdmo import RDMOWriteContext
 from rdmo_radar.metadata.types import Description, MappingResult, RadarMetadata
 from rdmo_radar.metadata.values import coordinates
+from rdmo_radar.metadata.write_context import ProjectWriteContext
 
 from .helpers import add_answer, add_attribute, add_namespaced_attribute, export_for
 
@@ -159,7 +159,7 @@ def custom_import_writer(plugin, *, set_index=None, existing_values, mapping=Non
     def stage(metadata):
         if mapping is not None:
             return mapping(plugin, metadata, set_index=set_index, existing_values=existing_values)
-        context = RDMOWriteContext(plugin, 3 if set_index is None else set_index, existing_values)
+        context = ProjectWriteContext(plugin, 3 if set_index is None else set_index, existing_values)
         context.add(CUSTOM_TITLE, metadata.title, set_prefix='7')
         return tuple(context.issues)
     return stage

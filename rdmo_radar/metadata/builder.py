@@ -3,17 +3,17 @@ from collections.abc import Callable
 from .dataset import read_dataset_fields
 from .funding import read_funding
 from .people import read_contributors, read_creators
-from .rdmo import RDMOReadContext
+from .read_context import ProjectReadContext
 from .types import FundingReference, MappingResult, PersonOrOrganization, RadarMetadata
 
 
 def compute_metadata(
-    context: RDMOReadContext,
+    context: ProjectReadContext,
     *,
-    dataset: Callable[[RDMOReadContext], RadarMetadata] = read_dataset_fields,
-    creators: Callable[[RDMOReadContext], list[PersonOrOrganization]] = read_creators,
-    contributors: Callable[[RDMOReadContext], list[PersonOrOrganization]] = read_contributors,
-    funding: Callable[[RDMOReadContext], list[FundingReference]] = read_funding,
+    dataset: Callable[[ProjectReadContext], RadarMetadata] = read_dataset_fields,
+    creators: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_creators,
+    contributors: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_contributors,
+    funding: Callable[[ProjectReadContext], list[FundingReference]] = read_funding,
 ) -> MappingResult:
     metadata = dataset(context)
     metadata.creators = creators(context)

@@ -1,11 +1,12 @@
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
-from .rdmo import RDMOReadContext, RDMOWriteContext, answer_label, get_option_path, normalize
+from .read_context import ProjectReadContext
 from .types import GeoLocation, Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, Software, SubjectArea
-from .values import model_key
+from .values import answer_label, get_option_path, model_key, normalize
+from .write_context import ProjectWriteContext
 
 
-def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
+def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
     identifier_value = context.get_text('project/dataset/data_publication_pid')
     identifier_type = context.get_option(
         'project/dataset/pids/system',
@@ -34,7 +35,7 @@ def read_dataset_fields(context: RDMOReadContext) -> RadarMetadata:
     return metadata
 
 
-def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> None:
+def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) -> None:
     context.add('project/dataset/title', metadata.title)
     if metadata.identifier:
         context.add('project/dataset/data_publication_pid', metadata.identifier.value)
@@ -80,7 +81,7 @@ def write_dataset_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> 
     _warn_unmapped_fields(context, metadata)
 
 
-def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
+def _read_subjects(context: ProjectReadContext) -> list[SubjectArea]:
     subjects = []
     values = context.shared().get_values('project/research_field/title')
     mapped = context.map_options(
@@ -116,7 +117,7 @@ def _read_subjects(context: RDMOReadContext) -> list[SubjectArea]:
     return subjects
 
 
-def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
+def _read_data_sources(context: ProjectReadContext) -> list[Resource]:
     sources = []
     path = 'project/dataset/creation_methods'
     values = context.get_values(path)
@@ -134,7 +135,7 @@ def _read_data_sources(context: RDMOReadContext) -> list[Resource]:
     return sources
 
 
-def _read_rights(context: RDMOReadContext) -> Rights | None:
+def _read_rights(context: ProjectReadContext) -> Rights | None:
     path = 'project/dataset/sharing/conditions'
     values = [value for value in context.get_values(path) if value.is_true]
     if not values:
@@ -170,7 +171,7 @@ def _read_software(context):
     return software
 
 
-def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
+def _merge_acronym(context: ProjectWriteContext, titles: list[str]) -> None:
     if not titles:
         return
     acronym = titles[0]
@@ -183,7 +184,7 @@ def _merge_acronym(context: RDMOWriteContext, titles: list[str]) -> None:
         context.warn('additionalTitles', 'Only one project acronym can be mapped')
 
 
-def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> None:
+def _merge_subjects(context: ProjectWriteContext, subjects: list[SubjectArea]) -> None:
     existing_options = {
         model_key(value.option, value.option.uri_path)
         for value in context.get_values('project/research_field/title')
@@ -206,7 +207,7 @@ def _merge_subjects(context: RDMOWriteContext, subjects: list[SubjectArea]) -> N
             existing_options.add(model_key(value.option, value.option.uri_path))
 
 
-def _write_geo_location(context: RDMOWriteContext, locations: list[GeoLocation]) -> None:
+def _write_geo_location(context: ProjectWriteContext, locations: list[GeoLocation]) -> None:
     if not locations:
         return
     location = locations[0]
@@ -217,7 +218,7 @@ def _write_geo_location(context: RDMOWriteContext, locations: list[GeoLocation])
         context.warn('geoLocations', 'Only the first geolocation was imported')
 
 
-def _warn_unmapped_fields(context: RDMOWriteContext, metadata: RadarMetadata) -> None:
+def _warn_unmapped_fields(context: ProjectWriteContext, metadata: RadarMetadata) -> None:
     populated = {
         'alternateIdentifiers': metadata.alternate_identifiers,
         'relatedIdentifiers': metadata.related_identifiers,

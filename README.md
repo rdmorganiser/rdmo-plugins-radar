@@ -298,8 +298,8 @@ handling; configure authentication through `RADAR_PROVIDER`. The project profile
 and intentionally disables local result storage. Advanced profiles can customize discovery and storage
 independently of this payload hook.
 
-`get_context(dataset)` provides the same safe Attribute access as a metadata mapping, using prepared
-Values and the selected profile's scope. The hook runs once for the selected dataset on submission.
+`get_context(dataset)` returns a `ProjectReadContext`, which provides safe Attribute access to prepared
+project Values within the selected profile's scope. The hook runs once for the selected dataset on submission.
 OAuth saves that request and replays it after authorization without calling the hook again.
 
 The returned dictionary goes directly to the REST transport. Supply the complete body, including
@@ -376,6 +376,9 @@ shows the confirmed dataset link so users can inspect it before attempting anoth
 When a profile omits storage, confirmed creation succeeds without writing RDMO Values.
 
 Import retains RDMO's preview and checked-value save workflow; the mapping service stages unsaved Values.
+`ProjectWriteContext` resolves Attributes and Options through RDMO's import API, merges existing answers,
+and collects diagnostics while staging Values. `ProjectReadContext` provides scoped access to prepared
+project Values for export mappings.
 Template Framework imports resolve short Attribute and Option paths using the official default
 `https://rdmorganiser.github.io/terms/` and RDMO's model URI builders. Full URIs resolve exactly. When an
 official URI is absent, a unique installed-path match can supply a custom namespace; ambiguous matches

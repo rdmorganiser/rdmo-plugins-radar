@@ -1,7 +1,10 @@
-"""Prepare native RDMO Values and match coordinates without catalog-specific paths."""
+"""Prepare native Values, match coordinates, and format answers without catalog-specific paths."""
 from collections import defaultdict
 from urllib.parse import urlsplit
 
+from django.utils.html import strip_tags
+
+from rdmo.projects.models import Value
 from rdmo.questions.models import Page, QuestionSet
 
 
@@ -182,3 +185,20 @@ def get_scoped_values(values, placements, key, *, constraints=None, group=None):
             if any(matches_placement(value, placement, constraints) for placement in placements[key])
         ]
     return list(attribute_values)
+
+
+def get_option_path(options: dict[str, str], canonical_value: str) -> str | None:
+    return next((option_reference for option_reference, value in options.items() if value == canonical_value), None)
+
+
+
+def normalize(value: object) -> str:
+    return ' '.join(str(value).split()).casefold()
+
+
+
+def answer_label(value: Value) -> str:
+    """Read option labels without Value.value's rendered display HTML."""
+    label = strip_tags(str(value.option.text)) if value.option else ''
+    text = value.text.strip() if value.text else ''
+    return f'{label}: {text}' if label and text and label != text else text or label
