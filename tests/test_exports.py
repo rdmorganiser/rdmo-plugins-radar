@@ -1,4 +1,5 @@
 import io
+import json
 import zipfile
 from copy import deepcopy
 from dataclasses import replace
@@ -313,6 +314,49 @@ def test_oauth_error_hook_uses_saved_operation_and_safe_message(status, expected
     message = str(provider.get_error_message(response))
     assert expected in message
     assert 'private-token' not in message
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+def test_export_validation_message_is_kept_in_user_error(provider_class, caplog):
+    provider = make_provider(provider_class=provider_class)
+    detail = 'Es existiert bereits ein Eintrag mit dem gleichen Namen auf dieser Ebene.'
+    error = http_error(422)
+    error.response._content = json.dumps({'exception': f'Validation exception: {detail}'}).encode()
+    if provider_class is RadarExportProvider:
+        provider.store_in_session(provider.request, 'operation', 'create_dataset')
+        message = provider.get_error_message(error.response)
+    else:
+        message = provider.get_client_error_message(error, stage='export')
+    assert str(message) == f'RADAR rejected the dataset metadata: {detail}'
+    assert detail not in caplog.text
+
+
+@pytest.mark.parametrize('body', [
+    b'not JSON', b'[]', b'{}', b'{"exception": null}', b'{"exception": 123}',
+    b'{"exception": "Validation exception: "}',
+    b'{"exception": "Authentication exception: private-token"}',
+])
+def test_export_validation_error_without_usable_detail_keeps_generic_message(body, caplog):
+    provider = make_provider()
+    error = http_error(422)
+    error.response._content = body
+    message = str(provider.get_client_error_message(error, stage='export'))
+    assert message == (
+        'RADAR rejected the dataset metadata. Review the metadata and mapping warnings before retrying.'
+    )
+    assert 'private-token' not in caplog.text
+
+
+@pytest.mark.parametrize(('status', 'stage'), [
+    (400, 'export'), (401, 'export'), (500, 'export'),
+    (422, 'request'), (422, 'login'), (422, 'oauth'),
+])
+def test_validation_details_are_only_shown_for_rejected_dataset_exports(status, stage, caplog):
+    provider = make_provider()
+    error = http_error(status)
+    error.response._content = b'{"exception": "Validation exception: unexpected detail"}'
+    assert 'unexpected detail' not in str(provider.get_client_error_message(error, stage=stage))
+    assert 'unexpected detail' not in caplog.text
 
 
 def test_oauth_success_callback_handles_malformed_response(monkeypatch):

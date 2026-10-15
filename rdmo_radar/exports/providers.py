@@ -286,6 +286,16 @@ class RadarExportProviderBase(Export):
             return _('RADAR login failed or expired. Please check your credentials and log in again.')
         if status == 403:
             return _('Your RADAR account does not have permission for this operation. Check workspace access.')
+        if stage == 'export' and status == 422:
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            exception = data.get('exception') if isinstance(data, dict) else None
+            if isinstance(exception, str) and exception.startswith('Validation exception:'):
+                message = exception.removeprefix('Validation exception:').strip()
+                if message:
+                    return _('RADAR rejected the dataset metadata: %(message)s') % {'message': message}
         if stage == 'export' and status in (400, 422):
             return _('RADAR rejected the dataset metadata. Review the metadata and mapping warnings before retrying.')
         if stage == 'export':

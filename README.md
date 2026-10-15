@@ -367,7 +367,9 @@ OAuth continues to use RDMO's `OauthProviderMixin`. Its current transport does n
 request-injection hooks and logs some upstream response bodies itself. Improving those hooks and logs,
 and adding catalog-aware value scopes to RDMO core, are separate upstream follow-ups. Plugin-owned
 error handlers log only HTTP status. The client uses standard Requests exceptions; adapters show translated
-messages based on status and workflow, without displaying raw exception text or response bodies.
+messages based on status and workflow. For a dataset export rejected with HTTP 422, RADAR's
+`Validation exception:` message is shown as plain text, for example when a dataset name already exists.
+Other exception text and raw response bodies are not displayed.
 
 The registered adapters assemble the services through small factories. XML export handles current projects
 and snapshots; direct export separates payload preparation, the remote request, and confirmed-result storage.

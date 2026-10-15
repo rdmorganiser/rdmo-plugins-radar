@@ -11,6 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 from django.utils import translation
+from django.utils.html import escape
 
 import requests
 
@@ -159,6 +160,61 @@ def test_credentials_native_failure_preserves_form_or_requests_login(host, monke
     else:
         assert result.context['form'].is_bound
         assert host.session['rdmo_radar.exports.RadarCredentialsExportProvider.access_token'] == 'bearer-token'
+
+
+@pytest.mark.parametrize('authentication', ['credentials', 'oauth'])
+@pytest.mark.parametrize('detail', [
+    'Es existiert bereits ein Eintrag mit dem gleichen Namen auf dieser Ebene.',
+    'Ungültiger Name: <script>alert("name")</script>',
+])
+def test_export_displays_radar_validation_detail(host, monkeypatch, authentication, detail):
+    project = Project.objects.create(title='Project')
+    add_answer(project, 'project/dataset/title', 'Dataset')
+    calls = []
+
+    def post(url, *args, **kwargs):
+        calls.append(url)
+        if url.endswith('/tokens') or '/oauth/token' in url:
+            return response({'access_token': 'bearer-token'})
+        return response({'exception': f'Validation exception: {detail}'}, 422)
+
+    monkeypatch.setattr(requests, 'post', post)
+    monkeypatch.setattr(requests, 'get', lambda *args, **kwargs: response({
+        'data': [{'id': 'workspace', 'descriptiveMetadata': {'title': 'Workspace'}}],
+    }))
+    key = f'radar-{authentication}'
+    url = export_url(project, key)
+    started = host.get(url)
+    if authentication == 'credentials':
+        assert started.status_code == 200
+        login = host.post(url, {'stage': 'credentials', 'username': 'radar-user', 'password': 'radar-password'})
+        assert login.status_code == 302
+    else:
+        state = parse_qs(urlsplit(started.url).query)['state'][0]
+        callback = reverse('oauth_callback', args=[key])
+        assert host.get(callback, {'state': state, 'code': 'workspace-code'}).status_code == 302
+    assert host.get(url).status_code == 200
+
+    if authentication == 'oauth':
+        # Exercise validation failure after core replays the saved creation POST.
+        session = host.session
+        del session['rdmo_radar.exports.RadarExportProvider.access_token']
+        session.save()
+    result = host.post(url, {'stage': 'export', 'dataset': '0', 'workspace': 'workspace'})
+    if authentication == 'oauth':
+        state = parse_qs(urlsplit(result.url).query)['state'][0]
+        result = host.get(callback, {'state': state, 'code': 'creation-code'})
+    else:
+        assert result.context['form'].is_bound
+        assert result.context['form'].cleaned_data['dataset'] == '0'
+        assert result.context['form'].cleaned_data['workspace'] == 'workspace'
+    assert result.status_code == 200
+    content = result.content.decode()
+    assert 'RADAR rejected the dataset metadata:' in content
+    assert str(escape(detail)) in content
+    assert '<script>' not in content
+    assert sum('/datasets' in target for target in calls) == 1
+    assert not project.values.filter(attribute__path='project/dataset/radar_id').exists()
 
 
 def test_credentials_local_failure_shows_confirmation_and_rolls_back(host, monkeypatch):
