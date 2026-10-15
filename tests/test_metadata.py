@@ -12,10 +12,10 @@ from rdmo_radar.metadata.builder import compute_metadata
 from rdmo_radar.metadata.constants import XMLVocabulary
 from rdmo_radar.metadata.types import (
     Affiliation,
-    Agent,
     Description,
     GeoLocation,
     Identifier,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -31,7 +31,7 @@ def make_import(xml):
     radar_import = RadarImport.__new__(RadarImport)
     radar_import.current_project = SimpleNamespace(
         catalog=object(),
-        values=SimpleNamespace(filter=lambda **kwargs: []),
+        values=SimpleNamespace(filter=lambda **kwargs: SimpleNamespace(select_related=lambda *args: [])),
     )
     radar_import.root = ElementTree.fromstring(xml)
     radar_import.values = []
@@ -73,17 +73,19 @@ def test_only_confirmed_dataset_paths_are_read(db):
         'project/dataset/title': 'Dataset title',
         'project/dataset/format': 'text/csv',
     })
-    metadata = compute_metadata(export, 0)
+    result = compute_metadata(export.get_service().reader(0))
+    metadata = result.metadata
     assert metadata.resource == Resource('Canonical resource')
     assert metadata.title == 'Dataset title'
-    assert not any(issue.source == 'project/dataset/format' for issue in metadata.mapping_issues)
+    assert not any(issue.source == 'project/dataset/format' for issue in result.issues)
 
 
 def test_creator_name_is_derived_from_structured_parts(db):
     export = make_export()
     add_answer(export.project, 'project/dataset/creator/given_name', 'Jane', set_prefix='0')
     add_answer(export.project, 'project/dataset/creator/family_name', 'Doe', set_prefix='0')
-    metadata = compute_metadata(export, 0)
+    result = compute_metadata(export.get_service().reader(0))
+    metadata = result.metadata
     assert metadata.creators[0].name == 'Doe, Jane'
     assert metadata.creators[0].given_name == 'Jane'
     assert metadata.creators[0].family_name == 'Doe'
@@ -92,7 +94,7 @@ def test_creator_name_is_derived_from_structured_parts(db):
 def test_xml_and_api_adapters_share_canonical_model_but_not_wire_values():
     metadata = RadarMetadata(
         identifier=Identifier('10.1234/example', 'DOI'),
-        creators=[Agent(
+        creators=[PersonOrOrganization(
             name='Doe, Jane',
             name_type='Personal',
             affiliations=[Affiliation('First University'), Affiliation('Second University')],
@@ -138,20 +140,20 @@ def test_xml_parser_preserves_canonical_rddm_values():
 def test_semantic_metadata_serializes_to_valid_rddm_9_3_xml():
     metadata = RadarMetadata(
         identifier=Identifier('10.1234/example', 'DOI'),
-        creators=[Agent(
+        creators=[PersonOrOrganization(
             name='Doe, Jane',
             affiliations=[Affiliation('Example University', 'https://ror.org/example', 'ROR')],
         )],
         title='Dataset',
         additional_titles=['DATA'],
         descriptions=[Description('Description')],
-        publishers=[Agent('Example Repository')],
+        publishers=[PersonOrOrganization('Example Repository')],
         production_year='2026',
         subject_areas=[SubjectArea('Chemistry')],
         resource=Resource('Research data', 'Dataset'),
         geo_locations=[GeoLocation(region='Berlin')],
         rights=Rights('CC BY 4.0 Attribution'),
-        rights_holders=[Agent('Example University')],
+        rights_holders=[PersonOrOrganization('Example University')],
     )
 
     payload = to_xml_payload(metadata)

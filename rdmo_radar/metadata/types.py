@@ -16,7 +16,9 @@ class Affiliation:
 
 
 @dataclass
-class Agent:
+class PersonOrOrganization:
+    """A person or organization acting as creator, contributor, publisher, or rights holder."""
+
     name: str
     given_name: str | None = None
     family_name: str | None = None
@@ -94,13 +96,13 @@ class RadarMetadata:
     identifier: Identifier | None = None
     alternate_identifiers: list[Identifier] = field(default_factory=list)
     related_identifiers: list[Identifier] = field(default_factory=list)
-    creators: list[Agent] = field(default_factory=list)
-    contributors: list[Agent] = field(default_factory=list)
+    creators: list[PersonOrOrganization] = field(default_factory=list)
+    contributors: list[PersonOrOrganization] = field(default_factory=list)
     title: str | None = None
     additional_titles: list[str] = field(default_factory=list)
     descriptions: list[Description] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
-    publishers: list[Agent] = field(default_factory=list)
+    publishers: list[PersonOrOrganization] = field(default_factory=list)
     production_year: str | None = None
     publication_year: str | None = None
     language: str | None = None
@@ -111,8 +113,13 @@ class RadarMetadata:
     software: list[Software] = field(default_factory=list)
     processing: list[str] = field(default_factory=list)
     rights: Rights | None = None
-    rights_holders: list[Agent] = field(default_factory=list)
+    rights_holders: list[PersonOrOrganization] = field(default_factory=list)
     related_information: list[str] = field(default_factory=list)
     funding_references: list[FundingReference] = field(default_factory=list)
     version: str | None = None
-    mapping_issues: list[MappingIssue] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MappingResult:
+    metadata: RadarMetadata
+    issues: tuple[MappingIssue, ...] = ()

@@ -1,7 +1,21 @@
 """RADAR REST serialization, independent of the XML renderer's payload format."""
 
 from .constants import to_api_value
-from .types import Affiliation, Agent, FundingReference, GeoLocation, RadarMetadata, Software
+from .types import Affiliation, FundingReference, GeoLocation, PersonOrOrganization, RadarMetadata, Software
+
+
+def compute_radar_payload(metadata: RadarMetadata, *, responsible_email: str, timestamp: int) -> dict:
+    """Build the RADAR request with an explicit millisecond timestamp, independent of a request/session."""
+    return {
+        'technicalMetadata': {
+            'retentionPeriod': 10,
+            'archiveDate': timestamp,
+            'publishDate': timestamp,
+            'responsibleEmail': responsible_email,
+            'schema': {'key': 'RDDM', 'version': '9.3'},
+        },
+        'descriptiveMetadata': to_api_payload(metadata),
+    }
 
 
 def to_api_payload(metadata: RadarMetadata) -> dict:
@@ -25,9 +39,11 @@ def to_api_payload(metadata: RadarMetadata) -> dict:
             for value in metadata.related_identifiers
         ]}
     if metadata.creators:
-        data['creators'] = {'creator': [_agent(value, 'creator') for value in metadata.creators]}
+        data['creators'] = {'creator': [_person_or_organization(value, 'creator') for value in metadata.creators]}
     if metadata.contributors:
-        data['contributors'] = {'contributor': [_agent(value, 'contributor') for value in metadata.contributors]}
+        data['contributors'] = {
+            'contributor': [_person_or_organization(value, 'contributor') for value in metadata.contributors],
+        }
     if metadata.title:
         data['title'] = metadata.title
     if metadata.additional_titles:
@@ -90,23 +106,23 @@ def _present(**values) -> dict:
     return {key: value for key, value in values.items() if value is not None}
 
 
-def _agent(agent: Agent, prefix: str) -> dict:
+def _person_or_organization(person_or_organization: PersonOrOrganization, prefix: str) -> dict:
     data = _present(**{
-        f'{prefix}Name': agent.name,
-        'nameType': to_api_value(agent.name_type),
-        'givenName': agent.given_name,
-        'familyName': agent.family_name,
+        f'{prefix}Name': person_or_organization.name,
+        'nameType': to_api_value(person_or_organization.name_type),
+        'givenName': person_or_organization.given_name,
+        'familyName': person_or_organization.family_name,
     })
-    if prefix == 'contributor' and agent.contributor_type:
-        data['contributorType'] = to_api_value(agent.contributor_type)
-    if agent.identifiers:
+    if prefix == 'contributor' and person_or_organization.contributor_type:
+        data['contributorType'] = to_api_value(person_or_organization.contributor_type)
+    if person_or_organization.identifiers:
         data['nameIdentifier'] = [
             _present(value=value.value, nameIdentifierScheme=to_api_value(value.identifier_type))
-            for value in agent.identifiers
+            for value in person_or_organization.identifiers
         ]
-    # RDDM 9.3 has one affiliation per agent, including in REST.
-    if agent.affiliations:
-        data[f'{prefix}Affiliation'] = _affiliation(agent.affiliations[0])
+    # RDDM 9.3 has one affiliation per person or organization, including in REST.
+    if person_or_organization.affiliations:
+        data[f'{prefix}Affiliation'] = _affiliation(person_or_organization.affiliations[0])
     return data
 
 
@@ -115,10 +131,10 @@ def _affiliation(affiliation: Affiliation) -> dict:
                     affiliationIdentifierScheme=to_api_value(affiliation.identifier_scheme))
 
 
-def _named_value(agent: Agent) -> dict:
-    data = {'value': agent.name}
-    if agent.identifiers:
-        identifier = agent.identifiers[0]
+def _named_value(person_or_organization: PersonOrOrganization) -> dict:
+    data = {'value': person_or_organization.name}
+    if person_or_organization.identifiers:
+        identifier = person_or_organization.identifiers[0]
         data.update(_present(nameIdentifier=identifier.value,
                              nameIdentifierScheme=to_api_value(identifier.identifier_type)))
     return data

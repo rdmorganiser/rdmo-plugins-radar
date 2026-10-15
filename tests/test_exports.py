@@ -1,6 +1,9 @@
 import io
 import zipfile
+from copy import deepcopy
+from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
@@ -13,14 +16,8 @@ import requests
 
 from rdmo.services.providers import OauthProviderMixin
 
+from rdmo_radar.exceptions import RadarProtocolError
 from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
-from rdmo_radar.exports.client import (
-    RadarAuthenticationError,
-    RadarAuthorizationError,
-    RadarMetadataRejected,
-    RadarProtocolError,
-    RadarRequestError,
-)
 from rdmo_radar.exports.exports import RadarExport
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import (
@@ -28,15 +25,22 @@ from rdmo_radar.exports.validation import (
     get_radar_validation_errors,
     validate_radar_xml,
 )
+from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.constants import APIVocabulary, XMLVocabulary
-from rdmo_radar.metadata.types import RadarMetadata
+from rdmo_radar.metadata.types import MappingResult, RadarMetadata
 
-from .helpers import add_answer, complete_metadata, make_export
+from .helpers import add_answer, complete_metadata, configure_service, dataset_payload, make_export, read_metadata
+
+
+def http_error(status):
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError('Private upstream error', response=response)
 
 
 def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
     class_name = f'rdmo_radar.exports.{provider_class.__name__}'
-    provider = provider_class('radar', 'RADAR', class_name)
+    provider = configure_service(provider_class('radar', 'RADAR', class_name))
     provider.request = SimpleNamespace(
         POST=post or {},
         GET={},
@@ -44,9 +48,27 @@ def make_provider(post=None, provider_class=RadarCredentialsExportProvider):
         user=SimpleNamespace(email='user@example.test'),
         LANGUAGE_CODE='en'
     )
-    provider.project = SimpleNamespace(id=1)
-    provider.get_dataset_indices = lambda: []
+    provider.project = SimpleNamespace(id=1, pk=1)
+    provider.get_datasets = lambda: []
     return provider
+
+
+def prepare_oauth_creation(provider):
+    request = provider.request
+    request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
+    context = {
+        'project_id': provider.project.pk, 'provider': provider.class_name, 'persist': False,
+        'radar_url': provider.radar_url, 'language': 'de',
+        'dataset': {'key': 'dataset:10|3', 'label': 'Dataset', 'scope': {'set_prefix': '10', 'set_index': 3}},
+    }
+    provider.store_in_session(request, 'export_context', context)
+    provider.store_in_session(request, 'operation', 'create_dataset')
+    provider.store_in_session(request, 'state', 'expected-state')
+    provider.store_in_session(request, 'request', (
+        'post', f'{provider.radar_url}/radar/api/workspaces/workspace/datasets',
+        {'technicalMetadata': {}, 'descriptiveMetadata': {'title': 'Dataset'}}, None, None,
+    ))
+    return context
 
 
 def make_valid_xml_dataset(**overrides):
@@ -84,9 +106,11 @@ def test_oauth_provider_uses_authorization_code_configuration():
     assert provider.get_callback_data(None) == {}
 
 
+@override_settings(ALLOWED_HOSTS=['rdmo.example.test'])
 def test_oauth_render_redirects_and_preserves_workspace_request():
     provider = make_provider(provider_class=RadarExportProvider)
-    provider.get_dataset_indices = lambda: []
+    provider.request = RequestFactory().get('/', secure=True, HTTP_HOST='rdmo.example.test')
+    provider.request.session = {}
 
     response = provider.render()
 
@@ -99,6 +123,45 @@ def test_oauth_render_redirects_and_preserves_workspace_request():
         'get', 'https://radar.example.test/radar/api/workspaces',
     )
     assert provider.get_from_session(provider.request, 'state') == query['state'][0]
+
+
+@pytest.mark.parametrize(('host', 'secure'), [
+    ('localhost:8000', False),
+    ('staging.example.test', True),
+    ('rdmo.example.test:8443', True),
+    ('rdmo.example.test', False),
+])
+def test_oauth_authorization_rejects_callback_on_different_origin(monkeypatch, host, secure):
+    provider = make_provider(provider_class=RadarExportProvider)
+    request = RequestFactory().get('/', secure=secure, HTTP_HOST=host)
+    request.session = {}
+    monkeypatch.setattr('rdmo_radar.exports.providers.render',
+                        lambda request, template, context, status: (template, context, status))
+
+    with override_settings(ALLOWED_HOSTS=[host.split(':')[0]]):
+        template, context, status = provider.get(request, provider.get_get_url())
+
+    assert template == 'core/error.html'
+    assert status == 200
+    assert context['title'] == 'RADAR OAuth configuration error'
+    assert 'different RDMO instance' in str(context['errors'][0])
+    assert provider.get_from_session(request, 'state') is None
+    assert provider.get_from_session(request, 'access_token') is None
+
+
+@pytest.mark.parametrize('host', ['rdmo.example.test', 'rdmo.example.test:443', 'RDMO.EXAMPLE.TEST'])
+@override_settings(ALLOWED_HOSTS=['rdmo.example.test'])
+def test_oauth_authorization_accepts_same_origin(host):
+    provider = make_provider(provider_class=RadarExportProvider)
+    request = RequestFactory().get('/', secure=True, HTTP_HOST=host)
+    request.session = {}
+
+    response = provider.authorize(request)
+
+    assert response.status_code == 302
+    query = parse_qs(urlparse(response.url).query)
+    assert query['state'] == [provider.get_from_session(request, 'state')]
+    assert query['redirect_uri'] == [provider.redirect_uri]
 
 
 def test_oauth_callback_exchanges_code_and_resumes_request(monkeypatch):
@@ -192,63 +255,51 @@ def test_oauth_token_auth_method_rejects_unsupported_value():
         provider.get_callback_auth(provider.request)
 
 
-def test_oauth_callback_renders_invalid_client_error(monkeypatch, caplog):
+@pytest.mark.parametrize('status', [400, 401])
+def test_oauth_callback_renders_generic_failure(monkeypatch, caplog, status):
     provider = make_provider(provider_class=RadarExportProvider)
-    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
-    provider.store_in_session(provider.request, 'state', 'expected-state')
     provider.store_in_session(provider.request, 'request', ('get', provider.get_get_url()))
+    response = requests.Response()
+    response.status_code = status
+    response._content = b'private-token client-secret authorization-code'
 
-    class Response:
-        status_code = 401
-        content = b'{"error":"invalid_client"}'
+    def callback(*args):
+        raise requests.HTTPError('private exception text', response=response)
 
-        def raise_for_status(self):
-            raise requests.HTTPError(response=self)
-
-        def json(self):
-            return {'error': 'invalid_client'}
-
-    monkeypatch.setattr('rdmo.services.providers.requests.post', lambda *args, **kwargs: Response())
+    monkeypatch.setattr(OauthProviderMixin, 'callback', callback)
     monkeypatch.setattr(
         'rdmo_radar.exports.providers.render',
-        lambda request, template, context, status: (template, context, status)
+        lambda request, template, context, status: (template, context, status),
     )
-
-    template, context, status = provider.callback(provider.request)
+    template, context, response_status = provider.callback(provider.request)
 
     assert template == 'core/error.html'
-    assert status == 200
+    assert response_status == 200
     assert context['title'] == 'RADAR OAuth error'
-    assert 'configured OAuth client' in str(context['errors'][0])
-    assert 'status=401 error=invalid_client' in caplog.text
-    assert 'client-secret' not in caplog.text
-    assert 'authorization-code' not in caplog.text
+    assert 'OAuth authorization could not be completed' in str(context['errors'][0])
+    assert f'status={status}' in caplog.text
+    for secret in ('private-token', 'client-secret', 'authorization-code', 'private exception text'):
+        assert secret not in caplog.text
+        assert secret not in str(context)
 
 
-def test_oauth_callback_renders_invalid_grant_error(monkeypatch):
+def test_oauth_callback_network_failure_during_export_warns_without_retry(monkeypatch):
     provider = make_provider(provider_class=RadarExportProvider)
-    provider.request.GET = {'state': 'expected-state', 'code': 'authorization-code'}
-    provider.store_in_session(provider.request, 'state', 'expected-state')
+    prepare_oauth_creation(provider)
+    calls = []
 
-    class Response:
-        status_code = 400
-        content = b'{"error":"invalid_grant"}'
+    def callback(*args):
+        calls.append(args)
+        raise requests.Timeout('private timeout details')
 
-        def raise_for_status(self):
-            raise requests.HTTPError(response=self)
-
-        def json(self):
-            return {'error': 'invalid_grant'}
-
-    monkeypatch.setattr('rdmo.services.providers.requests.post', lambda *args, **kwargs: Response())
-    monkeypatch.setattr(
-        'rdmo_radar.exports.providers.render',
-        lambda request, template, context, status: context
-    )
-
+    monkeypatch.setattr(OauthProviderMixin, 'callback', callback)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
     context = provider.callback(provider.request)
 
-    assert 'authorization code or redirect URI' in str(context['errors'][0])
+    assert len(calls) == 1
+    assert 'OAuth authorization could not be completed' in str(context['errors'][0])
+    assert 'existing draft' in str(context['errors'][0])
+    assert 'private timeout details' not in str(context)
 
 
 @pytest.mark.parametrize(('status', 'expected'), [
@@ -273,6 +324,115 @@ def test_oauth_success_callback_handles_malformed_response(monkeypatch):
     assert 'try again later' in str(provider.get_success(provider.request, response)['errors'][0])
 
 
+@pytest.mark.parametrize(('field', 'value'), [
+    (None, None), (None, {}), ('provider', 'another.Provider'), ('project_id', None),
+    ('project_id', True), ('persist', 1), ('radar_url', None), ('language', None),
+    ('dataset', {'key': 'project'}),
+    ('dataset', {'key': 'project', 'label': 'Project', 'scope': {'coordinate': {1, 10}}}),
+])
+def test_oauth_incomplete_context_blocks_replay_and_retains_confirmed_id(monkeypatch, field, value):
+    provider = make_provider(provider_class=RadarExportProvider)
+    context = prepare_oauth_creation(provider)
+    if field is None:
+        provider.store_in_session(provider.request, 'export_context', value)
+    else:
+        context[field] = value
+    provider.get_service = Mock(side_effect=AssertionError('Reader rebuilt'))
+    writer = Mock()
+    provider.mapping = replace(provider.mapping, store_result=writer)
+    http = Mock(side_effect=AssertionError('Incomplete export submitted'))
+    monkeypatch.setattr('rdmo.services.providers.requests.post', http)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render',
+                        lambda request, template, context, status=200: context)
+
+    result = provider.callback(provider.request)
+
+    assert 'incomplete or was canceled' in str(result['errors'][0])
+    http.assert_not_called()
+    writer.assert_not_called()
+    provider.get_service.assert_not_called()
+    for key in ('request', 'state', 'operation', 'export_context'):
+        assert provider.get_from_session(provider.request, key) is None
+    # A confirmed ID must still be recoverable if a result reaches this hook
+    # without any destination context. Never construct a link from new settings.
+    result = provider.post_success(provider.request, SimpleNamespace(json=lambda: {'id': 'confirmed'}))
+    assert result == {'radar_id': 'confirmed', 'radar_url': None}
+    writer.assert_not_called()
+
+
+@pytest.mark.parametrize('pending', [
+    None, {}, [], ['post'], ['delete', 'https://radar.test'],
+    ['get', None], ['post', 'https://radar.test', [], None, None],
+    ['post', 'https://radar.test', {}, 'unexpected files', None],
+])
+def test_oauth_malformed_pending_request_is_not_replayed(monkeypatch, pending):
+    provider = make_provider(provider_class=RadarExportProvider)
+    prepare_oauth_creation(provider)
+    provider.store_in_session(provider.request, 'request', pending)
+    http = Mock(side_effect=AssertionError('Malformed request submitted'))
+    monkeypatch.setattr('rdmo.services.providers.requests.post', http)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render',
+                        lambda request, template, context, status: context)
+    result = provider.callback(provider.request)
+    assert 'incomplete or was canceled' in str(result['errors'][0])
+    http.assert_not_called()
+
+
+def test_oauth_cancel_clears_pending_work_before_preparation_and_keeps_token(monkeypatch):
+    provider = make_provider(post={'cancel': '1'}, provider_class=RadarExportProvider)
+    prepare_oauth_creation(provider)
+    provider.store_in_session(provider.request, 'access_token', 'bearer-token')
+    provider.get_export_form = Mock(side_effect=AssertionError('Form prepared during cancellation'))
+    monkeypatch.setattr('rdmo_radar.exports.providers.redirect', lambda *args: args)
+
+    assert provider.submit() == ('project', provider.project.pk)
+    assert provider.get_from_session(provider.request, 'access_token') == 'bearer-token'
+    for key in ('request', 'state', 'operation', 'export_context'):
+        assert provider.get_from_session(provider.request, key) is None
+    provider.get_export_form.assert_not_called()
+
+
+def test_oauth_active_post_preserves_captured_destination_and_releases_it(monkeypatch):
+    provider = make_provider(provider_class=RadarExportProvider)
+    context = prepare_oauth_creation(provider)
+    context['persist'] = True
+    provider.store_in_session(provider.request, 'access_token', 'bearer-token')
+    pending = provider.get_from_session(provider.request, 'request')
+    writer = Mock()
+    provider.mapping = replace(provider.mapping, store_result=writer)
+    provider.render_export_result = Mock(return_value='confirmed result')
+    monkeypatch.setattr('rdmo_radar.exports.providers.Project.objects.get', lambda **kwargs: provider.project)
+
+    def post(url, **kwargs):
+        assert url == pending[1]
+        assert kwargs['json'] is pending[2]
+        # Also mutate the former scope to verify the active destination is an
+        # independent snapshot, rather than another reference to session data.
+        context['dataset']['scope']['set_index'] = 99
+        context['radar_url'] = 'https://another-radar.test'
+        context['language'] = 'en'
+        provider.pop_from_session(provider.request, 'export_context')
+        result = requests.Response()
+        result.status_code = 201
+        result._content = b'{"id": "confirmed"}'
+        return result
+
+    http = Mock(side_effect=post)
+    monkeypatch.setattr('rdmo.services.providers.requests.post', http)
+    assert provider.post(provider.request, *pending[1:]) == 'confirmed result'
+    http.assert_called_once()
+    dataset = ExportDataset('dataset:10|3', 'Dataset', {'set_prefix': '10', 'set_index': 3})
+    writer.assert_called_once_with(
+        provider.project, dataset, 'confirmed', 'https://radar.example.test/radar/de/dataset/confirmed',
+    )
+    assert provider._active_export == (None, None)
+    # A later confirmation cannot reuse the destination of an earlier POST.
+    provider.render_export_result.reset_mock()
+    provider.post_success(provider.request, SimpleNamespace(json=lambda: {'id': 'later'}))
+    provider.render_export_result.assert_called_once_with(provider.request, 'later', None, stored=False)
+    writer.assert_called_once()
+
+
 def test_oauth_workspace_callback_stores_locally_sorted_choices(monkeypatch):
     provider = make_provider(provider_class=RadarExportProvider)
     provider.store_in_session(provider.request, 'project_id', 1)
@@ -294,7 +454,7 @@ def test_oauth_workspace_callback_stores_locally_sorted_choices(monkeypatch):
 def test_credentials_provider_uses_json_api_and_registered_url():
     provider = make_provider()
 
-    assert provider.token_url == 'https://radar.example.test/radar/api/tokens'
+    assert provider.client.token_url == 'https://radar.example.test/radar/api/tokens'
     assert provider.client_id == 'configured-client-id'
     assert provider.redirect_url == 'https://rdmo.example.test/'
 
@@ -312,7 +472,7 @@ def test_credentials_redirect_url_preserves_origin_only():
 
 
 def fake_client(monkeypatch, **methods):
-    client = SimpleNamespace(**methods)
+    client = SimpleNamespace(radar_url='https://radar.example.test', **methods)
     monkeypatch.setattr('rdmo_radar.exports.credentials.RadarClient', lambda *args: client)
     return client
 
@@ -335,17 +495,21 @@ def test_credentials_are_exchanged_without_being_stored(monkeypatch):
     assert 'radar-password' not in repr(provider.request.session)
 
 
-def test_failed_login_does_not_store_credentials(monkeypatch):
+@pytest.mark.parametrize('status', [400, 401])
+def test_failed_login_does_not_store_credentials(monkeypatch, caplog, status):
     provider = make_provider({'stage': 'credentials', 'username': 'radar-user', 'password': 'wrong-password'})
 
     def authenticate(*args):
-        raise RadarAuthenticationError('authenticate', 401)
+        raise http_error(status)
 
     fake_client(monkeypatch, authenticate=authenticate)
     monkeypatch.setattr(provider, 'render_credentials_form', lambda form: form)
     form = provider.submit_credentials_form()
     assert not form.is_valid()
     assert form.non_field_errors()
+    assert 'log in again' in str(form.non_field_errors())
+    assert 'Private upstream error' not in str(form.non_field_errors())
+    assert 'Private upstream error' not in caplog.text
     assert provider.request.session == {}
 
 
@@ -375,7 +539,7 @@ def test_workspace_authentication_failure_drops_token_and_preserves_choices(monk
     provider.store_in_session(provider.request, 'project_id', 1)
 
     def get_workspaces(token):
-        raise RadarAuthenticationError('get_workspaces', 401)
+        raise http_error(401)
 
     fake_client(monkeypatch, get_workspaces=get_workspaces)
     monkeypatch.setattr(provider, 'render_credentials_form', lambda form=None, error=None: error)
@@ -384,13 +548,15 @@ def test_workspace_authentication_failure_drops_token_and_preserves_choices(monk
     assert provider.get_from_session(provider.request, 'dataset_choices') == [(0, 'Dataset')]
 
 
-@pytest.mark.parametrize('error_type', [RadarAuthorizationError, RadarRequestError, RadarProtocolError])
-def test_workspace_non_authentication_failure_preserves_token(monkeypatch, error_type):
+@pytest.mark.parametrize('error', [
+    http_error(403), requests.ConnectionError('Private connection error'), RadarProtocolError(),
+])
+def test_workspace_non_authentication_failure_preserves_token(monkeypatch, error):
     provider = make_provider()
     provider.store_in_session(provider.request, 'access_token', 'bearer-token')
 
     def get_workspaces(token):
-        raise error_type('get_workspaces')
+        raise error
 
     fake_client(monkeypatch, get_workspaces=get_workspaces)
     monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
@@ -423,15 +589,165 @@ def test_cancel_clears_export_session(monkeypatch):
     assert provider.request.session == {}
 
 
-def export_provider():
-    provider = make_provider({'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'})
+def export_provider(provider_class=RadarCredentialsExportProvider):
+    provider = make_provider({'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'}, provider_class)
     for key, value in (
         ('access_token', 'bearer-token'), ('dataset_choices', [(0, 'Dataset')]),
         ('workspace_choices', [('workspace-1', 'Workspace')]), ('radar_urls', [None]), ('project_id', 1),
     ):
         provider.store_in_session(provider.request, key, value)
-    provider.get_post_data = lambda index: {'descriptiveMetadata': {'title': 'Dataset'}}
+    provider.get_datasets = lambda: [ExportDataset('0', 'Dataset', {'set_prefix': '', 'set_index': 0})]
+    provider.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Dataset'))
     return provider
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('payload', [
+    {},
+    {
+        'technicalMetadata': {'retentionPeriod': 3, 'archiveDate': 0, 'responsibleEmail': 'other@example.test'},
+        'descriptiveMetadata': {'title': '', 'language': 'custom-language', 'keywords': {'keyword': []}},
+        'customField': {'enabled': False, 'values': [0, None]},
+    },
+])
+def test_payload_override_is_sent_unchanged_without_canonical_mapping(monkeypatch, provider_class, payload):
+    calls = []
+
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            calls.append(dataset)
+            return payload
+
+    provider = export_provider(ExampleRadarExportProvider)
+    service = provider.get_service()
+    service.mapping = Mock(side_effect=AssertionError('Canonical mapping called'))
+    service.serializer = Mock(side_effect=AssertionError('Canonical serializer called'))
+    service.writer = Mock()
+    original = deepcopy(payload)
+    captured = []
+
+    def create_dataset(token, workspace, body):
+        captured.append(body)
+        assert (token, workspace) == ('bearer-token', 'workspace-1')
+        return {'id': 'confirmed'}
+
+    def post(request, url, body):
+        captured.append(body)
+        assert url == 'https://radar.example.test/radar/api/workspaces/workspace-1/datasets'
+        return 'sent'
+
+    fake_client(monkeypatch, create_dataset=create_dataset)
+    monkeypatch.setattr(provider, 'post', post, raising=False)
+    monkeypatch.setattr(provider, 'render_export_result', lambda *args, **kwargs: 'sent')
+
+    assert provider.get_export_form().mapping_warnings == []
+    assert calls == []
+    assert provider.submit() == 'sent'
+    assert [dataset.key for dataset in calls] == ['0']
+    assert len(captured) == 1
+    assert captured[0] is payload
+    assert payload == original
+    service.mapping.assert_not_called()
+    service.serializer.assert_not_called()
+    if issubclass(provider_class, RadarCredentialsExportProvider):
+        service.writer.assert_called_once_with(calls[0], 'confirmed',
+                                               'https://radar.example.test/radar/en/dataset/confirmed')
+    else:
+        service.writer.assert_not_called()
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize(('result', 'error_type'), [
+    (None, 'TypeError'), ([], 'TypeError'), ({'value': object()}, 'TypeError'),
+    ({'value': float('nan')}, 'ValueError'), (RuntimeError('Private payload details'), 'RuntimeError'),
+])
+def test_payload_preparation_failure_preserves_form_without_submission(
+    monkeypatch, caplog, provider_class, result, error_type,
+):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+    provider = export_provider(ExampleRadarExportProvider)
+    provider.get_service().writer = Mock()
+    no_submission = Mock(side_effect=AssertionError('Invalid payload submitted'))
+    fake_client(monkeypatch, create_dataset=no_submission)
+    monkeypatch.setattr(provider, 'post', no_submission, raising=False)
+    for module in ('credentials', 'providers'):
+        monkeypatch.setattr(f'rdmo_radar.exports.{module}.render',
+                            lambda request, template, context, status: context)
+
+    form = provider.submit()['form']
+
+    assert form.is_bound
+    assert form.cleaned_data['dataset'] == '0'
+    assert form.cleaned_data['workspace'] == 'workspace-1'
+    assert 'could not be prepared' in str(form.non_field_errors())
+    assert 'Private payload details' not in str(form.errors)
+    assert 'Private payload details' not in caplog.text
+    assert f'provider={provider.class_name} error_type={error_type}' in caplog.text
+    assert provider.get_from_session(provider.request, 'access_token') == 'bearer-token'
+    assert provider.get_from_session(provider.request, 'export_context') is None
+    assert provider.get_from_session(provider.request, 'operation') is None
+    no_submission.assert_not_called()
+    provider.get_service().writer.assert_not_called()
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('selection', ['invalid_workspace', 'stale_project', 'removed_dataset'])
+def test_payload_hook_is_not_called_for_invalid_selections(monkeypatch, provider_class, selection):
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            pytest.fail('Payload hook called for an invalid selection')
+
+    provider = export_provider(ExampleRadarExportProvider)
+    if selection == 'invalid_workspace':
+        provider.request.POST['workspace'] = 'unlisted'
+    elif selection == 'stale_project':
+        provider.store_in_session(provider.request, 'project_id', 2)
+    else:
+        provider.get_datasets = lambda: []
+    for module in ('credentials', 'providers'):
+        monkeypatch.setattr(f'rdmo_radar.exports.{module}.render',
+                            lambda request, template, context, status: context)
+    assert provider.submit()['form'].errors
+
+
+@pytest.mark.parametrize('overridden', [False, True])
+@pytest.mark.parametrize('show_warnings', [None, True, False])
+def test_mapping_warnings_follow_payload_hook_and_explicit_setting(overridden, show_warnings):
+    class ExampleRadarExportProvider(RadarExportProvider):
+        show_mapping_warnings = show_warnings
+
+    if overridden:
+        ExampleRadarExportProvider.get_payload = Mock(side_effect=AssertionError('Payload hook called for warnings'))
+    provider = export_provider(ExampleRadarExportProvider)
+    service = provider.get_service()
+    service.mapping = Mock(return_value=MappingResult(RadarMetadata(title='Dataset')))
+
+    warnings = provider.get_mapping_warnings()
+
+    enabled = show_warnings if show_warnings is not None else not overridden
+    assert bool(warnings) == enabled
+    assert service.mapping.call_count == int(enabled)
+    if overridden:
+        ExampleRadarExportProvider.get_payload.assert_not_called()
+
+
+def test_custom_mapping_warnings_remain_independently_overridable():
+    class ExampleRadarExportProvider(RadarExportProvider):
+        def get_payload(self, dataset):
+            pytest.fail('Payload hook called for warnings')
+
+        def get_mapping_warnings(self):
+            return [{'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': ()}]
+
+    provider = export_provider(ExampleRadarExportProvider)
+    assert provider.get_export_form().mapping_warnings == [{
+        'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': (),
+    }]
 
 
 def test_dataset_export_clears_bearer_token(monkeypatch):
@@ -443,40 +759,57 @@ def test_dataset_export_clears_bearer_token(monkeypatch):
         return {'id': 'radar-1'}
 
     fake_client(monkeypatch, create_dataset=create_dataset)
-    monkeypatch.setattr(provider, 'complete_export', lambda request, radar_id: ('success', radar_id))
+    monkeypatch.setattr(
+        provider, 'render_export_result', lambda request, radar_id, url, **kwargs: ('success', radar_id),
+    )
     assert provider.submit_export_form() == ('success', 'radar-1')
-    assert captured == [('bearer-token', 'workspace-1', {'descriptiveMetadata': {'title': 'Dataset'}})]
+    assert len(captured) == 1
+    assert captured[0][:2] == ('bearer-token', 'workspace-1')
+    assert captured[0][2]['descriptiveMetadata'] == {'title': 'Dataset'}
     assert provider.request.session == {}
 
 
-@pytest.mark.parametrize('error_type', [RadarAuthorizationError, RadarMetadataRejected,
-                                       RadarRequestError, RadarProtocolError])
-def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, error_type):
+@pytest.mark.parametrize('raw_payload', [False, True])
+@pytest.mark.parametrize(('error', 'expected'), [
+    (http_error(403), 'does not have permission'),
+    (http_error(400), 'rejected the dataset metadata'),
+    (http_error(422), 'rejected the dataset metadata'),
+    (http_error(500), 'existing draft'),
+    (requests.Timeout('Private timeout error'), 'existing draft'),
+    (RadarProtocolError(), 'existing draft'),
+])
+def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, caplog, error, expected, raw_payload):
     provider = export_provider()
     calls = []
+    payload = {'technicalMetadata': {}, 'descriptiveMetadata': {'title': 'Custom request'}}
+    if raw_payload:
+        monkeypatch.setattr(RadarCredentialsExportProvider, 'get_payload', lambda self, dataset: payload)
 
     def create_dataset(*args):
         calls.append(args)
-        raise error_type('create_dataset')
+        raise error
 
     fake_client(monkeypatch, create_dataset=create_dataset)
     monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
     context = provider.submit_export_form()
     assert len(calls) == 1
+    if raw_payload:
+        assert calls[0][2] is payload
     assert context['form'].is_bound
     assert context['form'].cleaned_data['dataset'] == '0'
     assert context['form'].cleaned_data['workspace'] == 'workspace-1'
     assert provider.get_from_session(provider.request, 'access_token') == 'bearer-token'
     assert 'log in' not in str(context['error'])
-    if error_type in (RadarRequestError, RadarProtocolError):
-        assert 'existing draft' in str(context['error'])
+    assert expected in str(context['error'])
+    assert 'Private' not in str(context['error'])
+    assert 'Private' not in caplog.text
 
 
 def test_dataset_authentication_failure_returns_to_credentials(monkeypatch):
     provider = export_provider()
 
     def create_dataset(*args):
-        raise RadarAuthenticationError('create_dataset', 401)
+        raise http_error(401)
 
     fake_client(monkeypatch, create_dataset=create_dataset)
     monkeypatch.setattr(provider, 'render_credentials_form', lambda error: error)
@@ -496,21 +829,22 @@ def test_invalid_export_form_does_not_call_client(monkeypatch):
 @pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
 def test_direct_export_uses_rddm_9_3_and_millisecond_timestamps(monkeypatch, provider_class):
     provider = make_provider(provider_class=provider_class)
-    monkeypatch.setattr('rdmo_radar.exports.providers.time.time', lambda: 1_725_000_000.123)
-    monkeypatch.setattr(provider, 'get_dataset', lambda set_index: {'title': 'Draft dataset'})
+    provider.get_service().clock = lambda: 1_725_000_000.123
+    provider.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Draft dataset'))
 
-    payload = provider.get_post_data(0)
+    payload = provider.get_payload(ExportDataset('0', 'Dataset', {'set_prefix': '', 'set_index': 0}))
 
     assert payload['technicalMetadata']['schema'] == {'key': 'RDDM', 'version': '9.3'}
     assert payload['technicalMetadata']['archiveDate'] == 1_725_000_000_123
     assert payload['technicalMetadata']['publishDate'] == 1_725_000_000_123
+    assert payload['technicalMetadata']['responsibleEmail'] == provider.request.user.email
     assert payload['descriptiveMetadata'] == {'title': 'Draft dataset'}
 
 
 def test_direct_draft_omits_unavailable_descriptive_metadata():
     provider = make_provider()
-    provider.compute_metadata = lambda index: RadarMetadata()
-    assert provider.get_dataset(0) == {'title': 'Dataset #1'}
+    provider.get_service().mapping = lambda context: MappingResult(RadarMetadata())
+    assert dataset_payload(provider, 0) == {'title': 'Dataset #1'}
 
 
 def test_provider_form_validates_choices_and_escapes_export_link():
@@ -536,8 +870,8 @@ def test_provider_form_validates_choices_and_escapes_export_link():
 
 def test_dataset_resource_type_does_not_use_file_format(db):
     export = make_export({'project/dataset/description': 'Resource', 'project/dataset/format': 'text/csv'})
-    assert export.get_dataset(0)['resource'] == {'value': 'Resource', 'resourceType': None}
-    assert export.compute_metadata(0).mapping_issues == []
+    assert dataset_payload(export, 0)['resource'] == {'value': 'Resource', 'resourceType': None}
+    assert read_metadata(export, 0).issues == ()
     assert XMLVocabulary.data_source_options['radar_data_source/trial'] == 'Trial'
     assert XMLVocabulary.resource_type_general_options['resource_type_general/computational_notebook'] == \
         'ComputationalNotebook'
@@ -561,7 +895,7 @@ def test_compute_metadata_keeps_primary_structured_name(db):
     export = make_export()
     for part, value in [('name', 'Doe, Jane'), ('given_name', 'Jane'), ('family_name', 'Doe')]:
         add_answer(export.project, f'project/dataset/creator/{part}', value, set_prefix='0')
-    name = export.compute_metadata(0).creators[0]
+    name = read_metadata(export, 0).metadata.creators[0]
     assert name.name == 'Doe, Jane'
     assert name.given_name == 'Jane'
     assert name.family_name == 'Doe'
@@ -592,17 +926,18 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
 
 
 def test_zip_export_is_complete_and_readable():
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(title='Project')
-    export.get_dataset_indices = lambda: [0, 1]
-    export.get_dataset_title = lambda set_index: f'dataset-{set_index + 1}'
-    export.compute_metadata = lambda set_index: complete_metadata(title=f'Dataset {set_index + 1}')
+    export.get_datasets = lambda: [0, 1]
+    export.get_service().mapping = lambda context: MappingResult(
+        complete_metadata(title=f'Dataset {context.set_index + 1}'),
+    )
 
     response = export.render()
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert archive.namelist() == ['dataset-1.xml', 'dataset-2.xml']
-        assert b'<re:title>Dataset 1</re:title>' in archive.read('dataset-1.xml')
+        assert archive.namelist() == ['Dataset 1.xml', 'Dataset 2.xml']
+        assert b'<re:title>Dataset 1</re:title>' in archive.read('Dataset 1.xml')
         for file_name in archive.namelist():
             assert validate_radar_xml(archive.read(file_name)) is None
 
@@ -656,13 +991,13 @@ def test_renderer_output_validates_against_rddm_9_3_schema():
 
 
 def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_dataset_indices = lambda: [0, 1]
-    export.get_dataset_title = lambda set_index: f'dataset-{set_index + 1}'
-    export.compute_metadata = lambda set_index: \
-        complete_metadata() if set_index == 0 else RadarMetadata(title='Incomplete dataset')
+    export.get_datasets = lambda: [0, 1]
+    export.get_service().mapping = lambda context: MappingResult(
+        complete_metadata() if context.set_index == 0 else RadarMetadata(title='Incomplete dataset'),
+    )
     monkeypatch.setattr(
         'rdmo_radar.exports.exports.render',
         lambda request, template, context: SimpleNamespace(
@@ -677,38 +1012,37 @@ def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
     assert response.status_code == 200
     assert response.template == 'plugins/exports_radar_xml_validation.html'
     assert response.context['project_url'] == '/projects/1/'
-    assert [file.file_name for file in response.context['files']] == ['dataset-1.xml', 'dataset-2.xml']
-    assert not response.context['files'][0].has_warnings
-    assert response.context['files'][1].has_warnings
-    assert {field.path for field in response.context['files'][1].missing_fields} >= {'identifier', 'creators.creator'}
+    assert [file['file_name'] for file in response.context['files']] == ['Dataset.xml', 'Incomplete dataset.xml']
+    assert not response.context['files'][0]['has_warnings']
+    assert response.context['files'][1]['has_warnings']
+    missing = {field['path'] for field in response.context['files'][1]['missing_fields']}
+    assert missing >= {'identifier', 'creators.creator'}
 
 
 def test_invalid_xml_export_can_be_downloaded_after_confirmation():
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_dataset_indices = lambda: [0]
-    export.get_dataset_title = lambda index: 'incomplete'
-    export.compute_metadata = lambda index: RadarMetadata(title='Incomplete dataset')
+    export.get_datasets = lambda: [0]
+    export.get_service().mapping = lambda context: MappingResult(RadarMetadata(title='Incomplete dataset'))
 
     response = export.render()
 
     assert response.status_code == 200
     assert response['Content-Type'] == 'application/zip'
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert archive.namelist() == ['incomplete.xml']
-        xml_data = archive.read('incomplete.xml')
+        assert archive.namelist() == ['Incomplete dataset.xml']
+        xml_data = archive.read('Incomplete dataset.xml')
         assert b'<re:title>Incomplete dataset</re:title>' in xml_data
         assert validate_radar_xml(xml_data) is not None
 
 
 def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch):
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
-    export.get_dataset_indices = lambda: [0]
-    export.get_dataset_title = lambda index: None
-    export.compute_metadata = lambda index: RadarMetadata()
+    export.get_datasets = lambda: [0]
+    export.get_service().mapping = lambda context: MappingResult(RadarMetadata())
     monkeypatch.setattr(
         'rdmo_radar.exports.exports.render',
         lambda request, template, context: SimpleNamespace(status_code=200, context=context),
@@ -717,11 +1051,11 @@ def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch)
     response = export.render()
 
     assert response.status_code == 200
-    missing = response.context['files'][0].missing_fields
+    missing = response.context['files'][0]['missing_fields']
     assert ('Identifier type', 'identifier.identifierType') in {
-        (str(field.label), field.path) for field in missing
+        (str(field['label']), field['path']) for field in missing
     }
-    assert any(field.path == 'title' for field in missing)
+    assert any(field['path'] == 'title' for field in missing)
 
 
 def test_validation_returns_all_unique_schema_errors(monkeypatch):
@@ -740,17 +1074,16 @@ def test_validation_returns_all_unique_schema_errors(monkeypatch):
 
 
 def test_xml_generation_failure_still_blocks_export(caplog):
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(pk=1, title='Project')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
-    export.get_dataset_indices = lambda: [0]
-    export.get_dataset_title = lambda index: 'broken'
-    export.compute_metadata = lambda index: (_ for _ in ()).throw(ValueError('internal details'))
+    export.get_datasets = lambda: [0]
+    export.get_service().mapping = lambda context: (_ for _ in ()).throw(ValueError('internal details'))
 
     response = export.render()
 
     assert response.status_code == 400
     assert response['Content-Type'].startswith('text/plain')
-    assert response.content == b'RADAR XML export could not generate "broken.xml".'
+    assert response.content == b'RADAR XML export could not generate "1.xml".'
     assert b'internal details' not in response.content
     assert 'internal details' in caplog.text

@@ -1,57 +1,52 @@
 import logging
-import re
 import zipfile
-from dataclasses import dataclass
 
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 
-from rdmo.core.exports import prettify_xml
+from rdmo.projects.exports import Export
 
-from rdmo_radar.metadata.types import MappingIssue
-from rdmo_radar.metadata.validation import missing_required_fields
-from rdmo_radar.metadata.xml import to_xml_payload
+from rdmo_radar.exceptions import XmlExportError
+from rdmo_radar.factories import build_xml_export_service
+from rdmo_radar.mappings import validate_datasets
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
-from .base import REQUIRED_FIELD_LABELS, RadarProjectExportBase
-from .renderers import RadarExportRenderer
-from .validation import get_radar_validation_errors
+from .validation import REQUIRED_FIELD_LABELS
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class MissingMetadataField:
-    path: str
-    label: str
+class RadarExport(Export):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
 
+    def get_service(self):
+        if self.project is None and self.snapshot is not None:
+            self.project = self.snapshot.project
+        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping))
+        if getattr(self, '_service_key', None) != key:
+            self._service = build_xml_export_service(self.project, snapshot=self.snapshot, profile=self.mapping)
+            self._service_key = key
+        return self._service
 
-@dataclass(frozen=True, slots=True)
-class RadarXmlExportFile:
-    file_name: str
-    xml_data: bytes
-    missing_fields: tuple[MissingMetadataField, ...]
-    validation_errors: tuple[str, ...]
-    mapping_issues: tuple[MappingIssue, ...] = ()
-
-    @property
-    def has_warnings(self):
-        return bool(self.missing_fields or self.validation_errors or self.mapping_issues)
-
-
-class RadarExport(RadarProjectExportBase):
-    def get_dataset(self, set_index):
-        metadata = self.compute_metadata(set_index)
-        self.mapping_issues = metadata.mapping_issues
-        return to_xml_payload(metadata)
+    def get_datasets(self):
+        """Return the datasets that this mapping can export from the RDMO project."""
+        service = self.get_service()
+        if getattr(self, '_dataset_service', None) is not service:
+            self._datasets = validate_datasets(self.mapping.get_datasets(self.project, service.reader))
+            self._dataset_service = service
+        return self._datasets
 
     def render(self):
         try:
             files = self.prepare_files()
-        except RadarXmlGenerationError as error:
-            return HttpResponseBadRequest(str(error), content_type='text/plain')
+        except XmlExportError as error:
+            logger.exception('Could not generate RADAR XML file %s', error.file_name)
+            message = _('RADAR XML export could not generate "%(file_name)s".') % {'file_name': error.file_name}
+            return HttpResponseBadRequest(message, content_type='text/plain')
 
-        if any(file.has_warnings for file in files) and self.request.GET.get('download') != '1':
+        if any(file['has_warnings'] for file in files) and self.request.GET.get('download') != '1':
             return render(self.request, 'plugins/exports_radar_xml_validation.html', {
                 'project': self.project,
                 'project_url': self.project.get_absolute_url(),
@@ -61,53 +56,32 @@ class RadarExport(RadarProjectExportBase):
         return self.render_zip(files)
 
     def prepare_files(self):
-        files = []
-        names = set()
-        for set_index in self.get_dataset_indices():
-            title = self.get_dataset_title(set_index) or str(set_index + 1)
-            stem = re.sub(r'[/\\\x00-\x1f\x7f]', '_', title).strip(' .')[:180] or str(set_index + 1)
-            file_name = f'{stem}.xml'
-            suffix = 2
-            while file_name.casefold() in names:
-                file_name = f'{stem}-{suffix}.xml'
-                suffix += 1
-            names.add(file_name.casefold())
-            try:
-                metadata = self.compute_metadata(set_index)
-                xmldata = prettify_xml(RadarExportRenderer().render(to_xml_payload(metadata)))
-            except Exception as error:
-                logger.exception('Could not generate RADAR XML file %s', file_name)
-                raise RadarXmlGenerationError(
-                    _('RADAR XML export could not generate "%(file_name)s".') % {'file_name': file_name}
-                ) from error
-
-            missing_fields = tuple(
-                MissingMetadataField(path, REQUIRED_FIELD_LABELS.get(path, path))
-                for path in missing_required_fields(metadata)
-            )
-            try:
-                validation_errors = get_radar_validation_errors(xmldata)
-            except Exception:
-                logger.exception('Could not validate RADAR XML file %s', file_name)
-                validation_errors = (_('The RDDM schema validation could not be completed.'),)
-
-            files.append(RadarXmlExportFile(
-                file_name=file_name,
-                xml_data=xmldata,
-                missing_fields=missing_fields,
-                validation_errors=validation_errors,
-                mapping_issues=tuple(metadata.mapping_issues),
-            ))
-        return files
+        files = self.get_service().compute_files(self.get_datasets())
+        return [{
+            'file_name': file.file_name,
+            'xml_data': file.xml_data,
+            'missing_fields': tuple(
+                {'path': path, 'label': REQUIRED_FIELD_LABELS.get(path, path)} for path in file.missing_fields
+            ),
+            'validation_errors': file.validation_errors if not file.validation_failed else (
+                _('The RDDM schema validation could not be completed.'),
+            ),
+            'mapping_issues': file.issues,
+            'has_warnings': file.has_warnings,
+        } for file in files]
 
     def render_zip(self, files):
         response = HttpResponse(content_type='application/zip')
         response['Content-Disposition'] = f'filename="{self.project.title}.zip"'
         with zipfile.ZipFile(response, 'w') as zip_file:
             for file in files:
-                zip_file.writestr(file.file_name, file.xml_data)
+                zip_file.writestr(file['file_name'], file['xml_data'])
         return response
 
 
-class RadarXmlGenerationError(Exception):
-    pass
+class RadarProjectExport(RadarExport):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkExport(RadarExport):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING

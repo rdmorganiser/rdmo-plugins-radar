@@ -1,21 +1,12 @@
+from pathlib import Path
+from tempfile import gettempdir
+
+from rdmo.core.settings import *  # noqa: F403
+
 SECRET_KEY = 'test-secret-key'
 
-INSTALLED_APPS = [
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sites',
-    'rdmo.accounts',
-    'rdmo.conditions',
-    'rdmo.core',
-    'rdmo.domain',
-    'rdmo.options',
-    'rdmo.projects',
-    'rdmo.questions',
-    'rdmo.services',
-    'rdmo.tasks',
-    'rdmo.views',
-    'rdmo_radar',
-]
+INSTALLED_APPS = [*INSTALLED_APPS, 'rdmo_radar']  # noqa: F405
+
 
 DATABASES = {
     'default': {
@@ -34,6 +25,14 @@ LANGUAGE_CODE = 'en'
 LANGUAGES = [('en', 'English'), ('de', 'Deutsch')]
 REPLACE_MISSING_TRANSLATION = True
 ROOT_URLCONF = 'tests.urls'
+ALLOWED_HOSTS = ['testserver']
+MIDDLEWARE = [
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+]
 
 RADAR_PROVIDER = {
     'authentication_mode': 'credentials',
@@ -42,3 +41,7 @@ RADAR_PROVIDER = {
     'client_secret': 'client-secret',
     'redirect_uri': 'https://rdmo.example.test/services/oauth/radar/callback/',
 }
+
+STATIC_URL = '/static/'
+STATIC_ROOT = str(Path(gettempdir()) / 'radar-test-static')
+COMPRESS_ENABLED = False

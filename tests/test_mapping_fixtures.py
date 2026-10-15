@@ -1,7 +1,6 @@
 import io
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
 from xml.etree import ElementTree
 
 import pytest
@@ -17,17 +16,23 @@ from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 from rdmo.questions.models import Catalog, QuestionSet
 
-from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExport, RadarExportProvider
+from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors
 from rdmo_radar.metadata.crosswalks import SUBJECT_OPTIONS
-from rdmo_radar.metadata.rdmo import RDMOReadContext
-from rdmo_radar.metadata.types import Agent, FundingReference, Identifier, RadarMetadata, Resource, Rights, SubjectArea
+from rdmo_radar.metadata.types import (
+    FundingReference,
+    Identifier,
+    PersonOrOrganization,
+    RadarMetadata,
+    Resource,
+    Rights,
+    SubjectArea,
+)
 from rdmo_radar.metadata.validation import missing_required_fields
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
-XML_DIRECTORY = Path(__file__).parent / 'xml'
-URI = '{http://purl.org/dc/elements/1.1/}uri'
+from .helpers import XML_DIRECTORY, dataset_payload, dataset_title, export_for, make_prototype, read_metadata
 
 
 @pytest.fixture(scope='session')
@@ -42,33 +47,7 @@ def imported_catalog(django_db_setup, django_db_blocker):
 
 @pytest.fixture
 def prototype(imported_catalog, db):
-    root = ElementTree.parse(XML_DIRECTORY / 'RADAR Plugin Testprojekt.xml').getroot()
-    project = Project.objects.create(title=root.findtext('title'), catalog_id=imported_catalog)
-    attributes = {attribute.uri: attribute for attribute in Attribute.objects.all()}
-    options = {option.uri: option for option in Option.objects.all()}
-    Value.objects.bulk_create([
-        Value(
-            project=project,
-            attribute=attributes[node.find('attribute').get(URI)],
-            option=options.get(node.find('option').get(URI)),
-            text=node.findtext('text') or '',
-            external_id=node.findtext('external_id') or '',
-            value_type=node.findtext('value_type'),
-            created=node.findtext('created'),
-            updated=node.findtext('updated'),
-            set_prefix=node.findtext('set_prefix') or '',
-            set_index=int(node.findtext('set_index')),
-            collection_index=int(node.findtext('collection_index')),
-        ) for node in root.findall('./values/value')
-    ])
-    return project
-
-
-def export_for(project, cls=RadarExport):
-    export = cls('radar', 'RADAR', f'rdmo_radar.exports.{cls.__name__}')
-    export.project = project
-    export.request = SimpleNamespace(session={}, user=SimpleNamespace(email='user@example.test'), LANGUAGE_CODE='en')
-    return export
+    return make_prototype(imported_catalog)
 
 
 def add_value(project, path, text='', option=None, **kwargs):
@@ -136,24 +115,24 @@ def test_downloaded_radar_draft_parses_expected_metadata(observed_draft_metadata
 
 def test_updated_prototype_xml_matches_downloaded_radar_draft(observed_draft_project, observed_draft_metadata):
     export = export_for(observed_draft_project)
-    assert export.compute_metadata(0) == observed_draft_metadata
-    assert export.compute_metadata(1).data_sources == []
+    assert read_metadata(export, 0).metadata == observed_draft_metadata
+    assert read_metadata(export, 1).metadata.data_sources == []
     first = export.prepare_files()[0]
     expected = ElementTree.parse(XML_DIRECTORY / 'RADAR_DATASET_DESCRIPTIVE_METADATA.xml').getroot()
-    assert xml_structure(ElementTree.fromstring(first.xml_data)) == xml_structure(expected)
-    assert tuple(field.path for field in first.missing_fields) == missing_required_fields(observed_draft_metadata)
-    assert first.has_warnings and first.validation_errors and not first.mapping_issues
+    assert xml_structure(ElementTree.fromstring(first['xml_data'])) == xml_structure(expected)
+    assert tuple(field['path'] for field in first['missing_fields']) == missing_required_fields(observed_draft_metadata)
+    assert first['has_warnings'] and first['validation_errors'] and not first['mapping_issues']
 
     export.request = RequestFactory().get('/', {'download': '1'})
     with zipfile.ZipFile(io.BytesIO(export.render().content)) as archive:
-        assert archive.read(first.file_name) == first.xml_data
+        assert archive.read(first['file_name']) == first['xml_data']
 
 
 @pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
 def test_both_providers_export_observed_radar_draft(observed_draft_project, cls):
     provider = export_for(observed_draft_project, cls)
     # Hand-written REST expectation: do not derive wire shapes from the XML fixture/parser.
-    assert provider.get_post_data('0')['descriptiveMetadata'] == {
+    assert provider.get_service().compute_payload('0', provider.request.user.email).payload['descriptiveMetadata'] == {
         'title': 'Radar Testdatensatz Nr 1',
         'additionalTitles': {'additionalTitle': [{'value': 'RADAR Test', 'additionalTitleType': 'OTHER'}]},
         'keywords': {'keyword': [
@@ -175,14 +154,15 @@ def test_both_providers_export_observed_radar_draft(observed_draft_project, cls)
             'funderName': 'DFG', 'awardNumber': '123345', 'awardTitle': 'Program42',
         }]},
     }
-    assert 'dataSources' not in provider.get_post_data('1')['descriptiveMetadata']
+    payload = provider.get_service().compute_payload('1', provider.request.user.email).payload
+    assert 'dataSources' not in payload['descriptiveMetadata']
 
 
 def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
     export = export_for(prototype)
-    assert export.get_dataset_indices() == [0, 1]
-    first = export.compute_metadata(0)
-    second = export.compute_metadata(1)
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1']
+    first = read_metadata(export, 0).metadata
+    second = read_metadata(export, 1).metadata
     assert first.title == 'Radar Testdatensatz Nr 1'
     assert second.title == 'Radar Testdatensatz Nr 2'
     assert first.resource == Resource('ein Datensatz zum testen des neuen RADAR Plugins', None)
@@ -209,10 +189,11 @@ def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
 
 def test_file_formats_never_become_resource_types_or_mapping_issues(prototype):
     export = export_for(prototype)
-    metadata = export.compute_metadata(0)
+    result = read_metadata(export, 0)
+    metadata = result.metadata
     assert metadata.resource.resource_type is None
-    assert not any(issue.source == 'project/dataset/format' for issue in metadata.mapping_issues)
-    assert 'resource.resourceType' not in {issue.field for issue in metadata.mapping_issues}
+    assert not any(issue.source == 'project/dataset/format' for issue in result.issues)
+    assert 'resource.resourceType' not in {issue.field for issue in result.issues}
 
 
 @pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
@@ -220,13 +201,13 @@ def test_both_providers_offer_collection_labels_and_shared_metadata(prototype, c
     provider = export_for(prototype, cls)
     provider.prepare_export_session()
     assert provider.get_from_session(provider.request, 'dataset_choices') == [
-        (0, 'Radar Testdatensatz Nr 1'), (1, 'Radar Testdatensatz Nr 2'),
+        ('0', 'Radar Testdatensatz Nr 1'), ('1', 'Radar Testdatensatz Nr 2'),
     ]
     form = provider.get_export_form(workspace_choices=[('workspace', 'Workspace')])
     assert len(form.mapping_warnings) == 2
     assert 'Resource type' in form.mapping_warnings[0]['missing']
     assert not form.mapping_warnings[0]['issues']
-    payload = provider.get_post_data('0')['descriptiveMetadata']
+    payload = provider.get_service().compute_payload('0', provider.request.user.email).payload['descriptiveMetadata']
     assert payload['title'] == 'Radar Testdatensatz Nr 1'
     assert [source['dataSourceDetail'] for source in payload['dataSources']['dataSource']] == [
         'SURVEY', 'TRIAL', 'TRIAL',
@@ -234,22 +215,22 @@ def test_both_providers_offer_collection_labels_and_shared_metadata(prototype, c
     assert payload['rights']['controlledRights'] == 'CC_BY_4_0_ATTRIBUTION'
     assert payload['fundingReferences']['fundingReference'][0]['awardNumber'] == '123345'
     assert 'mapping_issues' not in payload
-    assert 'resource' not in provider.get_dataset('1')
+    assert 'resource' not in dataset_payload(provider, '1')
 
 
 def test_prototype_xml_reports_gaps_and_downloads_both_files(prototype):
     export = export_for(prototype)
     files = export.prepare_files()
-    assert [file.file_name for file in files] == ['Radar Testdatensatz Nr 1.xml', 'Radar Testdatensatz Nr 2.xml']
+    assert [file['file_name'] for file in files] == ['Radar Testdatensatz Nr 1.xml', 'Radar Testdatensatz Nr 2.xml']
     first = files[0]
-    assert first.has_warnings and not first.mapping_issues
+    assert first['has_warnings'] and not first['mapping_issues']
     assert {'identifier', 'creators.creator', 'productionYear', 'resource.resourceType'} <= {
-        field.path for field in first.missing_fields
+        field['path'] for field in first['missing_fields']
     }
-    assert b'Surveys' in first.xml_data
-    assert b'123345' in first.xml_data
-    assert b'Ancient Cultures' in first.xml_data
-    assert b'mapping_issues' not in first.xml_data
+    assert b'Surveys' in first['xml_data']
+    assert b'123345' in first['xml_data']
+    assert b'Ancient Cultures' in first['xml_data']
+    assert b'mapping_issues' not in first['xml_data']
     export.request = RequestFactory().get('/', {'download': '1'})
     response = export.render()
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
@@ -260,11 +241,11 @@ def test_explicit_title_precedes_collection_label_and_zip_names_are_safe(prototy
     add_value(prototype, 'project/dataset/title', '../same/name', set_index=0)
     add_value(prototype, 'project/dataset/title', '../same/name', set_index=1)
     export = export_for(prototype)
-    assert export.compute_metadata(0).title == '../same/name'
-    assert export.get_dataset_indices() == [0, 1]
+    assert read_metadata(export, 0).metadata.title == '../same/name'
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1']
     files = export.prepare_files()
-    assert len({file.file_name for file in files}) == 2
-    assert all('/' not in file.file_name and '\\' not in file.file_name for file in files)
+    assert len({file['file_name'] for file in files}) == 2
+    assert all('/' not in file['file_name'] and '\\' not in file['file_name'] for file in files)
 
 
 def test_nested_prefixes_do_not_mix_dataset_one_and_ten(prototype):
@@ -272,20 +253,20 @@ def test_nested_prefixes_do_not_mix_dataset_one_and_ten(prototype):
     add_value(prototype, 'project/dataset/description', 'Second dataset', set_prefix='1')
     add_value(prototype, 'project/dataset/description', 'Tenth dataset', set_prefix='10')
     export = export_for(prototype)
-    assert export.get_dataset_indices() == [0, 1, 10]
-    assert export.compute_metadata(1).resource.value == 'Second dataset'
-    assert export.compute_metadata(10).resource.value == 'Tenth dataset'
+    assert [dataset.key for dataset in export.get_datasets()] == ['0', '1', '10']
+    assert read_metadata(export, 1).metadata.resource.value == 'Second dataset'
+    assert read_metadata(export, 10).metadata.resource.value == 'Tenth dataset'
 
 
 def test_snapshot_selection_invalidates_answer_cache(prototype):
     snapshot = Snapshot.objects.create(project=prototype, title='Earlier answers')
     prototype.values.filter(snapshot=None, attribute__path='project/dataset/description').update(text='Current answer')
     export = export_for(prototype)
-    assert export.compute_metadata(0).resource.value == 'Current answer'
+    assert read_metadata(export, 0).metadata.resource.value == 'Current answer'
     export.snapshot = snapshot
-    assert export.compute_metadata(0).resource.value == 'ein Datensatz zum testen des neuen RADAR Plugins'
+    assert read_metadata(export, 0).metadata.resource.value == 'ein Datensatz zum testen des neuen RADAR Plugins'
     export.snapshot = None
-    assert export.compute_metadata(0).resource.value == 'Current answer'
+    assert read_metadata(export, 0).metadata.resource.value == 'Current answer'
 
 
 def test_all_catalog_subjects_have_schema_valid_crosswalks(prototype):
@@ -295,7 +276,7 @@ def test_all_catalog_subjects_have_schema_valid_crosswalks(prototype):
     for option in options:
         value.option = option
         value.save()
-        subjects = export_for(prototype).compute_metadata(0).subject_areas
+        subjects = read_metadata(export_for(prototype), 0).metadata.subject_areas
         assert subjects
         assert all(subject.additional_name for subject in subjects if subject.controlled_name == 'Other')
         assert all(get_radar_schema().maps.types[
@@ -303,14 +284,16 @@ def test_all_catalog_subjects_have_schema_valid_crosswalks(prototype):
         ].is_valid(subject.controlled_name) for subject in subjects)
     value.option = options.get(uri_path='research_fields/182')
     value.save()
-    assert [subject.controlled_name for subject in export_for(prototype).compute_metadata(0).subject_areas] == [
+    subjects = read_metadata(export_for(prototype), 0).metadata.subject_areas
+    assert [subject.controlled_name for subject in subjects] == [
         'Biology', 'Life Science', 'Medicine',
     ]
     value.option = options.get(uri_path='research_fields/211')
     value.save()
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert metadata.subject_areas[0].controlled_name == 'Other'
-    assert any('uncertain' in issue.reason for issue in metadata.mapping_issues)
+    assert any('uncertain' in issue.reason for issue in result.issues)
 
 
 def test_creation_methods_cover_every_catalog_option_and_preserve_free_text(prototype):
@@ -320,13 +303,14 @@ def test_creation_methods_cover_every_catalog_option_and_preserve_free_text(prot
     for index, option in enumerate(options):
         add_value(prototype, 'project/dataset/creation_methods', 'Custom method' if index == 14 else '',
                   option=option, set_prefix='0', collection_index=index + 3)
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert [source.resource_type for source in metadata.data_sources] == [
         'Observation', 'Survey', 'Survey', 'Trial', 'Trial', 'Trial', *(['Other'] * 9),
     ]
     assert metadata.data_sources[-1].value == 'Other: Custom method'
     with override('de'):
-        german = export_for(prototype).compute_metadata(0)
+        german = read_metadata(export_for(prototype), 0).metadata
     assert [source.resource_type for source in german.data_sources] == [
         source.resource_type for source in metadata.data_sources
     ]
@@ -345,15 +329,16 @@ def test_all_licenses_and_conflicts(prototype):
         value.option = Option.objects.get(uri_path=f'dataset_license_types/{suffix}')
         value.text = 'Custom terms' if suffix == '233' else ''
         value.save()
-        rights = export_for(prototype).compute_metadata(0).rights
+        rights = read_metadata(export_for(prototype), 0).metadata.rights
         assert rights.controlled == controlled
         if suffix == '233':
             assert 'Custom terms' in rights.additional
     add_value(prototype, 'project/dataset/sharing/conditions', collection_index=5,
               option=Option.objects.get(uri_path='dataset_license_types/71'))
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert metadata.rights is None
-    assert any(issue.field == 'rights' for issue in metadata.mapping_issues)
+    assert any(issue.field == 'rights' for issue in result.issues)
 
 
 def test_funders_without_markers_preserve_multiple_group_boundaries(prototype):
@@ -362,7 +347,7 @@ def test_funders_without_markers_preserve_multiple_group_boundaries(prototype):
     questionset.save()
     add_value(prototype, 'project/funder/name', 'Second funder', set_prefix='0', set_index=2)
     add_value(prototype, 'project/funder/grant_nr', 'SECOND', set_prefix='0', set_index=2)
-    funders = export_for(prototype).compute_metadata(0).funding_references
+    funders = read_metadata(export_for(prototype), 0).metadata.funding_references
     assert [(funder.funder_name, funder.award_number) for funder in funders] == [
         ('DFG', '123345'), ('Second funder', 'SECOND'),
     ]
@@ -372,25 +357,27 @@ def test_software_exports_only_explicit_details_and_warns_about_version(prototyp
     # This catalog asks the question directly on a non-collection project-level page.
     option = Option.objects.get(uri_path='dmp4nfdi/v2-0-0/ur00')
     add_value(prototype, 'project/dataset/usage_technology', 'Example Viewer', option=option)
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert [(software.name, software.software_type, software.version) for software in metadata.software] == [
         ('Example Viewer', 'Resource Viewing', None),
     ]
-    assert any(issue.field == 'software.softwareVersion' for issue in metadata.mapping_issues)
+    assert any(issue.field == 'software.softwareVersion' for issue in result.issues)
     xml = RadarExportRenderer().render(to_xml_payload(metadata))
     assert 'Example Viewer' in xml
     assert any('softwareVersion' in error for error in get_radar_validation_errors(xml))
 
 
 def test_complete_mapped_metadata_validates_against_rddm(prototype):
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     # Supply the fields deliberately absent from the interview prototype.
     metadata.identifier = Identifier('10.1234/example', 'DOI')
-    metadata.creators = [Agent('Example creator')]
-    metadata.publishers = [Agent('Example publisher')]
+    metadata.creators = [PersonOrOrganization('Example creator')]
+    metadata.publishers = [PersonOrOrganization('Example publisher')]
     metadata.production_year = '2026'
     metadata.resource.resource_type = 'Dataset'
-    metadata.rights_holders = [Agent('Example rights holder')]
+    metadata.rights_holders = [PersonOrOrganization('Example rights holder')]
     xml = RadarExportRenderer().render(to_xml_payload(metadata))
     assert get_radar_validation_errors(xml) == ()
 
@@ -409,27 +396,30 @@ def test_partner_groups_use_names_and_external_identifiers_not_role_labels(proto
                   external_id=orcid, **group)
     # A role-only group must not create a fictitious person named "Data management".
     add_value(prototype, 'project/partner/name', option=role, set_prefix='0|0', set_index=7)
-    metadata = export_for(prototype).compute_metadata(0)
-    assert [agent.name for agent in metadata.contributors] == ['Doe, Jane', 'Smith, John']
-    assert [agent.identifiers[0].value for agent in metadata.contributors] == [
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
+    assert [contributor.name for contributor in metadata.contributors] == ['Doe, Jane', 'Smith, John']
+    assert [contributor.identifiers[0].value for contributor in metadata.contributors] == [
         '0000-0001-2345-6789', '0000-0002-2345-6789',
     ]
-    assert all(agent.contributor_type == 'Other' for agent in metadata.contributors)
+    assert all(person_or_organization.contributor_type == 'Other' for person_or_organization in metadata.contributors)
     assert '&lt;a ' not in RadarExportRenderer().render(to_xml_payload(metadata))
 
 
 def test_ambiguous_scalar_and_markup_identifier_produce_mapping_issues(prototype):
     add_value(prototype, 'project/dataset/description', 'Conflicting description',
               set_prefix='0', collection_index=8)
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert metadata.resource is None
-    issue = next(issue for issue in metadata.mapping_issues if issue.field == 'resource')
+    issue = next(issue for issue in result.issues if issue.field == 'resource')
     assert issue.source == 'project/dataset/description'
     add_value(prototype, 'project/partner/given_name', 'Jane', set_prefix='0|0')
     add_value(prototype, 'project/partner/orcid', '<a href="https://orcid.org/example">Jane</a>', set_prefix='0|0')
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert metadata.contributors[0].identifiers == []
-    assert any(issue.field == 'nameIdentifier' for issue in metadata.mapping_issues)
+    assert any(issue.field == 'nameIdentifier' for issue in result.issues)
 
 
 def test_unknown_vocabulary_entries_preserve_labels(prototype):
@@ -441,10 +431,11 @@ def test_unknown_vocabulary_entries_preserve_labels(prototype):
     value.save()
     prototype.values.filter(attribute__path='project/dataset/creation_methods').delete()
     add_value(prototype, 'project/dataset/creation_methods', 'Source details', option=option, set_prefix='0')
-    metadata = export_for(prototype).compute_metadata(0)
+    result = read_metadata(export_for(prototype), 0)
+    metadata = result.metadata
     assert metadata.subject_areas == [SubjectArea('Other', 'Unlisted choice: Details')]
     assert metadata.data_sources == [Resource('Unlisted choice: Source details', 'Other')]
-    assert {'subjectAreas', 'dataSources'} <= {issue.field for issue in metadata.mapping_issues}
+    assert {'subjectAreas', 'dataSources'} <= {issue.field for issue in result.issues}
 
 
 def test_legacy_flat_layout_and_nested_creators_without_catalog(db):
@@ -456,26 +447,27 @@ def test_legacy_flat_layout_and_nested_creators_without_catalog(db):
     add_value(project, 'project/dataset/creator/given_name', 'Unrelated', set_prefix='20')
     add_value(project, 'project/funder/name', 'Funder without ID', set_index=4)
     export = export_for(project)
-    assert export.get_dataset_indices() == [2]
-    metadata = export.compute_metadata(2)
+    assert [dataset.key for dataset in export.get_datasets()] == ['2']
+    result = read_metadata(export, 2)
+    metadata = result.metadata
     assert metadata.title == 'Legacy dataset'
     assert metadata.resource.value == 'Legacy description'
     assert [creator.name for creator in metadata.creators] == ['Doe, Jane']
     assert metadata.funding_references[0].funder_name == 'Funder without ID'
 
 
-def test_answers_are_indexed_once_per_project_snapshot(prototype, django_assert_num_queries):
+def test_answers_are_loaded_once_per_project_snapshot(prototype, django_assert_num_queries):
     export = export_for(prototype)
-    export.compute_metadata(0)
+    read_metadata(export, 0)
     with django_assert_num_queries(0):
-        export.compute_metadata(1)
-        export.get_dataset_indices()
-        export.get_dataset_title(0)
+        read_metadata(export, 1)
+        export.get_datasets()
+        dataset_title(export, 0)
 
 
 def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     from rdmo_radar.imports import RadarImport
-    from rdmo_radar.metadata.rdmo import RDMOWriteContext
+    from rdmo_radar.metadata.write_context import ProjectWriteContext
 
     attribute = Attribute.objects.get(path='project/dataset/description')
     attribute.uri_prefix = 'https://custom.example.test/terms'
@@ -487,11 +479,11 @@ def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     option.save()
     plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
     plugin.current_project = prototype
-    context = RDMOWriteContext(plugin, 2)
-    assert context.get_attribute('project/dataset/description') == attribute
-    assert context.get_option('radar_data_source/survey') == option
-    assert context.get_attribute('project/missing') is None
-    assert context.get_option('missing') is None
+    context = ProjectWriteContext(plugin, 2, existing_values={})
+    assert context.fetch_attribute('project/dataset/description') == attribute
+    assert context.fetch_option('radar_data_source/survey') == option
+    assert context.fetch_attribute('project/missing') is None
+    assert context.fetch_option('missing') is None
 
 
 @pytest.mark.parametrize(('language', 'url_language'), [('en', 'en'), ('de', 'de')])
@@ -502,8 +494,9 @@ def test_completed_export_records_id_and_url_for_selected_dataset(prototype, lan
     provider.request.LANGUAGE_CODE = language
     provider.store_in_session(provider.request, 'project_id', prototype.pk)
     provider.store_in_session(provider.request, 'set_index', '1')
-    response = provider.complete_export(provider.request, 'new-id')
     expected_url = f'https://radar.example.test/radar/{url_language}/dataset/new-id'
+    result = provider.get_service().store_result(1, 'new-id', expected_url)
+    response = provider.render_export_result(provider.request, result.radar_id, result.radar_url)
     assert response.url == expected_url
     assert prototype.values.get(attribute__path='project/dataset/radar_id', set_index=1).text == 'new-id'
     assert prototype.values.get(attribute__path='project/dataset/radar_url', set_index=1).text == expected_url
@@ -514,26 +507,26 @@ def test_software_negative_choices_and_empty_details_are_not_exported(prototype)
     for index in range(5):
         add_value(prototype, 'project/dataset/usage_technology', '' if index == 0 else 'Display text',
                   option=Option.objects.get(uri_path=f'dmp4nfdi/v2-0-0/ur{index:02}'), collection_index=index)
-    assert export_for(prototype).compute_metadata(0).software == []
+    assert read_metadata(export_for(prototype), 0).metadata.software == []
 
 
 def test_shared_software_and_distinct_project_values_do_not_leak(prototype):
     add_value(prototype, 'project/dataset/usage_technology', 'Shared Viewer',
               option=Option.objects.get(uri_path='dmp4nfdi/v2-0-0/ur00'))
     export = export_for(prototype)
-    assert export.compute_metadata(1).software[0].name == 'Shared Viewer'
+    assert read_metadata(export, 1).metadata.software[0].name == 'Shared Viewer'
     second_project = Project.objects.create(title='Other project', catalog=prototype.catalog)
     add_value(second_project, 'project/dataset/id', 'Other dataset')
     export.project = second_project
-    assert export.compute_metadata(0).software == []
-    assert export.compute_metadata(0).keywords == []
+    assert read_metadata(export, 0).metadata.software == []
+    assert read_metadata(export, 0).metadata.keywords == []
 
 
 def test_software_stays_in_both_adapters_without_a_version(prototype):
     add_value(prototype, 'project/dataset/usage_technology', 'Shared Viewer',
               option=Option.objects.get(uri_path='dmp4nfdi/v2-0-0/ur00'))
-    xml = export_for(prototype).get_dataset(0)
-    api = export_for(prototype, RadarExportProvider).get_dataset(0)
+    xml = dataset_payload(export_for(prototype), 0)
+    api = dataset_payload(export_for(prototype, RadarExportProvider), 0)
     assert xml['software'][0]['type'] == 'Resource Viewing'
     assert api['software']['softwareType'][0]['type'] == 'RESOURCE_VIEWING'
     assert xml['software'][0]['softwareName'] == 'Shared Viewer'
@@ -544,12 +537,13 @@ def test_sparse_keyword_indices_and_duplicate_text(prototype):
     add_value(prototype, 'project/research_question/keywords', 'Schlagwort 1', collection_index=8)
     add_value(prototype, 'project/research_question/keywords', 'Fourth keyword', collection_index=15)
     add_value(prototype, 'project/research_question/keywords', '   ', collection_index=16)
-    context = RDMOReadContext(export_for(prototype)).shared()
+    context = export_for(prototype).get_service().reader(0).shared()
     assert context.get_texts('project/research_question/keywords') == [
         'Schlagwort 1', 'Schlagwort 2', 'Schlagwort 3', 'Fourth keyword',
     ]
 
 
+@pytest.mark.legacy_presentation
 @override_settings(TEMPLATES=[{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
     'APP_DIRS': True,

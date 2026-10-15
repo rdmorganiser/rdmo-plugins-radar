@@ -1,12 +1,12 @@
-from .rdmo import AttributeRef, RDMOReadContext, RDMOWriteContext
 from .types import (
     Affiliation,
-    Agent,
     Description,
     FundingReference,
     GeoLocation,
     Identifier,
     MappingIssue,
+    MappingResult,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -16,15 +16,13 @@ from .types import (
 
 __all__ = (
     'Affiliation',
-    'Agent',
-    'AttributeRef',
     'Description',
     'FundingReference',
     'GeoLocation',
     'Identifier',
     'MappingIssue',
-    'RDMOReadContext',
-    'RDMOWriteContext',
+    'MappingResult',
+    'PersonOrOrganization',
     'RadarMetadata',
     'Resource',
     'Rights',

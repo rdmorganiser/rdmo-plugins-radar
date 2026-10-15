@@ -2,11 +2,11 @@ from xml.etree.ElementTree import Element
 
 from .types import (
     Affiliation,
-    Agent,
     Description,
     FundingReference,
     GeoLocation,
     Identifier,
+    PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
@@ -40,8 +40,8 @@ def to_xml_payload(metadata: RadarMetadata) -> dict:
             }
             for identifier in metadata.related_identifiers
         ]}
-    _serialize_agents(data, 'creators', 'creator', metadata.creators)
-    _serialize_agents(data, 'contributors', 'contributor', metadata.contributors)
+    _serialize_people_and_organizations(data, 'creators', 'creator', metadata.creators)
+    _serialize_people_and_organizations(data, 'contributors', 'contributor', metadata.contributors)
     if metadata.title:
         data['title'] = metadata.title
     if metadata.additional_titles:
@@ -57,7 +57,7 @@ def to_xml_payload(metadata: RadarMetadata) -> dict:
     if metadata.keywords:
         data['keywords'] = {'keyword': [{'value': keyword} for keyword in metadata.keywords]}
     if metadata.publishers:
-        data['publishers'] = {'publisher': [_serialize_named_value(agent) for agent in metadata.publishers]}
+        data['publishers'] = {'publisher': [_serialize_named_value(publisher) for publisher in metadata.publishers]}
     if metadata.production_year:
         data['productionYear'] = metadata.production_year
     if metadata.publication_year:
@@ -96,7 +96,7 @@ def to_xml_payload(metadata: RadarMetadata) -> dict:
         }
     if metadata.rights_holders:
         data['rightsHolders'] = {
-            'rightsHolder': [_serialize_named_value(agent) for agent in metadata.rights_holders]
+            'rightsHolder': [_serialize_named_value(rights_holder) for rights_holder in metadata.rights_holders],
         }
     if metadata.related_information:
         data['relatedInformations'] = [
@@ -124,8 +124,8 @@ def parse_xml(root: Element) -> RadarMetadata:
     metadata.related_identifiers.extend(_parse_identifiers(
         root, 'relatedIdentifiers', 'relatedIdentifier', 'relatedIdentifierType', with_relation=True
     ))
-    metadata.creators.extend(_parse_agents(root, 'creators', 'creator'))
-    metadata.contributors.extend(_parse_agents(root, 'contributors', 'contributor'))
+    metadata.creators.extend(_parse_people_and_organizations(root, 'creators', 'creator'))
+    metadata.contributors.extend(_parse_people_and_organizations(root, 'contributors', 'contributor'))
     metadata.title = _text(root, 'title')
     metadata.additional_titles.extend(_texts(root, 'additionalTitles', 'additionalTitle'))
     for element in _findall(root, 'descriptions', 'description'):
@@ -161,26 +161,28 @@ def parse_xml(root: Element) -> RadarMetadata:
     return metadata
 
 
-def _serialize_agents(data: dict, container: str, prefix: str, agents: list[Agent]) -> None:
-    if not agents:
+def _serialize_people_and_organizations(
+    data: dict, container: str, prefix: str, people_and_organizations: list[PersonOrOrganization],
+) -> None:
+    if not people_and_organizations:
         return
     data[container] = {prefix: []}
-    for agent in agents:
+    for person_or_organization in people_and_organizations:
         item = {
-            f'{prefix}Name': agent.name,
-            'nameType': agent.name_type,
-            'givenName': agent.given_name,
-            'familyName': agent.family_name,
+            f'{prefix}Name': person_or_organization.name,
+            'nameType': person_or_organization.name_type,
+            'givenName': person_or_organization.given_name,
+            'familyName': person_or_organization.family_name,
         }
         if prefix == 'contributor':
-            item['contributorType'] = agent.contributor_type
-        if agent.identifiers:
+            item['contributorType'] = person_or_organization.contributor_type
+        if person_or_organization.identifiers:
             item['nameIdentifier'] = [
                 {'value': value.value, 'nameIdentifierScheme': value.identifier_type}
-                for value in agent.identifiers
+                for value in person_or_organization.identifiers
             ]
-        if agent.affiliations:
-            affiliations = [_serialize_affiliation(value) for value in agent.affiliations]
+        if person_or_organization.affiliations:
+            affiliations = [_serialize_affiliation(value) for value in person_or_organization.affiliations]
             item[f'{prefix}Affiliation'] = affiliations[0]
         data[container][prefix].append(item)
 
@@ -195,12 +197,12 @@ def _serialize_affiliation(affiliation: Affiliation) -> str | dict:
     }
 
 
-def _serialize_named_value(agent: Agent) -> str | dict:
-    if not agent.identifiers:
-        return agent.name
-    identifier = agent.identifiers[0]
+def _serialize_named_value(person_or_organization: PersonOrOrganization) -> str | dict:
+    if not person_or_organization.identifiers:
+        return person_or_organization.name
+    identifier = person_or_organization.identifiers[0]
     return {
-        'value': agent.name,
+        'value': person_or_organization.name,
         'nameIdentifier': identifier.value,
         'nameIdentifierScheme': identifier.identifier_type,
     }
@@ -242,8 +244,8 @@ def _serialize_funding(reference: FundingReference) -> dict:
     return data
 
 
-def _parse_agents(root: Element, container: str, prefix: str) -> list[Agent]:
-    agents = []
+def _parse_people_and_organizations(root: Element, container: str, prefix: str) -> list[PersonOrOrganization]:
+    people_and_organizations = []
     for element in _findall(root, container, prefix):
         name = _text(element, f'{prefix}Name')
         if not name:
@@ -260,7 +262,7 @@ def _parse_agents(root: Element, container: str, prefix: str) -> list[Agent]:
                 affiliation.get('affiliationIdentifier'),
                 affiliation.get('affiliationIdentifierScheme'),
             ))
-        agents.append(Agent(
+        people_and_organizations.append(PersonOrOrganization(
             name=name,
             given_name=_text(element, 'givenName'),
             family_name=_text(element, 'familyName'),
@@ -269,20 +271,20 @@ def _parse_agents(root: Element, container: str, prefix: str) -> list[Agent]:
             affiliations=affiliations,
             contributor_type=element.get('contributorType') if prefix == 'contributor' else None,
         ))
-    return agents
+    return people_and_organizations
 
 
-def _parse_named_values(root: Element, container: str, name: str) -> list[Agent]:
-    agents = []
+def _parse_named_values(root: Element, container: str, name: str) -> list[PersonOrOrganization]:
+    people_and_organizations = []
     for element in _findall(root, container, name):
         if not element.text:
             continue
         identifier = element.get('nameIdentifier')
-        agents.append(Agent(
+        people_and_organizations.append(PersonOrOrganization(
             name=element.text,
             identifiers=[Identifier(identifier, element.get('nameIdentifierScheme'))] if identifier else [],
         ))
-    return agents
+    return people_and_organizations
 
 
 def _parse_identifiers(

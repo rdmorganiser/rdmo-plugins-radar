@@ -1,3 +1,4 @@
+import logging
 from urllib.parse import urlsplit, urlunsplit
 
 from django import forms
@@ -5,8 +6,16 @@ from django.conf import settings
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 
-from .client import RadarAuthenticationError, RadarClient, RadarClientError
+import requests
+
+from rdmo_radar.client import RadarClient, dataset_page_url
+from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+
 from .providers import RadarExportProviderBase
+
+logger = logging.getLogger(__name__)
 
 
 class RadarCredentialsExportProvider(RadarExportProviderBase):
@@ -62,8 +71,8 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
             access_token = self.client.authenticate(
                 form.cleaned_data['username'], form.cleaned_data['password']
             )
-        except RadarClientError as error:
-            form.add_error(None, self.get_client_error_message(error))
+        except (requests.RequestException, RadarProtocolError) as error:
+            form.add_error(None, self.get_client_error_message(error, stage='login'))
             return self.render_credentials_form(form)
 
         self.store_in_session(self.request, 'access_token', access_token)
@@ -75,12 +84,13 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
                 workspace_choices = self.client.get_workspaces(
                     self.get_from_session(self.request, 'access_token')
                 )
-            except RadarAuthenticationError as error:
-                self.pop_from_session(self.request, 'access_token')
-                return self.render_credentials_form(error=self.get_client_error_message(error))
-            except RadarClientError as client_error:
-                form = self.get_export_form()
+            except (requests.RequestException, RadarProtocolError) as client_error:
+                response = getattr(client_error, 'response', None)
                 error = self.get_client_error_message(client_error)
+                if response is not None and response.status_code == 401:
+                    self.pop_from_session(self.request, 'access_token')
+                    return self.render_credentials_form(error=error)
+                form = self.get_export_form()
             else:
                 self.store_in_session(self.request, 'workspace_choices', workspace_choices)
                 form = self.get_export_form(workspace_choices=workspace_choices)
@@ -103,33 +113,51 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         if not form.is_valid():
             return self.render_export_form(form)
 
-        self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
-
+        dataset = self.get_selected_dataset(form)
+        if dataset is None:
+            return self.render_export_form(form)
+        payload = self._prepare_payload(dataset, form)
+        if payload is None:
+            return self.render_export_form(form)
+        service = self.get_service()
+        client = self.client
         try:
-            data = self.client.create_dataset(
+            data = client.create_dataset(
                 self.get_from_session(self.request, 'access_token'),
                 form.cleaned_data['workspace'],
-                self.get_post_data(form.cleaned_data['dataset']),
+                payload,
             )
-        except RadarAuthenticationError as error:
-            self.pop_from_session(self.request, 'access_token')
-            return self.render_credentials_form(error=self.get_client_error_message(error))
-        except RadarClientError as error:
-            return self.render_export_form(form, error=self.get_client_error_message(error))
+        except (requests.RequestException, RadarProtocolError) as error:
+            response = getattr(error, 'response', None)
+            message = self.get_client_error_message(error, stage='export')
+            if response is not None and response.status_code == 401:
+                self.pop_from_session(self.request, 'access_token')
+                return self.render_credentials_form(error=message)
+            return self.render_export_form(form, error=message)
 
-        result = self.complete_export(self.request, data['id'])
+        radar_url = dataset_page_url(client.radar_url, data['id'], self.request.LANGUAGE_CODE)
+        stored = True
+        try:
+            service.store_result(dataset, data['id'], radar_url)
+        except ExportStoreError:
+            logger.warning('Could not store confirmed RADAR dataset %s', data['id'])
+            stored = False
         self.clear_session(self.request)
-        return result
+        return self.render_export_result(self.request, data['id'], radar_url, stored=stored)
 
     @property
     def client(self):
         return RadarClient(self.radar_url, self.client_id, self.client_secret, self.redirect_url, self.request_timeout)
 
     @property
-    def token_url(self):
-        return self.client.token_url
-
-    @property
     def redirect_url(self):
         redirect_uri = urlsplit(settings.RADAR_PROVIDER['redirect_uri'])
         return urlunsplit((redirect_uri.scheme, redirect_uri.netloc, '/', '', ''))
+
+
+class RadarProjectCredentialsExportProvider(RadarCredentialsExportProvider):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkCredentialsExportProvider(RadarCredentialsExportProvider):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
