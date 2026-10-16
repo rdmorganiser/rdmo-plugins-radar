@@ -4,263 +4,277 @@ from rdmo.core.renderers import BaseXMLRenderer
 class RadarExportRenderer(BaseXMLRenderer):
 
     scheme_uri = {
-        'INSI': 'http://www.isni.org/',
-        'ORCID': 'https://orcid.org',
-        'ROR': 'https://ror.org/',
-        'GRID': 'https://www.grid.ac/'
+        'ORCID': 'https://orcid.org/',
+        'ROR': 'https://ror.org/'
     }
 
     def render_document(self, xml, dataset):
-        xml.startElement('ns2:radarDataset', {
-            'xmlns': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements',
-            'xmlns:ns2': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset'
+        xml.startElement('radar:radarDataset', {
+            'xmlns:radar': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-dataset',
+            'xmlns:re': 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements'
         })
 
-        # identifier
-        identifier = dataset.get('identifier')
-        if identifier:
-            self.render_text_element(xml, 'identifier', {
-                'identifierType': dataset.get('identifierType', 'OTHER')
-            }, identifier)
+        self.render_identifier(xml, dataset)
+        self.render_alternate_identifiers(xml, dataset)
+        self.render_related_identifiers(xml, dataset)
+        self.render_names(xml, dataset, 'creators', 'creator')
+        self.render_names(xml, dataset, 'contributors', 'contributor')
+        self.render_optional_text(xml, 'title', dataset.get('title'))
+        self.render_additional_titles(xml, dataset)
+        self.render_descriptions(xml, dataset)
+        self.render_keywords(xml, dataset)
+        self.render_publishers(xml, dataset)
+        self.render_optional_text(xml, 'productionYear', dataset.get('productionYear'))
+        self.render_optional_text(xml, 'publicationYear', dataset.get('publicationYear'))
+        self.render_optional_text(xml, 'language', dataset.get('language'))
+        self.render_subject_areas(xml, dataset)
+        self.render_resource(xml, dataset)
+        self.render_geo_locations(xml, dataset)
+        self.render_data_sources(xml, dataset)
+        self.render_software(xml, dataset)
+        self.render_processing(xml, dataset)
+        self.render_rights(xml, dataset)
+        self.render_rights_holders(xml, dataset)
+        self.render_related_informations(xml, dataset)
+        self.render_funding_references(xml, dataset)
+        self.render_optional_text(xml, 'version', dataset.get('version'))
 
-        # creators
-        creators = dataset.get('creators', {}).get('creator')
-        if creators:
-            xml.startElement('creators', {})
-            for creator in creators:
-                xml.startElement('creator', {})
-                self.render_text_element(xml, 'creatorName', {}, creator.get('creatorName'))
+        xml.endElement('radar:radarDataset')
 
-                if creator.get('givenName'):
-                    self.render_text_element(xml, 'givenName', {}, creator.get('givenName'))
+    def render_optional_text(self, xml, tag, value, attrs=None):
+        if value not in (None, ''):
+            self.render_text_element(
+                xml,
+                f're:{tag}',
+                {key: item for key, item in (attrs or {}).items() if item not in (None, '')},
+                value
+            )
 
-                if creator.get('familyName'):
-                    self.render_text_element(xml, 'familyName', {}, creator.get('familyName'))
+    def render_identifier(self, xml, dataset):
+        if dataset.get('identifier') is not None:
+            self.render_optional_text(xml, 'identifier', dataset.get('identifier'), {
+                'identifierType': dataset.get('identifierType')
+            })
 
-                if creator.get('creatorAffiliation'):
-                    self.render_text_element(xml, 'creatorAffiliation', {}, creator.get('creatorAffiliation'))
+    def render_alternate_identifiers(self, xml, dataset):
+        identifiers = dataset.get('alternateIdentifiers', {}).get('alternateIdentifier')
+        if identifiers:
+            xml.startElement('re:alternateIdentifiers', {})
+            for identifier in identifiers:
+                self.render_optional_text(xml, 'alternateIdentifier', identifier.get('value'), {
+                    'alternateIdentifierType': identifier.get('alternateIdentifierType')
+                })
+            xml.endElement('re:alternateIdentifiers')
 
-                name_identifier = creator.get('nameIdentifier')
-                if name_identifier:
-                    self.render_text_element(xml, 'nameIdentifier', {
-                        'nameIdentifierScheme': name_identifier[0].get('nameIdentifierScheme'),
-                    }, name_identifier[0].get('value'))
+    def render_related_identifiers(self, xml, dataset):
+        identifiers = dataset.get('relatedIdentifiers', {}).get('relatedIdentifier')
+        if identifiers:
+            xml.startElement('re:relatedIdentifiers', {})
+            for identifier in identifiers:
+                self.render_optional_text(xml, 'relatedIdentifier', identifier.get('value'), {
+                    'relatedIdentifierType': identifier.get('relatedIdentifierType'),
+                    'relationType': identifier.get('relationType')
+                })
+            xml.endElement('re:relatedIdentifiers')
 
-                xml.endElement('creator')
-            xml.endElement('creators')
+    def render_names(self, xml, dataset, container, prefix):
+        names = dataset.get(container, {}).get(prefix)
+        if not names:
+            return
 
-        # title
-        title = dataset.get('title')
-        if title:
-            self.render_text_element(xml, 'title', {}, title)
+        xml.startElement(f're:{container}', {})
+        for name in names:
+            attrs = {'contributorType': name.get('contributorType')} if prefix == 'contributor' else {}
+            xml.startElement(f're:{prefix}', {key: value for key, value in attrs.items() if value})
+            self.render_optional_text(xml, f'{prefix}Name', name.get(f'{prefix}Name'))
+            self.render_optional_text(xml, 'givenName', name.get('givenName'))
+            self.render_optional_text(xml, 'familyName', name.get('familyName'))
 
-        # publisher
-        publisher = dataset.get('publishers', {}).get('publisher')
-        if publisher:
-            self.render_text_element(xml, 'publisher', {}, publisher[0])
+            for identifier in name.get('nameIdentifier') or []:
+                scheme = identifier.get('nameIdentifierScheme')
+                self.render_optional_text(xml, 'nameIdentifier', identifier.get('value'), {
+                    'nameIdentifierScheme': scheme,
+                    'schemeURI': self.scheme_uri.get(scheme)
+                })
 
-        # productionYear
-        production_year = dataset.get('productionYear')
-        if production_year:
-            self.render_text_element(xml, 'productionYear', {}, production_year)
+            affiliation = name.get(f'{prefix}Affiliation')
+            if isinstance(affiliation, dict):
+                self.render_optional_text(xml, f'{prefix}Affiliation', affiliation.get('value'), {
+                    'affiliationIdentifier': affiliation.get('affiliationIdentifier'),
+                    'affiliationIdentifierScheme': affiliation.get('affiliationIdentifierScheme'),
+                    'schemeURI': self.scheme_uri.get(affiliation.get('affiliationIdentifierScheme'))
+                })
+            else:
+                self.render_optional_text(xml, f'{prefix}Affiliation', affiliation)
+            xml.endElement(f're:{prefix}')
+        xml.endElement(f're:{container}')
 
-        # publicationYear
-        publication_year = dataset.get('publicationYear')
-        if publication_year:
-            self.render_text_element(xml, 'publicationYear', {}, publication_year)
+    def render_additional_titles(self, xml, dataset):
+        titles = dataset.get('additionalTitles')
+        if titles:
+            xml.startElement('re:additionalTitles', {})
+            for title in titles:
+                self.render_optional_text(xml, 'additionalTitle', title.get('additionalTitle'), {
+                    'additionalTitleType': title.get('additionalTitleType')
+                })
+            xml.endElement('re:additionalTitles')
 
-        # subjectArea
-        subject_areas = dataset.get('subjectAreas', {}).get('subjectArea')
-        if subject_areas:
-            xml.startElement('subjectAreas', {})
-            for subject_area in subject_areas:
-                xml.startElement('subjectArea', {})
-                self.render_text_element(xml, 'controlledSubjectAreaName', {},
-                                         subject_area.get('controlledSubjectAreaName'))
-                if subject_area.get('additionalSubjectAreaName'):
-                    self.render_text_element(xml, 'additionalSubjectAreaName', {},
-                                             subject_area.get('additionalSubjectAreaName'))
-                xml.endElement('subjectArea')
-            xml.endElement('subjectAreas')
-
-        # resource
-        resource = dataset.get('resource')
-        if resource:
-            self.render_text_element(xml, 'resource', {
-                'resourceType': resource.get('resourceType')
-            }, resource.get('value'))
-
-        # rights
-        rights = dataset.get('rights')
-        if rights:
-            xml.startElement('rights', {})
-            self.render_text_element(xml, 'controlledRights', {}, rights.get('controlledRights'))
-            additional_rights = rights.get('additionalRights')
-            if additional_rights:
-                self.render_text_element(xml, 'additionalRights', {}, additional_rights)
-            xml.endElement('rights')
-
-        # rightsHolders
-        rights_holders = dataset.get('rightsHolders', {}).get('rightsHolder')
-        if rights_holders:
-            xml.startElement('rightsHolders', {})
-            for rights_holder in rights_holders:
-                self.render_text_element(xml, 'rightsHolder', {}, rights_holder)
-            xml.endElement('rightsHolders')
-
-        # additionalTitles
-        additional_titles = dataset.get('additionalTitles')
-        if additional_titles:
-            xml.startElement('additionalTitles', {})
-            for additional_title in additional_titles:
-                self.render_text_element(xml, 'additionalTitle', {
-                    'additionalTitleType': additional_title['additionalTitleType']
-                }, additional_title['additionalTitle'])
-            xml.endElement('additionalTitles')
-
-        # descriptions
+    def render_descriptions(self, xml, dataset):
         descriptions = dataset.get('descriptions', {}).get('description')
         if descriptions:
-            xml.startElement('descriptions', {})
+            xml.startElement('re:descriptions', {})
             for description in descriptions:
-                self.render_text_element(xml, 'description', {
-                    'descriptionType': description.get('descriptionType', 'ABSTRACT')
-                }, description.get('value'))
-            xml.endElement('descriptions')
+                self.render_optional_text(xml, 'description', description.get('value'), {
+                    'descriptionType': description.get('descriptionType')
+                })
+            xml.endElement('re:descriptions')
 
-        # keywords
+    def render_keywords(self, xml, dataset):
         keywords = dataset.get('keywords', {}).get('keyword')
         if keywords:
-            xml.startElement('keywords', {})
+            xml.startElement('re:keywords', {})
             for keyword in keywords:
-                self.render_text_element(xml, 'keyword', {}, keyword.get('value'))
-            xml.endElement('keywords')
+                self.render_optional_text(xml, 'keyword', keyword.get('value'))
+            xml.endElement('re:keywords')
 
-        # contributors
-        contributors = dataset.get('contributors', {}).get('contributor')
-        if contributors:
-            xml.startElement('contributors', {})
-            for contributor in contributors:
-                print(contributor)
-                xml.startElement('contributor', {})
-                self.render_text_element(xml, 'contributorName', {}, contributor.get('contributorName'))
+    def render_publishers(self, xml, dataset):
+        publishers = dataset.get('publishers', {}).get('publisher')
+        if publishers:
+            xml.startElement('re:publishers', {})
+            for publisher in publishers:
+                if isinstance(publisher, dict):
+                    self.render_optional_text(xml, 'publisher', publisher.get('value'), {
+                        'nameIdentifierScheme': publisher.get('nameIdentifierScheme'),
+                        'schemeURI': publisher.get('schemeURI'),
+                        'nameIdentifier': publisher.get('nameIdentifier')
+                    })
+                else:
+                    self.render_optional_text(xml, 'publisher', publisher)
+            xml.endElement('re:publishers')
 
-                if contributor.get('givenName'):
-                    self.render_text_element(xml, 'givenName', {}, contributor.get('givenName'))
+    def render_subject_areas(self, xml, dataset):
+        subject_areas = dataset.get('subjectAreas', {}).get('subjectArea')
+        if subject_areas:
+            xml.startElement('re:subjectAreas', {})
+            for subject_area in subject_areas:
+                xml.startElement('re:subjectArea', {})
+                self.render_optional_text(
+                    xml, 'controlledSubjectAreaName', subject_area.get('controlledSubjectAreaName')
+                )
+                self.render_optional_text(
+                    xml, 'additionalSubjectAreaName', subject_area.get('additionalSubjectAreaName')
+                )
+                xml.endElement('re:subjectArea')
+            xml.endElement('re:subjectAreas')
 
-                if contributor.get('familyName'):
-                    self.render_text_element(xml, 'familyName', {}, contributor.get('familyName'))
+    def render_resource(self, xml, dataset):
+        resource = dataset.get('resource')
+        if resource:
+            self.render_optional_text(xml, 'resource', resource.get('value'), {
+                'resourceType': resource.get('resourceType')
+            })
 
-                if contributor.get('contributorAffiliation'):
-                    self.render_text_element(xml, 'contributorAffiliation', {},
-                                             contributor.get('contributorAffiliation'))
+    def render_geo_locations(self, xml, dataset):
+        locations = dataset.get('geoLocations', {}).get('geoLocation')
+        if locations:
+            xml.startElement('re:geoLocations', {})
+            for location in locations:
+                xml.startElement('re:geoLocation', {})
+                self.render_optional_text(xml, 'geoLocationCountry', location.get('geoLocationCountry'))
+                self.render_optional_text(xml, 'geoLocationRegion', location.get('geoLocationRegion'))
+                point = location.get('geoLocationPoint')
+                if point:
+                    xml.startElement('re:geoLocationPoint', {})
+                    self.render_optional_text(xml, 'latitude', point.get('latitude'))
+                    self.render_optional_text(xml, 'longitude', point.get('longitude'))
+                    xml.endElement('re:geoLocationPoint')
+                xml.endElement('re:geoLocation')
+            xml.endElement('re:geoLocations')
 
-                name_identifier = contributor.get('nameIdentifier')
-                if name_identifier:
-                    self.render_text_element(xml, 'nameIdentifier', {
-                        'nameIdentifierScheme': name_identifier[0].get('nameIdentifierScheme'),
-                    }, name_identifier[0].get('value'))
-
-                xml.endElement('contributor')
-            xml.endElement('contributors')
-
-        # language
-        language = dataset.get('language')
-        if language:
-            self.render_text_element(xml, 'language', {}, language)
-
-        # resource_type
-        resource_type = dataset.get('resourceType')
-        if resource_type:
-            self.render_text_element(xml, 'resourceType', {
-                'resourceTypeGeneral': dataset.get('resourceTypeGeneral')
-            }, resource_type)
-
-        # alternate_identifiers
-        alternate_identifiers = dataset.get('alternateIdentifiers', {}).get('alternateIdentifier')
-        if alternate_identifiers:
-            xml.startElement('alternateIdentifiers', {})
-            for alternate_identifier in alternate_identifiers:
-                self.render_text_element(xml, 'alternateIdentifier', {
-                    'alternateIdentifierType': alternate_identifier.get('alternateIdentifierType')
-                }, alternate_identifier.get('value'))
-            xml.endElement('alternateIdentifiers')
-
-        # related_identifiers
-        related_identifiers = dataset.get('relatedIdentifiers', {}).get('relatedIdentifier')
-        if related_identifiers:
-            xml.startElement('relatedIdentifiers', {})
-            for related_identifier in related_identifiers:
-                self.render_text_element(xml, 'relatedIdentifier', {
-                    'relatedIdentifierType': related_identifier.get('relatedIdentifierType'),
-                    'relationType': related_identifier.get('relationType')
-                }, related_identifier.get('value'))
-            xml.endElement('relatedIdentifiers')
-
-        # dataSources
+    def render_data_sources(self, xml, dataset):
         data_sources = dataset.get('dataSources', {}).get('dataSource')
         if data_sources:
-            xml.startElement('dataSources', {})
+            xml.startElement('re:dataSources', {})
             for data_source in data_sources:
-                self.render_text_element(xml, 'dataSource', {
+                self.render_optional_text(xml, 'dataSource', data_source.get('value'), {
                     'dataSourceDetail': data_source.get('dataSourceDetail')
-                }, data_source.get('value'))
-            xml.endElement('dataSources')
+                })
+            xml.endElement('re:dataSources')
 
-        # software
+    def render_software(self, xml, dataset):
         software = dataset.get('software')
         if software:
-            xml.startElement('software', {})
+            xml.startElement('re:software', {})
             for software_type in software:
-                xml.startElement('softwareType', {
-                    'type': software_type.get('type')
-                })
-                self.render_text_element(xml, 'softwareName', {
+                attrs = {'type': software_type.get('type')}
+                xml.startElement('re:softwareType', {key: value for key, value in attrs.items() if value})
+                self.render_optional_text(xml, 'softwareName', software_type.get('softwareName'), {
                     'softwareVersion': software_type.get('softwareVersion')
-                }, software_type.get('softwareName'))
-                if 'alternativeSoftwareName' in software_type:
-                    self.render_text_element(xml, 'alternativeSoftwareName', {
-                        'alternativeSoftwareVersion': software_type.get('alternativeSoftwareVersion')
-                    }, software_type.get('alternativeSoftwareName'))
-                xml.endElement('softwareType')
-            xml.endElement('software')
+                })
+                self.render_optional_text(
+                    xml,
+                    'alternativeSoftwareName',
+                    software_type.get('alternativeSoftwareName'),
+                    {'alternativeSoftwareVersion': software_type.get('alternativeSoftwareVersion')}
+                )
+                xml.endElement('re:softwareType')
+            xml.endElement('re:software')
 
-        # processing
+    def render_processing(self, xml, dataset):
         processing_list = dataset.get('dataProcessing')
         if processing_list:
-            xml.startElement('processing', {})
+            xml.startElement('re:processing', {})
             for processing in processing_list:
-                self.render_text_element(xml, 'dataProcessing', {}, processing)
-            xml.endElement('processing')
+                self.render_optional_text(xml, 'dataProcessing', processing)
+            xml.endElement('re:processing')
 
-        # relatedInformations
+    def render_rights(self, xml, dataset):
+        rights = dataset.get('rights')
+        if rights:
+            xml.startElement('re:rights', {})
+            self.render_optional_text(xml, 'controlledRights', rights.get('controlledRights'))
+            self.render_optional_text(xml, 'additionalRights', rights.get('additionalRights'))
+            xml.endElement('re:rights')
+
+    def render_rights_holders(self, xml, dataset):
+        rights_holders = dataset.get('rightsHolders', {}).get('rightsHolder')
+        if rights_holders:
+            xml.startElement('re:rightsHolders', {})
+            for rights_holder in rights_holders:
+                if isinstance(rights_holder, dict):
+                    self.render_optional_text(xml, 'rightsHolder', rights_holder.get('value'), {
+                        'nameIdentifierScheme': rights_holder.get('nameIdentifierScheme'),
+                        'schemeURI': rights_holder.get('schemeURI'),
+                        'nameIdentifier': rights_holder.get('nameIdentifier')
+                    })
+                else:
+                    self.render_optional_text(xml, 'rightsHolder', rights_holder)
+            xml.endElement('re:rightsHolders')
+
+    def render_related_informations(self, xml, dataset):
         related_informations = dataset.get('relatedInformations')
         if related_informations:
-            xml.startElement('relatedInformations', {})
+            xml.startElement('re:relatedInformations', {})
             for related_information in related_informations:
-                self.render_text_element(xml, 'relatedInformation', {
+                self.render_optional_text(xml, 'relatedInformation', related_information.get('relatedInformation'), {
                     'relatedInformationType': related_information.get('relatedInformationType')
-                }, related_information.get('relatedInformation'))
-            xml.endElement('relatedInformations')
+                })
+            xml.endElement('re:relatedInformations')
 
-        # funding_references
-        funding_references = dataset.get('fundingReferences', {}).get('fundingReference')
-        if funding_references:
-            xml.startElement('fundingReferences', {})
-            for funding_reference in funding_references:
-                xml.startElement('fundingReference', {})
-                self.render_text_element(xml, 'funderName', {}, funding_reference.get('funderName'))
-                if funding_reference.get('funderIdentifier'):
-                    self.render_text_element(xml, 'funderIdentifier', {
-                        'type': funding_reference.get('funderIdentifier').get('type')
-                    }, funding_reference.get('funderIdentifier').get('value'))
-                if funding_reference.get('awardNumber'):
-                    self.render_text_element(xml, 'awardNumber', {}, funding_reference.get('awardNumber'))
-                if funding_reference.get('awardURI'):
-                    self.render_text_element(xml, 'awardURI', {}, funding_reference.get('awardURI'))
-                if funding_reference.get('awardTitle'):
-                    self.render_text_element(xml, 'awardTitle', {}, funding_reference.get('awardTitle'))
-                xml.endElement('fundingReference')
-            xml.endElement('fundingReferences')
-
-        xml.endElement('ns2:radarDataset')
+    def render_funding_references(self, xml, dataset):
+        references = dataset.get('fundingReferences', {}).get('fundingReference')
+        if references:
+            xml.startElement('re:fundingReferences', {})
+            for reference in references:
+                xml.startElement('re:fundingReference', {})
+                self.render_optional_text(xml, 'funderName', reference.get('funderName'))
+                identifier = reference.get('funderIdentifier')
+                if identifier:
+                    self.render_optional_text(xml, 'funderIdentifier', identifier.get('value'), {
+                        'type': identifier.get('type')
+                    })
+                self.render_optional_text(xml, 'awardNumber', reference.get('awardNumber'))
+                self.render_optional_text(xml, 'awardURI', reference.get('awardURI'))
+                self.render_optional_text(xml, 'awardTitle', reference.get('awardTitle'))
+                xml.endElement('re:fundingReference')
+            xml.endElement('re:fundingReferences')

@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:dc="http://purl.org/dc/elements/1.1/" created="2026-10-07T10:08:16.092211+02:00" required="2.1.0" version="2.5.1">
+	<title>RADAR Plugin Testprojekt</title>
+	<description/>
+	<catalog dc:uri="https://dmp.service.base4nfdi.de/terms/questions/dmp4nfdi/v2-0-0"/>
+	<tasks>
+		<task dc:uri="http://example.com/terms/tasks/contact_IT_or_data_management_expert"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/clarify_consequences_international_law"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/contact_data_security_officer"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/contact_IT_department"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/determine_versioning_tool"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/finish-first-dmp"/>
+		<task dc:uri="https://rdmorganiser.github.io/terms/tasks/identify_rights_owner"/>
+	</tasks>
+	<values>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/acronym"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>RADAR Test</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:36:34.473571+02:00</created>
+			<updated>2026-10-02T15:36:34.473576+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/coordination/name"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Kerstin</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:38:20.270525+02:00</created>
+			<updated>2026-10-02T15:38:23.008217+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/data_management/name"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Sandra</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:39:19.478179+02:00</created>
+			<updated>2026-10-02T15:39:20.503057+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/data_management/orcid"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Sandra &lt;a href=&quot;https://orcid.org/0000-0003-0000-0000&quot;&gt;&lt;img src=&quot;/static/accounts/img/orcid_16x16.png?v=2.5.1&quot; alt=&quot;orcid logo&quot; /&gt;&lt;/a&gt;</text>
+			<option/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id>0000-0003-0000-0000</external_id>
+			<created>2026-10-02T15:39:45.644164+02:00</created>
+			<updated>2026-10-02T15:39:45.644168+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/data_management/role"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>1</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/dr01"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:39:08.155498+02:00</created>
+			<updated>2026-10-02T15:39:08.155503+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/creation_methods"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>2</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dfg_new_data/dfg-nd_02"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:16.110788+02:00</created>
+			<updated>2026-10-02T15:46:16.110792+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/creation_methods"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>3</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dfg_new_data/dfg-nd_03"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:16.583673+02:00</created>
+			<updated>2026-10-02T15:46:16.583677+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/creation_methods"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>4</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dfg_new_data/dfg-nd_04"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:17.164519+02:00</created>
+			<updated>2026-10-02T15:46:17.164524+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/description"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>ein Datensatz zum testen des neuen RADAR Plugins</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:45:38.512839+02:00</created>
+			<updated>2026-10-02T15:45:50.836829+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/format"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/ff00"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:19.205804+02:00</created>
+			<updated>2026-10-02T15:46:19.205809+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/format"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>1</collection_index>
+			<text>aehtaen</text>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/ff01"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:20.661296+02:00</created>
+			<updated>2026-10-02T15:46:26.575253+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/format"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>2</collection_index>
+			<text>sbtnzrsmm</text>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/dmp4nfdi/v2-0-0/ff011"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:19.868180+02:00</created>
+			<updated>2026-10-02T15:46:25.163876+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/id"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text>Radar Testdatensatz Nr 1</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:41:04.878000+02:00</created>
+			<updated>2026-10-02T15:41:04.878005+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/id"/>
+			<set_prefix/>
+			<set_index>1</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text>Radar Testdatensatz Nr 2</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:41:15.395461+02:00</created>
+			<updated>2026-10-02T15:41:15.395467+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/origin"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text>1</text>
+			<option/>
+			<file/>
+			<value_type>boolean</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:22.574582+02:00</created>
+			<updated>2026-10-02T15:50:22.574588+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/origin"/>
+			<set_prefix/>
+			<set_index>1</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text>1</text>
+			<option/>
+			<file/>
+			<value_type>boolean</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:19.233241+02:00</created>
+			<updated>2026-10-02T15:50:19.233245+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/origin/source"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/dmp4nfdi/v2-0-0/rs00"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:31.651935+02:00</created>
+			<updated>2026-10-02T15:50:31.651939+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/origin/usage_description"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/dt00"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:38.643484+02:00</created>
+			<updated>2026-10-02T15:50:38.643490+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/origin/usage_restrictions"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/rr00"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:39.795300+02:00</created>
+			<updated>2026-10-02T15:50:39.795305+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/preservation/duration"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://dmp.service.base4nfdi.de/terms/options/prd01"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:56.360881+02:00</created>
+			<updated>2026-10-02T15:50:56.360887+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/reuse_scenario"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dfg_reuse_context/dfg-rsc_00"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:44.541961+02:00</created>
+			<updated>2026-10-02T15:50:44.541966+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/conditions"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dataset_license_types/71"/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:47:23.144318+02:00</created>
+			<updated>2026-10-02T15:47:23.144324+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/sharing/yesno"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/dataset_sharing_options/69"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:47:19.551232+02:00</created>
+			<updated>2026-10-02T15:47:19.551236+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dataset/usage_description"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>damit testen wir das überarbeitete Plugin in seiner Funktionalität</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:46:08.360043+02:00</created>
+			<updated>2026-10-02T15:46:10.338192+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/dmp/dmp_date"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>2026-10-12</text>
+			<option/>
+			<file/>
+			<value_type>datetime</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:36:18.159550+02:00</created>
+			<updated>2026-10-02T15:36:18.159555+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/funder/grant_nr"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>123345</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:35:59.501656+02:00</created>
+			<updated>2026-10-02T15:35:59.501661+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/funder/name"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>DFG</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:35:54.264534+02:00</created>
+			<updated>2026-10-02T15:35:54.264540+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/funder/programme/title"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Program42</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:36:03.068913+02:00</created>
+			<updated>2026-10-02T15:36:10.955271+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/preservation/selection_criteria"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>True</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/preservation_motivation_options/131"/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:50:52.372567+02:00</created>
+			<updated>2026-10-02T15:50:52.372571+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/research_field/title"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text/>
+			<option dc:uri="https://rdmorganiser.github.io/terms/options/research_fields/169"/>
+			<file/>
+			<value_type>option</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:38:13.682467+02:00</created>
+			<updated>2026-10-02T15:38:13.682471+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/research_question/keywords"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Schlagwort 1</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:38:00.849156+02:00</created>
+			<updated>2026-10-02T15:38:00.849160+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/research_question/keywords"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>1</collection_index>
+			<text>Schlagwort 2</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:38:05.435706+02:00</created>
+			<updated>2026-10-02T15:38:05.435711+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/research_question/keywords"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>2</collection_index>
+			<text>Schlagwort 3</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:38:09.638372+02:00</created>
+			<updated>2026-10-02T15:38:09.638376+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/research_question/title"/>
+			<set_prefix/>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>Wir testen hier das neue RADAR Plugin</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:37:16.922374+02:00</created>
+			<updated>2026-10-02T15:37:20.009106+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/schedule/project_end"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>2026-12-31</text>
+			<option/>
+			<file/>
+			<value_type>datetime</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:37:06.549791+02:00</created>
+			<updated>2026-10-02T15:37:06.549796+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/schedule/project_start"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>2026-07-01</text>
+			<option/>
+			<file/>
+			<value_type>datetime</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:37:02.076195+02:00</created>
+			<updated>2026-10-02T15:37:02.076200+02:00</updated>
+		</value>
+		<value>
+			<attribute dc:uri="https://rdmorganiser.github.io/terms/domain/project/title"/>
+			<set_prefix>0</set_prefix>
+			<set_index>0</set_index>
+			<set_collection>False</set_collection>
+			<collection_index>0</collection_index>
+			<text>RADAR Testprojekt</text>
+			<option/>
+			<file/>
+			<value_type>text</value_type>
+			<unit/>
+			<external_id/>
+			<created>2026-10-02T15:36:24.290074+02:00</created>
+			<updated>2026-10-02T15:36:25.629322+02:00</updated>
+		</value>
+	</values>
+	<created>2026-10-02T15:34:34.550149+02:00</created>
+	<updated>2026-10-02T15:50:56.744192+02:00</updated>
+</project>

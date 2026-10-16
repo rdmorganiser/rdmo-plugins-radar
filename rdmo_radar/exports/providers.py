@@ -1,347 +1,268 @@
-import time
+import json
+import logging
+from dataclasses import asdict
+from functools import partial
+from urllib.parse import urlsplit
 
 from django import forms
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
+from django.db import DatabaseError
 from django.shortcuts import redirect, render
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from rdmo.domain.models import Attribute
-from rdmo.projects.models import Value
+import requests
+
+from rdmo.projects.exports import Export
+from rdmo.projects.models import Project
 from rdmo.services.providers import OauthProviderMixin
 
-from .exports import RadarExport
+from rdmo_radar.client import dataset_page_url, dataset_url, workspace_choices, workspaces_url
+from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
+from rdmo_radar.factories import build_export_service
+from rdmo_radar.mappings import ExportDataset, validate_datasets
+from rdmo_radar.mappings.project import PROJECT_MAPPING
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.metadata.validation import missing_required_fields
+from rdmo_radar.services import store_confirmed_result
+
+from .validation import REQUIRED_FIELD_LABELS
+
+logger = logging.getLogger(__name__)
 
 
-class RadarExportProvider(RadarExport, OauthProviderMixin):
+class RadarExportProviderBase(Export):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
+    show_mapping_warnings = None
 
-    other = 'OTHER'
+    def get_service(self):
+        if self.project is None and self.snapshot is not None:
+            self.project = self.snapshot.project
+        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping))
+        if getattr(self, '_service_key', None) != key:
+            self._service = build_export_service(self.project, snapshot=self.snapshot, profile=self.mapping)
+            self._service_key = key
+        return self._service
 
-    abstract = 'ABSTRACT'
+    def get_context(self, dataset):
+        """Read the selected dataset using the operation's prepared RDMO Values."""
+        return self.get_service().reader(dataset)
 
-    identifier_type_options = {
-        'identifier_type/doi': 'DOI',
-        'identifier_type/url': 'URL',
-        'identifier_type/handle': 'HANDLE',
-        'identifier_type/other': 'OTHER'
-    }
+    def get_payload(self, dataset) -> dict:
+        """Return the complete RADAR REST request body, ready for submission."""
+        return self.get_service().compute_payload(dataset, self.request.user.email).payload
 
-    language_options = {
-        'language/en': 'ENG',
-        'language/de': 'DEU'
-    }
+    def _prepare_payload(self, dataset, form):
+        try:
+            payload = self.get_payload(dataset)
+            if not isinstance(payload, dict):
+                raise TypeError('The RADAR request payload must be a dictionary.')
+            json.dumps(payload, allow_nan=False)
+        except Exception as error:
+            logger.warning(
+                'Could not prepare RADAR export payload: provider=%s error_type=%s',
+                self.class_name, type(error).__name__,
+            )
+            form.add_error(None, _('The RADAR export could not be prepared. Please contact support.'))
+            return None
+        return payload
 
-    name_type_options = {
-        'name_type/personal': 'Personal',
-        'name_type/organizational': 'Organizational'
-    }
+    def get_datasets(self):
+        """Return the datasets that this mapping can export from the RDMO project."""
+        service = self.get_service()
+        if getattr(self, '_dataset_service', None) is not service:
+            self._datasets = validate_datasets(self.mapping.get_datasets(self.project, service.reader))
+            self._dataset_service = service
+        return self._datasets
 
-    name_identifier_scheme_options = {
-        'name_identifier_scheme/orcid': 'ORCID',
-        'name_identifier_scheme/insi': 'INSI',
-        'name_identifier_scheme/ror': 'ROR',
-        'name_identifier_scheme/grid': 'GRID'
-    }
-
-    contributor_type_options = {
-        'contributor_type/contact_persion': 'CONTACT_PERSON',
-        'contributor_type/data_collector': 'DATA_COLLECTOR',
-        'contributor_type/data_curator': 'DATA_CURATOR',
-        'contributor_type/data_manager': 'DATA_MANAGER',
-        'contributor_type/distributor': 'DISTRIBUTOR',
-        'contributor_type/editor': 'EDITOR',
-        'contributor_type/hosting_institution': 'HOSTING_INSTITUTION',
-        'contributor_type/producer': 'PRODUCER',
-        'contributor_type/project_leader': 'PROJECT_LEADER',
-        'contributor_type/project_manager': 'PROJECT_MANAGER',
-        'contributor_type/project_member': 'PROJECT_MEMBER',
-        'contributor_type/registration_agency': 'REGISTRATION_AGENCY',
-        'contributor_type/registration_authority': 'REGISTRATION_AUTHORITY',
-        'contributor_type/related_person': 'RELATED_PERSON',
-        'contributor_type/researcher': 'RESEARCHER',
-        'contributor_type/research_group': 'RESEARCH_GROUP',
-        'contributor_type/sponsor': 'SPONSOR',
-        'contributor_type/supervisor': 'SUPERVISOR',
-        'contributor_type/work_package_leader': 'WORK_PACKAGE_LEADER',
-        'contributor_type/other': 'OTHER'
-    }
-
-    resource_type_options = {
-        'resource_type_general/audiovisual': 'AUDIOVISUAL',
-        'resource_type_general/collection': 'COLLECTION',
-        'resource_type_general/data_paper': 'DATA_PAPER',
-        'resource_type_general/dataset': 'DATASET',
-        'resource_type_general/event': 'EVENT',
-        'resource_type_general/image': 'IMAGE',
-        'resource_type_general/interactive_resource': 'INTERACTIVE_RESOURCE',
-        'resource_type_general/model': 'MODEL',
-        'resource_type_general/physical_object': 'PHYSICAL_OBJECT',
-        'resource_type_general/service': 'SERVICE',
-        'resource_type_general/software': 'SOFTWARE',
-        'resource_type_general/sound': 'SOUND',
-        'resource_type_general/text': 'TEXT',
-        'resource_type_general/workflow': 'WORKFLOW',
-        'resource_type_general/other': 'OTHER'
-    }
-
-    controlled_subject_area_options = {
-        'radar_controlled_subject_area/agriculture': 'AGRICULTURE',
-        'radar_controlled_subject_area/architecture': 'ARCHITECTURE',
-        'radar_controlled_subject_area/arts_and_media': 'ARTS_AND_MEDIA',
-        'radar_controlled_subject_area/astrophysics_and_astronomy': 'ASTROPHYSICS_AND_ASTRONOMY',
-        'radar_controlled_subject_area/biochemistry': 'BIOCHEMISTRY',
-        'radar_controlled_subject_area/biology': 'BIOLOGY',
-        'radar_controlled_subject_area/behavioural_sciences': 'BEHAVIOURAL_SCIENCES',
-        'radar_controlled_subject_area/chemistry': 'CHEMISTRY',
-        'radar_controlled_subject_area/computer_science': 'COMPUTER_SCIENCE',
-        'radar_controlled_subject_area/economics': 'ECONOMICS',
-        'radar_controlled_subject_area/engineering': 'ENGINEERING',
-        'radar_controlled_subject_area/environmental_science_and_ecology': 'ENVIRONMENTAL_SCIENCE_AND_ECOLOGY',
-        'radar_controlled_subject_area/ethnology': 'ETHNOLOGY',
-        'radar_controlled_subject_area/geological_science': 'GEOLOGICAL_SCIENCE',
-        'radar_controlled_subject_area/geography': 'GEOGRAPHY',
-        'radar_controlled_subject_area/history': 'HISTORY',
-        'radar_controlled_subject_area/horticulture': 'HORTICULTURE',
-        'radar_controlled_subject_area/information_technology': 'INFORMATION_TECHNOLOGY',
-        'radar_controlled_subject_area/life_science': 'LIFE_SCIENCE',
-        'radar_controlled_subject_area/linguistics': 'LINGUISTICS',
-        'radar_controlled_subject_area/materials_science': 'MATERIALS_SCIENCE',
-        'radar_controlled_subject_area/mathematics': 'MATHEMATICS',
-        'radar_controlled_subject_area/medicine': 'MEDICINE',
-        'radar_controlled_subject_area/philosophy': 'PHILOSOPHY',
-        'radar_controlled_subject_area/physics': 'PHYSICS',
-        'radar_controlled_subject_area/psychology': 'PSYCHOLOGY',
-        'radar_controlled_subject_area/social_sciences': 'SOCIAL_SCIENCES',
-        'radar_controlled_subject_area/software_technology': 'SOFTWARE_TECHNOLOGY',
-        'radar_controlled_subject_area/sports': 'SPORTS',
-        'radar_controlled_subject_area/theology': 'THEOLOGY',
-        'radar_controlled_subject_area/veterinary_medicine': 'VETERINARY_MEDICINE',
-        'radar_controlled_subject_area/other': 'OTHER'
-    }
-
-    data_source_options = {
-        'radar_data_source/instrument': 'INSTRUMENT',
-        'radar_data_source/media': 'MEDIA',
-        'radar_data_source/observation': 'OBSERVATION',
-        'radar_data_source/trial': 'TRIAL',
-        'radar_data_source/organism': 'ORGANISM',
-        'radar_data_source/tissue': 'TISSUE',
-        'radar_data_source/other': 'OTHER'
-    }
-
-    software_type_options = {
-        'radar_software_type/resource_production': 'RESOURCE_PRODUCTION',
-        'radar_software_type/resource_processing': 'RESOURCE_PROCESSING',
-        'radar_software_type/resource_viewing': 'RESOURCE_VIEWING',
-        'radar_software_type/other': 'OTHER'
-    }
-
-    controlled_rights_options = {
-        'dataset_license_types/71': 'CC_BY_4_0_ATTRIBUTION',
-        'dataset_license_types/74': 'CC_BY_ND_4_0_ATTRIBUTION_NO_DERIVS',
-        'dataset_license_types/75': 'CC_BY_SA_4_0_ATTRIBUTION_SHARE_ALIKE',
-        'dataset_license_types/73': 'CC_BY_NC_4_0_ATTRIBUTION_NON_COMMERCIAL',
-        # '': 'CC_BY_NC_SA_4_0_ATTRIBUTION_NON_COMMERCIAL_SHARE_ALIKE',
-        # '': 'CC_BY_NC_ND_4_0_ATTRIBUTION_NON_COMMERCIAL_NO_DERIVS',
-        'dataset_license_types/cc0': 'CC_0_1_0_UNIVERSAL_PUBLIC_DOMAIN_DEDICATION',
-        # '': 'ALL_RIGHTS_RESERVED',
-        'dataset_license_types/233': 'OTHER'
-    }
-
-    relation_type_options = {
-        'relation_type/is_cited_by': 'IS_CITED_BY',
-        'relation_type/cites': 'CITES',
-        'relation_type/is_supplement_to': 'IS_SUPPLEMENT_TO',
-        'relation_type/is_supplemented_by': 'IS_SUPPLEMENTED_BY',
-        'relation_type/is_continued_by': 'IS_CONTINUED_BY',
-        'relation_type/continues': 'CONTINUES',
-        'relation_type/describes': 'DESCRIBES',
-        'relation_type/is_described_by': 'IS_DESCRIBED_BY',
-        'relation_type/has_metadata': 'HAS_METADATA',
-        'relation_type/is_metadata_for': 'IS_METADATA_FOR',
-        'relation_type/has_version': 'HAS_VERSION',
-        'relation_type/is_version_of': 'IS_VERSION_OF',
-        'relation_type/is_new_version_of': 'IS_NEW_VERSION_OF',
-        'relation_type/is_previous_version_of': 'IS_PREVIOUS_VERSION_OF',
-        'relation_type/is_part_of': 'IS_PART_OF',
-        'relation_type/has_part': 'HAS_PART',
-        'relation_type/is_published_in': 'IS_PUBLISHED_IN',
-        'relation_type/is_referenced_by': 'IS_REFERENCED_BY',
-        'relation_type/references': 'REFERENCES',
-        'relation_type/is_documented_by': 'IS_DOCUMENTED_BY',
-        'relation_type/documents': 'DOCUMENTS',
-        'relation_type/is_compiled_by': 'IS_COMPILED_BY',
-        'relation_type/Compiles': 'COMPILES',
-        'relation_type/is_variant_form_of': 'IS_VARIANT_FORM_OF',
-        'relation_type/is_original_form_of': 'IS_ORIGINAL_FORM_OF',
-        'relation_type/is_identical_to': 'IS_IDENTICAL_TO',
-        'relation_type/is_reviewed_by': 'IS_REVIEWED_BY',
-        'relation_type/reviews': 'REVIEWS',
-        'relation_type/is_derived_from': 'IS_DERIVED_FROM',
-        'relation_type/is_source_of': 'IS_SOURCE_OF',
-        'relation_type/requires': 'REQUIRES',
-        'relation_type/is_required_by': 'IS_REQUIRED_BY',
-        'relation_type/obsoletes': 'OBSOLETES',
-        'relation_type/is_obsoleted_by': 'IS_OBSOLETED_BY'
-    }
+    def get_selected_dataset(self, form):
+        if self.get_from_session(self.request, 'project_id') != self.project.pk:
+            form.add_error(None, _('The export selection has changed. Please reload the export form.'))
+            return None
+        for dataset in self.get_datasets():
+            if dataset.key == form.cleaned_data['dataset']:
+                return dataset
+        form.add_error('dataset', _('This dataset is no longer available. Please reload the export form.'))
+        return None
 
     class Form(forms.Form):
-
-        dataset = forms.CharField(label=_('Select dataset of your project'))
-        workspace = forms.CharField(label=_('Select a workspace in RADAR'))
+        dataset = forms.ChoiceField(label=_('Select dataset of your project'))
+        workspace = forms.ChoiceField(label=_('Select a workspace in RADAR'))
 
         def __init__(self, *args, **kwargs):
             dataset_choices = kwargs.pop('dataset_choices')
             workspace_choices = kwargs.pop('workspace_choices')
             radar_urls = kwargs.pop('radar_urls')
+            self.mapping_warnings = kwargs.pop('mapping_warnings', [])
 
             super().__init__(*args, **kwargs)
 
             dataset_choices_with_radar_urls = []
-            for dataset, radar_url in zip(dataset_choices, radar_urls):
+            for dataset, radar_url in zip(dataset_choices, radar_urls, strict=False):
                 set_index, label = dataset
                 if radar_url is not None:
-                    label += f' (Already exported to RADAR: <a href="{radar_url}" target="_blank">{radar_url}</a>)'
-                dataset_choices_with_radar_urls.append((set_index, mark_safe(label)))
+                    label = format_html(
+                        '{} (Already exported to RADAR: <a href="{}" target="_blank" '
+                        'rel="noopener noreferrer">{}</a>)',
+                        label,
+                        radar_url,
+                        radar_url
+                    )
+                dataset_choices_with_radar_urls.append((set_index, label))
 
-            self.fields['dataset'].widget = forms.RadioSelect(choices=dataset_choices_with_radar_urls)
-            self.fields['workspace'].widget = forms.RadioSelect(choices=workspace_choices)
+            self.fields['dataset'].widget = forms.RadioSelect()
+            self.fields['dataset'].choices = dataset_choices_with_radar_urls
+            self.fields['workspace'].widget = forms.RadioSelect()
+            self.fields['workspace'].choices = workspace_choices
 
-    def render(self):
-        datasets = self.get_set('project/dataset/id')
-        dataset_choices = [(dataset.set_index, dataset.value) for dataset in datasets]
-        radar_urls = [self.get_text('project/dataset/radar_url', set_index=dataset.set_index) for dataset in datasets]
+    def prepare_export_session(self):
+        datasets = self.get_datasets()
+        dataset_choices = [(dataset.key, dataset.label) for dataset in datasets]
+        radar_urls = [dataset.radar_url for dataset in datasets]
 
         self.store_in_session(self.request, 'dataset_choices', dataset_choices)
         self.store_in_session(self.request, 'radar_urls', radar_urls)
         self.store_in_session(self.request, 'project_id', self.project.id)
 
-        if self.pop_from_session(self.request, 'get') is True:
-            workspace_choices = self.get_from_session(self.request, 'workspace_choices')
-            form = self.Form(
-                dataset_choices=dataset_choices,
-                workspace_choices=workspace_choices,
-                radar_urls=radar_urls
-            )
-            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
-        else:
-            # run the oauth get request to obtain the workspace_choices
-            url = self.get_get_url()
-            return self.get(self.request, url)
-
-    def submit(self):
-        dataset_choices = self.get_from_session(self.request, 'dataset_choices')
-        workspace_choices = self.get_from_session(self.request, 'workspace_choices')
-        radar_urls = self.get_from_session(self.request, 'radar_urls')
-
-        form = self.Form(
-            self.request.POST,
-            dataset_choices=dataset_choices,
-            workspace_choices=workspace_choices,
-            radar_urls=radar_urls
+    def get_export_form(self, data=None, workspace_choices=None):
+        return self.Form(
+            data,
+            dataset_choices=self.get_from_session(self.request, 'dataset_choices') or [],
+            workspace_choices=workspace_choices or self.get_from_session(self.request, 'workspace_choices') or [],
+            radar_urls=self.get_from_session(self.request, 'radar_urls') or [],
+            mapping_warnings=self.get_mapping_warnings(),
         )
 
-        if 'cancel' in self.request.POST:
-            self.pop_from_session(self.request, 'get')
-            self.pop_from_session(self.request, 'workspace_choices')
-            return redirect('project', self.project.id)
+    def get_mapping_warnings(self):
+        show_warnings = self.show_mapping_warnings
+        if show_warnings is None:
+            show_warnings = type(self).get_payload is RadarExportProviderBase.get_payload
+        if not show_warnings:
+            return []
+        warnings = []
+        for dataset in self.get_datasets():
+            service = self.get_service()
+            result = service.mapping(service.reader(dataset))
+            metadata = result.metadata
+            missing = missing_required_fields(metadata)
+            if missing or result.issues:
+                warnings.append({
+                    'title': metadata.title or dataset.label,
+                    'issues': result.issues,
+                    'missing': [REQUIRED_FIELD_LABELS.get(path, path) for path in missing],
+                })
+        return warnings
 
-        if form.is_valid():
-            self.store_in_session(self.request, 'set_index', form.cleaned_data['dataset'])
+    def clear_session(self, request):
+        for key in (
+            'access_token',
+            'dataset_choices',
+            'workspace_choices',
+            'radar_urls',
+            'project_id',
+            'operation',
+            'export_context',
+            'request',
+            'state',
+            'get',
+        ):
+            self.pop_from_session(request, key)
 
-            url = self.get_post_url(form.cleaned_data['workspace'])
-            data = self.get_post_data(form.cleaned_data['dataset'])
-            return self.post(self.request, url, data)
-        else:
-            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+    def get_session_key(self, key):
+        return f'{self.class_name}.{key}'
+
+    def store_in_session(self, request, key, data):
+        request.session[self.get_session_key(key)] = data
+
+    def get_from_session(self, request, key):
+        return request.session.get(self.get_session_key(key))
+
+    def pop_from_session(self, request, key):
+        return request.session.pop(self.get_session_key(key), None)
+
+    def get_workspace_choices(self, response):
+        try:
+            data = response.json()
+        except ValueError:
+            raise RadarProtocolError() from None
+        if not isinstance(data, dict):
+            raise RadarProtocolError()
+        return workspace_choices(data)
 
     def get_get_url(self):
-        return f'{self.radar_url}/radar/api/workspaces?rows=100&sort=descriptiveMetadata.title'
+        return workspaces_url(self.radar_url)
 
-    def get_success(self, request, response):
-        workspace_choices = [
-            (workspace.get('id'), workspace.get('descriptiveMetadata', {}).get('title'))
-            for workspace in response.json().get('data', [])
-        ]
-        self.store_in_session(request, 'get', True)
-        self.store_in_session(request, 'workspace_choices', workspace_choices)
-        return redirect('project_export', self.get_from_session(request, 'project_id'), self.key)
-
-    def get_post_url(self, workspace_id):
-        return f'{self.radar_url}/radar/api/workspaces/{workspace_id}/datasets'
-
-    def get_post_data(self, set_index):
-        now = int(time.time())
-        email = self.request.user.email
-        dataset = self.get_dataset(set_index)
-
-        return {
-            'technicalMetadata': {
-                "retentionPeriod": 10,
-                "archiveDate": now,
-                "publishDate": now,
-                "responsibleEmail": email,
-                "schema": {
-                    "key": "RDDM",
-                    "version": "9.1"
-                }
-            },
-            'descriptiveMetadata': dataset
-        }
+    def get_export_context(self, request):
+        """Validate the saved destination without preparing project Values again."""
+        context = self.get_from_session(request, 'export_context')
+        if not isinstance(context, dict):
+            return None
+        try:
+            dataset = ExportDataset(**context['dataset'])
+            validate_datasets([dataset])
+            radar_url = urlsplit(context['radar_url'])
+            if (
+                context['provider'] != self.class_name
+                or not isinstance(context['project_id'], int) or isinstance(context['project_id'], bool)
+                or context['project_id'] <= 0
+                or not isinstance(context['persist'], bool)
+                or not isinstance(context['language'], str) or not context['language'].strip()
+                or not isinstance(dataset.label, str)
+                or radar_url.scheme not in ('http', 'https') or not radar_url.hostname
+                or radar_url.query or radar_url.fragment
+            ):
+                return None
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return None
+        # A POST may outlive its session context. Preserve independent scope data.
+        return {**context, 'dataset': asdict(dataset)}
 
     def post_success(self, request, response):
-        radar_id = response.json().get('id')
-        if radar_id:
-            project_id = self.get_from_session(self.request, 'project_id')
-            set_index = self.get_from_session(self.request, 'set_index')
-
-            if request.LANGUAGE_CODE == 'de':
-                radar_url = f'{self.radar_url}/radar/de/dataset/{radar_id}'
-            else:
-                radar_url = f'{self.radar_url}/radar/en/dataset/{radar_id}'
-
-            try:
-                attribute = Attribute.objects.get(path='project/dataset/radar_id')
-                value, created = Value.objects.get_or_create(
-                    attribute=attribute,
-                    project_id=project_id,
-                    set_index=set_index
-                )
-                value.text = radar_id
-                value.save()
-            except Attribute.DoesNotExist:
-                pass
-
-            try:
-                attribute = Attribute.objects.get(path='project/dataset/radar_url')
-                value, created = Value.objects.get_or_create(
-                    attribute=attribute,
-                    project_id=project_id,
-                    set_index=set_index
-                )
-                value.text = radar_url
-                value.save()
-            except Attribute.DoesNotExist:
-                pass
-
-            return redirect(radar_url)
-        else:
+        try:
+            data = response.json()
+        except ValueError:
+            data = None
+        radar_id = data.get('id') if isinstance(data, dict) else None
+        if not isinstance(radar_id, str) or not radar_id.strip():
             return render(request, 'core/error.html', {
                 'title': _('RADAR error'),
-                'errors': [_('The ID of the new dataset could not be retrieved.')]
+                'errors': [self.get_client_error_message(RadarProtocolError(), stage='export')],
             }, status=200)
+        active_request, context = getattr(self, '_active_export', (None, None))
+        if active_request is not request:
+            context = self.get_export_context(request)
+        radar_url = None
+        stored = False
+        try:
+            if context is None:
+                raise ValueError('The confirmed export has no usable destination context.')
+            radar_url = dataset_page_url(context['radar_url'], radar_id, context['language'])
+            dataset = ExportDataset(**context['dataset'])
+            if context['persist']:
+                if self.mapping.store_result is None:
+                    raise ExportStoreError(dataset.key, radar_id, radar_url)
+                project = Project.objects.get(pk=context['project_id'])
+                writer = partial(self.mapping.store_result, project)
+                store_confirmed_result(writer, dataset, radar_id, radar_url)
+            stored = True
+        except (Project.DoesNotExist, DatabaseError, ExportStoreError, KeyError, TypeError, ValueError):
+            logger.warning('Could not store confirmed RADAR dataset %s', radar_id)
+            stored = False
+        self.pop_from_session(request, 'export_context')
+        self.pop_from_session(request, 'operation')
+        return self.render_export_result(request, radar_id, radar_url, stored=stored)
+
+    def render_export_result(self, request, radar_id, radar_url, *, stored=True):
+        if stored:
+            return redirect(radar_url)
+        return render(request, 'plugins/exports_radar_result.html', {
+            'radar_id': radar_id, 'radar_url': radar_url,
+        })
 
     @property
     def radar_url(self):
         return settings.RADAR_PROVIDER['radar_url'].strip('/')
-
-    @property
-    def authorize_url(self):
-        return f'{self.radar_url}/radar-backend/oauth/authorize'
-
-    @property
-    def token_url(self):
-        return f'{self.radar_url}/radar-backend/oauth/token'
 
     @property
     def client_id(self):
@@ -352,18 +273,223 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
         return settings.RADAR_PROVIDER['client_secret']
 
     @property
+    def request_timeout(self):
+        return settings.RADAR_PROVIDER.get('request_timeout', 30)
+
+    def get_client_error_message(self, error, *, stage='request'):
+        response = getattr(error, 'response', None)
+        status = response.status_code if response is not None else None
+        logger.warning('RADAR request failed: status=%s', status)
+        if stage == 'oauth':
+            return _('RADAR OAuth authorization could not be completed. Please try again or contact support.')
+        if status == 401 or (stage == 'login' and status == 400):
+            return _('RADAR login failed or expired. Please check your credentials and log in again.')
+        if status == 403:
+            return _('Your RADAR account does not have permission for this operation. Check workspace access.')
+        if status == 404:
+            return _(
+                'The RADAR resource or API endpoint could not be found. '
+                'Reload the export page and try again, or contact support.'
+            )
+        if stage == 'export' and status == 422:
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            exception = data.get('exception') if isinstance(data, dict) else None
+            if isinstance(exception, str) and exception.startswith('Validation exception:'):
+                message = exception.removeprefix('Validation exception:').strip()
+                if message:
+                    return _('RADAR rejected the dataset metadata: %(message)s') % {'message': message}
+        if stage == 'export' and status in (400, 422):
+            return _('RADAR rejected the dataset metadata. Review the metadata and mapping warnings before retrying.')
+        if status == 400:
+            return _('RADAR could not process the request. Review your input or contact support.')
+        if status is not None and 500 <= status < 600:
+            message = _('RADAR reported a server error. Please try again later or contact support.')
+            if stage == 'export':
+                return '{} {}'.format(message, _(
+                    'The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.'
+                ))
+            return message
+        if stage == 'export':
+            return _('The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.')
+        return _('RADAR could not complete the request. Please try again later.')
+
+
+class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
+
+    oauth_token_auth_methods = ('client_secret_basic', 'client_secret_post')
+
+    def clear_pending_request(self, request):
+        for key in ('request', 'state', 'operation', 'export_context'):
+            self.pop_from_session(request, key)
+
+    def export_session_error(self, request):
+        self.clear_pending_request(request)
+        return render(request, 'core/error.html', {
+            'title': _('RADAR export session expired'),
+            'errors': [_('The RADAR export session is incomplete or was canceled. Start the export again.')],
+        }, status=200)
+
+    def post(self, request, url, json=None, files=None, multipart=None):
+        context = self.get_export_context(request)
+        if (
+            self.get_from_session(request, 'operation') != 'create_dataset' or context is None
+            or not isinstance(url, str)
+            or not url.startswith(f'{context["radar_url"].rstrip("/")}/radar/api/workspaces/')
+            or not url.endswith('/datasets')
+        ):
+            return self.export_session_error(request)
+        self._active_export = (request, context)
+        try:
+            return super().post(request, url, json=json, files=files, multipart=multipart)
+        finally:
+            self._active_export = (None, None)
+
+    def authorize(self, request):
+        callback = urlsplit(self.redirect_uri)
+        current = urlsplit(request.build_absolute_uri('/'))
+        default_ports = {'http': 80, 'https': 443}
+        callback_origin = (callback.scheme, callback.hostname, callback.port or default_ports.get(callback.scheme))
+        current_origin = (current.scheme, current.hostname, current.port or default_ports.get(current.scheme))
+        if callback_origin != current_origin:
+            return render(request, 'core/error.html', {
+                'title': _('RADAR OAuth configuration error'),
+                'errors': [_(
+                    'The configured RADAR OAuth callback points to a different RDMO instance. '
+                    'Start the export on that instance or ask support to configure '
+                    'and register a callback URL for this instance.'
+                )],
+            }, status=200)
+        return super().authorize(request)
+
+    def callback(self, request):
+        self.request = request
+        pending = self.get_from_session(request, 'request')
+        if (
+            not isinstance(pending, list | tuple) or not pending
+            or pending[0] not in ('get', 'post')
+            or len(pending) != (2 if pending[0] == 'get' else 5)
+            or not isinstance(pending[1], str)
+        ):
+            return self.export_session_error(request)
+        if pending[0] == 'post' and (
+            self.get_from_session(request, 'operation') != 'create_dataset'
+            or self.get_export_context(request) is None
+            or not isinstance(pending[2], dict) or pending[3:] not in ([None, None], (None, None))
+        ):
+            return self.export_session_error(request)
+        try:
+            return super().callback(request)
+        except requests.RequestException as error:
+            message = self.get_client_error_message(error, stage='oauth')
+            if self.get_from_session(request, 'operation') == 'create_dataset':
+                message = '{} {}'.format(message, _(
+                    'The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.'
+                ))
+            return render(request, 'core/error.html', {
+                'title': _('RADAR OAuth error'),
+                'errors': [message],
+            }, status=200)
+
+    def render(self):
+        self.prepare_export_session()
+
+        if self.pop_from_session(self.request, 'get') is True:
+            form = self.get_export_form()
+            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+
+        self.store_in_session(self.request, 'operation', 'get_workspaces')
+        return self.get(self.request, self.get_get_url())
+
+    def submit(self):
+        if 'cancel' in self.request.POST:
+            self.clear_pending_request(self.request)
+            self.pop_from_session(self.request, 'get')
+            self.pop_from_session(self.request, 'workspace_choices')
+            return redirect('project', self.project.id)
+
+        form = self.get_export_form(data=self.request.POST)
+        if form.is_valid():
+            dataset = self.get_selected_dataset(form)
+            if dataset is None:
+                return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+            radar_url = self.radar_url
+            payload = self._prepare_payload(dataset, form)
+            if payload is None:
+                return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+            self.store_in_session(self.request, 'export_context', {
+                'project_id': self.project.pk, 'dataset': asdict(dataset),
+                'provider': self.class_name, 'persist': self.mapping.store_result is not None,
+                'radar_url': radar_url, 'language': self.request.LANGUAGE_CODE,
+            })
+            self.store_in_session(self.request, 'operation', 'create_dataset')
+            return self.post(
+                self.request, dataset_url(radar_url, form.cleaned_data['workspace']), payload,
+            )
+
+        return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+
+    def get_success(self, request, response):
+        try:
+            choices = self.get_workspace_choices(response)
+        except RadarProtocolError as error:
+            return render(request, 'core/error.html', {
+                'title': _('RADAR error'), 'errors': [self.get_client_error_message(error)],
+            }, status=200)
+        self.store_in_session(request, 'get', True)
+        self.store_in_session(request, 'workspace_choices', choices)
+        return redirect('project_export', self.get_from_session(request, 'project_id'), self.key)
+
+    @property
+    def authorize_url(self):
+        return f'{self.radar_url}/radar-backend/oauth/authorize'
+
+    @property
+    def token_url(self):
+        return f'{self.radar_url}/radar-backend/oauth/token'
+
+    @property
     def redirect_uri(self):
         return settings.RADAR_PROVIDER['redirect_uri']
+
+    @property
+    def oauth_token_auth_method(self):
+        auth_method = settings.RADAR_PROVIDER.get(
+            'oauth_token_auth_method',
+            'client_secret_basic'
+        )
+        if auth_method not in self.oauth_token_auth_methods:
+            raise ImproperlyConfigured(
+                'RADAR_PROVIDER["oauth_token_auth_method"] must be '
+                '"client_secret_basic" or "client_secret_post".'
+            )
+        return auth_method
 
     def get_authorize_params(self, request, state):
         return {
             'response_type': 'code',
-            'client_id': 'jochenklar',
+            'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
             'state': state
         }
 
     def get_callback_params(self, request):
+        if self.oauth_token_auth_method == 'client_secret_post':
+            return {}
+        return self.get_callback_token_data(request)
+
+    def get_callback_data(self, request):
+        if self.oauth_token_auth_method == 'client_secret_basic':
+            return {}
+        return {
+            **self.get_callback_token_data(request),
+            'client_id': self.client_id,
+            'client_secret': self.client_secret
+        }
+
+    def get_callback_token_data(self, request):
         return {
             'grant_type': 'authorization_code',
             'redirect_uri': self.redirect_uri,
@@ -371,7 +497,18 @@ class RadarExportProvider(RadarExport, OauthProviderMixin):
         }
 
     def get_callback_auth(self, request):
-        return (self.client_id, self.client_secret)
+        if self.oauth_token_auth_method == 'client_secret_basic':
+            return (self.client_id, self.client_secret)
+        return None
 
     def get_error_message(self, response):
-        return response.json().get('exception')
+        stage = 'export' if self.get_from_session(self.request, 'operation') == 'create_dataset' else 'request'
+        return self.get_client_error_message(requests.HTTPError(response=response), stage=stage)
+
+
+class RadarProjectExportProvider(RadarExportProvider):
+    mapping = PROJECT_MAPPING
+
+
+class RadarTemplateFrameworkExportProvider(RadarExportProvider):
+    mapping = TEMPLATE_FRAMEWORK_MAPPING
