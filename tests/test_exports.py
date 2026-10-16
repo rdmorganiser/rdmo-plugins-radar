@@ -331,6 +331,28 @@ def test_export_validation_message_is_kept_in_user_error(provider_class, caplog)
     assert detail not in caplog.text
 
 
+@pytest.mark.parametrize(('status', 'stage', 'expected'), [
+    (400, 'request', 'could not process the request'),
+    (404, 'request', 'resource or API endpoint could not be found'),
+    (404, 'export', 'resource or API endpoint could not be found'),
+    (500, 'request', 'reported a server error'),
+    (502, 'export', 'reported a server error'),
+    (503, 'export', 'reported a server error'),
+    (504, 'export', 'reported a server error'),
+    (418, 'request', 'could not complete the request'),
+])
+def test_request_errors_explain_status_without_exposing_response_body(status, stage, expected, caplog):
+    provider = make_provider()
+    error = http_error(status)
+    error.response._content = b'{"exception": "Private server details"}'
+    message = str(provider.get_client_error_message(error, stage=stage))
+    assert expected in message
+    if stage == 'export' and status >= 500:
+        assert 'Check RADAR for an existing draft before retrying' in message
+    assert 'Private server details' not in message
+    assert 'Private server details' not in caplog.text
+
+
 @pytest.mark.parametrize('body', [
     b'not JSON', b'[]', b'{}', b'{"exception": null}', b'{"exception": 123}',
     b'{"exception": "Validation exception: "}',

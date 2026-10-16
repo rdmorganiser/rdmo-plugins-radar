@@ -371,6 +371,19 @@ messages based on status and workflow. For a dataset export rejected with HTTP 4
 `Validation exception:` message is shown as plain text, for example when a dataset name already exists.
 Other exception text and raw response bodies are not displayed.
 
+| HTTP status | User-facing behavior |
+| --- | --- |
+| 400 | Explain an invalid request; dataset exports show the metadata warning. |
+| 401 | Request a new login with credentials; RDMO's OAuth mixin starts reauthorization. |
+| 403 | Explain missing permissions or workspace access. |
+| 404 | Explain that the resource or API endpoint was not found and suggest reloading the export page. |
+| 422 | Show the dataset validation detail when available, otherwise the metadata warning. |
+| 5xx | Explain a server error; dataset exports also advise checking for an existing draft before retrying. |
+
+OAuth token-exchange failures retain the authorization error message. Other HTTP failures and malformed
+responses retain a generic message. Failed dataset creation is never automatically retried, except for
+RDMO's existing OAuth reauthorization behavior on 401.
+
 The registered adapters assemble the services through small factories. XML export handles current projects
 and snapshots; direct export separates payload preparation, the remote request, and confirmed-result storage.
 OAuth callbacks use the registered mapping's persistence hook and captured dataset scope without preparing

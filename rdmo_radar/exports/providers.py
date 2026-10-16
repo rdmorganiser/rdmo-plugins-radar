@@ -64,7 +64,7 @@ class RadarExportProviderBase(Export):
                 'Could not prepare RADAR export payload: provider=%s error_type=%s',
                 self.class_name, type(error).__name__,
             )
-            form.add_error(None, _('The RADAR export could not be prepared. Please contact an administrator.'))
+            form.add_error(None, _('The RADAR export could not be prepared. Please contact support.'))
             return None
         return payload
 
@@ -281,11 +281,16 @@ class RadarExportProviderBase(Export):
         status = response.status_code if response is not None else None
         logger.warning('RADAR request failed: status=%s', status)
         if stage == 'oauth':
-            return _('RADAR OAuth authorization could not be completed. Please try again or contact an administrator.')
+            return _('RADAR OAuth authorization could not be completed. Please try again or contact support.')
         if status == 401 or (stage == 'login' and status == 400):
             return _('RADAR login failed or expired. Please check your credentials and log in again.')
         if status == 403:
             return _('Your RADAR account does not have permission for this operation. Check workspace access.')
+        if status == 404:
+            return _(
+                'The RADAR resource or API endpoint could not be found. '
+                'Reload the export page and try again, or contact support.'
+            )
         if stage == 'export' and status == 422:
             try:
                 data = response.json()
@@ -298,6 +303,15 @@ class RadarExportProviderBase(Export):
                     return _('RADAR rejected the dataset metadata: %(message)s') % {'message': message}
         if stage == 'export' and status in (400, 422):
             return _('RADAR rejected the dataset metadata. Review the metadata and mapping warnings before retrying.')
+        if status == 400:
+            return _('RADAR could not process the request. Review your input or contact support.')
+        if status is not None and 500 <= status < 600:
+            message = _('RADAR reported a server error. Please try again later or contact support.')
+            if stage == 'export':
+                return '{} {}'.format(message, _(
+                    'The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.'
+                ))
+            return message
         if stage == 'export':
             return _('The RADAR export could not be confirmed. Check RADAR for an existing draft before retrying.')
         return _('RADAR could not complete the request. Please try again later.')
@@ -344,7 +358,7 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
                 'title': _('RADAR OAuth configuration error'),
                 'errors': [_(
                     'The configured RADAR OAuth callback points to a different RDMO instance. '
-                    'Start the export on that instance or ask an administrator to configure '
+                    'Start the export on that instance or ask support to configure '
                     'and register a callback URL for this instance.'
                 )],
             }, status=200)

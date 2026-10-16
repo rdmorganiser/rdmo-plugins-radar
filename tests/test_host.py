@@ -163,11 +163,17 @@ def test_credentials_native_failure_preserves_form_or_requests_login(host, monke
 
 
 @pytest.mark.parametrize('authentication', ['credentials', 'oauth'])
+@pytest.mark.parametrize(('status', 'expected'), [
+    (422, 'RADAR rejected the dataset metadata:'),
+    (404, 'The RADAR resource or API endpoint could not be found.'),
+    (500, 'RADAR reported a server error.'),
+    (503, 'RADAR reported a server error.'),
+])
 @pytest.mark.parametrize('detail', [
     'Es existiert bereits ein Eintrag mit dem gleichen Namen auf dieser Ebene.',
     'Ungültiger Name: <script>alert("name")</script>',
 ])
-def test_export_displays_radar_validation_detail(host, monkeypatch, authentication, detail):
+def test_export_displays_radar_error(host, monkeypatch, authentication, status, expected, detail):
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', 'Dataset')
     calls = []
@@ -176,7 +182,7 @@ def test_export_displays_radar_validation_detail(host, monkeypatch, authenticati
         calls.append(url)
         if url.endswith('/tokens') or '/oauth/token' in url:
             return response({'access_token': 'bearer-token'})
-        return response({'exception': f'Validation exception: {detail}'}, 422)
+        return response({'exception': f'Validation exception: {detail}'}, status)
 
     monkeypatch.setattr(requests, 'post', post)
     monkeypatch.setattr(requests, 'get', lambda *args, **kwargs: response({
@@ -196,7 +202,7 @@ def test_export_displays_radar_validation_detail(host, monkeypatch, authenticati
     assert host.get(url).status_code == 200
 
     if authentication == 'oauth':
-        # Exercise validation failure after core replays the saved creation POST.
+        # Exercise failure after core replays the saved creation POST.
         session = host.session
         del session['rdmo_radar.exports.RadarExportProvider.access_token']
         session.save()
@@ -210,8 +216,13 @@ def test_export_displays_radar_validation_detail(host, monkeypatch, authenticati
         assert result.context['form'].cleaned_data['workspace'] == 'workspace'
     assert result.status_code == 200
     content = result.content.decode()
-    assert 'RADAR rejected the dataset metadata:' in content
-    assert str(escape(detail)) in content
+    assert expected in content
+    if status == 422:
+        assert str(escape(detail)) in content
+    else:
+        assert str(escape(detail)) not in content
+    if status >= 500:
+        assert 'Check RADAR for an existing draft before retrying' in content
     assert '<script>' not in content
     assert sum('/datasets' in target for target in calls) == 1
     assert not project.values.filter(attribute__path='project/dataset/radar_id').exists()
