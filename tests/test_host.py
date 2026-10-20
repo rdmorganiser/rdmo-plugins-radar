@@ -163,7 +163,7 @@ def test_credentials_native_failure_preserves_form_or_requests_login(host, monke
 
 
 @pytest.mark.parametrize('authentication', ['credentials', 'oauth'])
-@pytest.mark.parametrize(('status', 'expected'), [
+@pytest.mark.parametrize('status, expected', [
     (422, 'RADAR rejected the dataset metadata:'),
     (404, 'The RADAR resource or API endpoint could not be found.'),
     (500, 'RADAR reported a server error.'),
@@ -461,7 +461,8 @@ def test_import_upload_preview_apply_uses_native_checked_value_lifecycle(host):
     values = preview.context['values']
     staged_title = next(value for value in values if value.attribute.path == 'project/dataset/title')
     staged_description = next(value for value in values if value.attribute.path == 'project/dataset/description')
-    assert staged_title.pk is None and staged_description.pk is None
+    assert staged_title.pk is None
+    assert staged_description.pk is None
     assert staged_title.set_index == staged_description.set_index == 1
     checked = f'{staged_title.attribute.uri}[{staged_title.set_prefix}][1][{staged_title.collection_index}]'
     applied = host.post(url, {'method': 'import_file', checked: 'on'})

@@ -25,7 +25,7 @@ def test_empty_metadata_reports_all_required_paths_in_order():
     )
 
 
-@pytest.mark.parametrize(('changes', 'missing'), [
+@pytest.mark.parametrize('changes, missing', [
     ({'identifier': Identifier('', None)}, ('identifier', 'identifier.identifierType')),
     ({'creators': [PersonOrOrganization('')]}, ('creators.creator',)),
     ({'publishers': [PersonOrOrganization('')]}, ('publishers.publisher',)),

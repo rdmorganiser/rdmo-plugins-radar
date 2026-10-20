@@ -11,7 +11,7 @@ from time import perf_counter
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')
 
-import django  # noqa: E402
+import django
 
 django.setup()
 

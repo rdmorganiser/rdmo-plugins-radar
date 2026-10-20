@@ -9,7 +9,7 @@ from rdmo_radar.client import RadarClient, dataset_page_url
 from rdmo_radar.exceptions import RadarProtocolError
 
 
-@pytest.mark.parametrize(('radar_url', 'language', 'expected'), [
+@pytest.mark.parametrize('radar_url, language, expected', [
     ('https://radar.example.test', 'en', 'https://radar.example.test/radar/en/dataset/confirmed'),
     ('https://radar.example.test/', 'de', 'https://radar.example.test/radar/de/dataset/confirmed'),
     ('https://radar-staging.example.test///', 'fr', 'https://radar-staging.example.test/radar/en/dataset/confirmed'),
@@ -182,7 +182,7 @@ def test_upstream_response_body_is_not_logged(client, monkeypatch, caplog):
         assert secret not in str(caught.value)
 
 
-@pytest.mark.parametrize(('method', 'result'), [
+@pytest.mark.parametrize('method, result', [
     ('get', response(body=b'<html>Page</html>')),
     ('post', response(status=204, body=b'')),
 ])

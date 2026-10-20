@@ -305,7 +305,7 @@ def test_short_import_paths_use_model_builders_and_the_official_default(db, sett
     assert option.uri == 'https://rdmorganiser.github.io/terms/options/type/example'
 
 
-@pytest.mark.parametrize('method_name', ('fetch_attribute', 'fetch_option'))
+@pytest.mark.parametrize('method_name', ['fetch_attribute', 'fetch_option'])
 def test_empty_import_paths_return_none_without_queries_or_uri_construction(db, django_assert_num_queries, method_name):
     plugin = SimpleNamespace(values=[], get_attribute=Mock(), get_option=Mock())
     context = ProjectWriteContext(plugin, 0, {})

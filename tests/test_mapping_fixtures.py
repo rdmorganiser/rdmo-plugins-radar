@@ -121,7 +121,9 @@ def test_updated_prototype_xml_matches_downloaded_radar_draft(observed_draft_pro
     expected = ElementTree.parse(XML_DIRECTORY / 'RADAR_DATASET_DESCRIPTIVE_METADATA.xml').getroot()
     assert xml_structure(ElementTree.fromstring(first['xml_data'])) == xml_structure(expected)
     assert tuple(field['path'] for field in first['missing_fields']) == missing_required_fields(observed_draft_metadata)
-    assert first['has_warnings'] and first['validation_errors'] and not first['mapping_issues']
+    assert first['has_warnings']
+    assert first['validation_errors']
+    assert not first['mapping_issues']
 
     export.request = RequestFactory().get('/', {'download': '1'})
     with zipfile.ZipFile(io.BytesIO(export.render().content)) as archive:
@@ -223,7 +225,8 @@ def test_prototype_xml_reports_gaps_and_downloads_both_files(prototype):
     files = export.prepare_files()
     assert [file['file_name'] for file in files] == ['Radar Testdatensatz Nr 1.xml', 'Radar Testdatensatz Nr 2.xml']
     first = files[0]
-    assert first['has_warnings'] and not first['mapping_issues']
+    assert first['has_warnings']
+    assert not first['mapping_issues']
     assert {'identifier', 'creators.creator', 'productionYear', 'resource.resourceType'} <= {
         field['path'] for field in first['missing_fields']
     }
@@ -486,7 +489,7 @@ def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
     assert context.fetch_option('missing') is None
 
 
-@pytest.mark.parametrize(('language', 'url_language'), [('en', 'en'), ('de', 'de')])
+@pytest.mark.parametrize('language, url_language', [('en', 'en'), ('de', 'de')])
 def test_completed_export_records_id_and_url_for_selected_dataset(prototype, language, url_language):
     add_value(prototype, 'project/dataset/radar_id', 'existing-id', set_index=0)
     add_value(prototype, 'project/dataset/radar_url', 'existing-url', set_index=0)

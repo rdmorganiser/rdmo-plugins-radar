@@ -382,6 +382,11 @@ benchmark with `python -m tests.benchmark_mapping`. The benchmark uses 2, 50, an
 query counts, timings, and metadata/diagnostic hashes. These retain 16 setup queries and zero subsequent
 queries on the configured RDMO 2.5.2 fixture. The important query requirement is independence from dataset count.
 
+The Ruff hook follows the sibling RDMO checkout's pinned revision and lint rules, including Django, pytest,
+logging, and gettext checks. Configuration targets Python 3.10, uses 120-character lines and single-quoted
+strings, and keeps separate import groups for RDMO and this plugin. Check the complete package and tests
+with `ruff check rdmo_radar tests`; the hook remains `ruff-check`, without a repository-wide formatter hook.
+
 Compatibility checks use released RDMO 2.5.1/2.5.2 and the pinned 2.6 source revision
 `9f48c2fc93e021ff8eef3e087c1368235bef2e56`, with dependency versions reported explicitly.
 M7a passed 276 tests with one expected upstream failure on each RDMO 2 target, using Python 3.14.7,

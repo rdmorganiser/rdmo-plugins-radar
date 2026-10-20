@@ -75,7 +75,7 @@ def test_preparation_failure_never_calls_writer(stage):
     service, _, _ = make_export_service()
     error = ValueError('Preparation failed')
     getattr(service, stage).side_effect = error
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match='Preparation failed') as caught:
         service.compute_payload(0, 'owner@example.test')
     assert caught.value is error
     service.writer.assert_not_called()
@@ -149,7 +149,8 @@ def test_xml_maps_once_and_matches_existing_renderer_and_schema():
     assert file.xml_data == prettify_xml(RadarExportRenderer().render(to_xml_payload(metadata)))
     assert file.missing_fields == file.validation_errors == ()
     assert file.issues is issues
-    assert file.has_warnings and not file.validation_failed
+    assert file.has_warnings
+    assert not file.validation_failed
 
 
 def test_xml_preserves_order_and_safe_unique_file_names():
@@ -175,7 +176,8 @@ def test_xml_keeps_draft_completeness_schema_and_mapping_warnings_separate():
     assert 'identifier' in file.missing_fields
     assert file.validation_errors == ('Schema violation',)
     assert file.issues is issues
-    assert file.has_warnings and not file.validation_failed
+    assert file.has_warnings
+    assert not file.validation_failed
 
 
 def test_xml_validator_failure_returns_a_warning_flag_without_discarding_xml():
@@ -184,11 +186,12 @@ def test_xml_validator_failure_returns_a_warning_flag_without_discarding_xml():
     file = service.compute_files([0])[0]
     assert file.xml_data == b'<radarDataset/>'
     assert file.validation_errors == file.missing_fields == ()
-    assert file.validation_failed and file.has_warnings
+    assert file.validation_failed
+    assert file.has_warnings
     service.validator.assert_called_once_with(file.xml_data)
 
 
-@pytest.mark.parametrize(('stage', 'file_name'), [
+@pytest.mark.parametrize('stage, file_name', [
     ('reader', '1.xml'), ('mapping', '1.xml'), ('serializer', 'Dataset.xml'), ('renderer', 'Dataset.xml'),
 ])
 def test_xml_generation_failure_identifies_file_without_exposing_internal_message(stage, file_name):
@@ -233,7 +236,7 @@ def test_import_parser_failure_does_not_stage_values():
     error = ValueError('Invalid XML')
     writer = Mock()
     service = RadarImportService(Mock(side_effect=error), writer)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match='Invalid XML') as caught:
         service.process(object())
     assert caught.value is error
     writer.assert_not_called()

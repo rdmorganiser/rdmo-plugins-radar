@@ -126,7 +126,7 @@ def test_oauth_render_redirects_and_preserves_workspace_request():
     assert provider.get_from_session(provider.request, 'state') == query['state'][0]
 
 
-@pytest.mark.parametrize(('host', 'secure'), [
+@pytest.mark.parametrize('host, secure', [
     ('localhost:8000', False),
     ('staging.example.test', True),
     ('rdmo.example.test:8443', True),
@@ -303,7 +303,7 @@ def test_oauth_callback_network_failure_during_export_warns_without_retry(monkey
     assert 'private timeout details' not in str(context)
 
 
-@pytest.mark.parametrize(('status', 'expected'), [
+@pytest.mark.parametrize('status, expected', [
     (400, 'rejected the dataset metadata'), (422, 'rejected the dataset metadata'),
     (403, 'does not have permission'), (500, 'existing draft'),
 ])
@@ -331,7 +331,7 @@ def test_export_validation_message_is_kept_in_user_error(provider_class, caplog)
     assert detail not in caplog.text
 
 
-@pytest.mark.parametrize(('status', 'stage', 'expected'), [
+@pytest.mark.parametrize('status, stage, expected', [
     (400, 'request', 'could not process the request'),
     (404, 'request', 'resource or API endpoint could not be found'),
     (404, 'export', 'resource or API endpoint could not be found'),
@@ -369,7 +369,7 @@ def test_export_validation_error_without_usable_detail_keeps_generic_message(bod
     assert 'private-token' not in caplog.text
 
 
-@pytest.mark.parametrize(('status', 'stage'), [
+@pytest.mark.parametrize('status, stage', [
     (400, 'export'), (401, 'export'), (500, 'export'),
     (422, 'request'), (422, 'login'), (422, 'oauth'),
 ])
@@ -390,7 +390,7 @@ def test_oauth_success_callback_handles_malformed_response(monkeypatch):
     assert 'try again later' in str(provider.get_success(provider.request, response)['errors'][0])
 
 
-@pytest.mark.parametrize(('field', 'value'), [
+@pytest.mark.parametrize('field, value', [
     (None, None), (None, {}), ('provider', 'another.Provider'), ('project_id', None),
     ('project_id', True), ('persist', 1), ('radar_url', None), ('language', None),
     ('dataset', {'key': 'project'}),
@@ -723,7 +723,7 @@ def test_payload_override_is_sent_unchanged_without_canonical_mapping(monkeypatc
 
 
 @pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
-@pytest.mark.parametrize(('result', 'error_type'), [
+@pytest.mark.parametrize('result, error_type', [
     (None, 'TypeError'), ([], 'TypeError'), ({'value': object()}, 'TypeError'),
     ({'value': float('nan')}, 'ValueError'), (RuntimeError('Private payload details'), 'RuntimeError'),
 ])
@@ -836,7 +836,7 @@ def test_dataset_export_clears_bearer_token(monkeypatch):
 
 
 @pytest.mark.parametrize('raw_payload', [False, True])
-@pytest.mark.parametrize(('error', 'expected'), [
+@pytest.mark.parametrize('error, expected', [
     (http_error(403), 'does not have permission'),
     (http_error(400), 'rejected the dataset metadata'),
     (http_error(422), 'rejected the dataset metadata'),

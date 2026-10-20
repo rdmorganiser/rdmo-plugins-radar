@@ -34,7 +34,7 @@ from .helpers import (
 )
 
 
-@pytest.mark.parametrize(('component', 'replacement', 'changes'), [
+@pytest.mark.parametrize('component, replacement, changes', [
     ('dataset', RadarMetadata(title='Custom', resource=Resource('Description')), {'title': 'Custom'}),
     ('creators', [PersonOrOrganization('Custom')], {'creators': [PersonOrOrganization('Custom')]}),
     ('contributors', [PersonOrOrganization('Custom')], {'contributors': [PersonOrOrganization('Custom')]}),
@@ -107,7 +107,7 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
     assert files[1]['mapping_issues'] == ()
 
 
-@pytest.mark.parametrize(('component', 'changed_paths'), [
+@pytest.mark.parametrize('component, changed_paths', [
     ('dataset', {'project/dataset/title'}),
     ('creators', {'project/dataset/creator/name'}),
     ('contributors', {'project/partner/name'}),
