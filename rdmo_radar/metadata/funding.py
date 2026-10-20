@@ -10,29 +10,21 @@ FUNDER_NAME = 'project/funder/name'
 def read_funding(context: ProjectReadContext) -> list[FundingReference]:
     references = []
     funders = context.shared().groups(
-        FUNDER_NAME, 'project/funder/grant_nr', 'project/funder/programme/title', 'project/funder/programme/url'
+        FUNDER_NAME, 'project/funder/grant_nr', 'project/funder/programme/title', 'project/funder/programme/url',
     )
     for funder in funders:
-        references.append(
-            FundingReference(
-                funder_name=funder.get_text(FUNDER_NAME),
-                award_number=funder.get_text('project/funder/grant_nr'),
-                award_uri=funder.get_text('project/funder/programme/url'),
-                award_title=funder.get_text('project/funder/programme/title'),
-            )
+        target = f'funding_references[{len(references)}]'
+        reference = FundingReference(
+            funder_name=funder.get_text(FUNDER_NAME, target=f'{target}.funder_name'),
+            award_number=funder.get_text('project/funder/grant_nr', target=f'{target}.award_number'),
+            award_uri=funder.get_text('project/funder/programme/url', target=f'{target}.award_uri'),
+            award_title=funder.get_text('project/funder/programme/title', target=f'{target}.award_title'),
         )
-    return [
-        reference
-        for reference in references
-        if any(
-            (
-                reference.funder_name,
-                reference.award_number,
-                reference.award_uri,
-                reference.award_title,
-            )
-        )
-    ]
+        if any((reference.funder_name, reference.award_number, reference.award_uri, reference.award_title)):
+            references.append(reference)
+    if not funders:
+        context.record_empty_mapping('funding_references', FUNDER_NAME)
+    return references
 
 
 def merge_funding(context: ProjectWriteContext, references: list[FundingReference]) -> None:

@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .read_context import ProjectReadContext
@@ -7,32 +9,37 @@ from .write_context import ProjectWriteContext
 
 
 def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
-    identifier_value = context.get_text('project/dataset/data_publication_pid')
+    identifier_value = context.get_text('project/dataset/data_publication_pid', target='identifier.value')
     identifier_type = context.get_option(
-        'project/dataset/pids/system',
-        XMLVocabulary.identifier_type_options,
+        'project/dataset/pids/system', XMLVocabulary.identifier_type_options, target='identifier.identifier_type',
     )
-    acronym = context.shared().get_text('project/acronym')
-    resource_value = context.get_text('project/dataset/description')
-    geo_location = context.get_text('project/dataset/usage_technology/geo_location')
-    metadata = RadarMetadata(
+    acronym = context.shared().get_text('project/acronym', target='additional_titles[0]')
+    resource_value = context.get_text('project/dataset/description', target='resource.value')
+    geo_location = context.get_text('project/dataset/usage_technology/geo_location', target='geo_locations[0].region')
+    title = context.get_text('project/dataset/title', target='title')
+    if not title:
+        title = context.get_text('project/dataset/id', target='title')
+        if title and context.provenance is not None:
+            context.provenance[-1] = replace(
+                context.provenance[-1], outcome='defaulted', reason='Dataset ID title fallback',
+            )
+    return RadarMetadata(
         identifier=Identifier(identifier_value, identifier_type) if identifier_value else None,
-        title=context.get_text('project/dataset/title') or context.get_text('project/dataset/id'),
+        title=title,
         additional_titles=[acronym] if acronym else [],
-        keywords=context.shared().get_texts('project/research_question/keywords'),
-        language=context.get_option('project/dataset/language', XMLVocabulary.language_options),
+        keywords=context.shared().get_texts('project/research_question/keywords', target='keywords'),
+        language=context.get_option('project/dataset/language', XMLVocabulary.language_options, target='language'),
         subject_areas=_read_subjects(context),
         resource=Resource(resource_value) if resource_value else None,
         geo_locations=[GeoLocation(region=geo_location)] if geo_location else [],
         data_sources=_read_data_sources(context),
         software=_read_software(context),
-        processing=context.get_texts('project/dataset/method'),
+        processing=context.get_texts('project/dataset/method', target='processing'),
         rights=_read_rights(context),
-        rights_holders=[
-            PersonOrOrganization(name=name) for name in context.get_texts('project/dataset/ipr/owner/name')
-        ],
+        rights_holders=[PersonOrOrganization(name=name) for name in context.get_texts(
+            'project/dataset/ipr/owner/name', target='rights_holders[{index}].name',
+        )],
     )
-    return metadata
 
 
 def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) -> None:
@@ -91,6 +98,9 @@ def _read_subjects(context: ProjectReadContext) -> list[SubjectArea]:
     )
     for value, controlled in zip(values, mapped, strict=True):
         if not value.is_true:
+            context.record_mapping(
+                'subject_areas', sources=(value,), outcome='skipped', reason='Answer is not selected',
+            )
             continue
         option_path = value.option.uri_path if value.option else None
         if controlled is None:
@@ -113,7 +123,19 @@ def _read_subjects(context: ProjectReadContext) -> list[SubjectArea]:
         for name in controlled:
             subject = SubjectArea(name, answer_label(value) if name == 'Other' else None)
             if subject not in subjects:
+                index = len(subjects)
+                context.record_mapping(
+                    f'subject_areas[{index}].controlled_name', sources=(value,), value=name,
+                    outcome='defaulted' if name == 'Other' else 'mapped', reason='Subject vocabulary mapping',
+                )
+                if subject.additional_name:
+                    context.record_mapping(f'subject_areas[{index}].additional_name', sources=(value,),
+                                           value=subject.additional_name, reason='Preserved subject label')
                 subjects.append(subject)
+            else:
+                context.record_mapping('subject_areas', sources=(value,), outcome='skipped', reason='Duplicate subject')
+    if not values:
+        context.record_empty_mapping('subject_areas', 'project/research_field/title')
     return subjects
 
 
@@ -125,37 +147,59 @@ def _read_data_sources(context: ProjectReadContext) -> list[Resource]:
     for value, detail in zip(values, mapped, strict=True):
         source = answer_label(value)
         if not source:
+            context.record_mapping('data_sources', sources=(value,), outcome='empty', reason='No source label')
             continue
-        if detail is None:
+        fallback = detail is None
+        if fallback:
             detail = 'Other'
             context.warn(
                 'dataSources', 'project/dataset/creation_methods', 'Unmapped creation method preserved as Other', source
             )
+        index = len(sources)
+        context.record_mapping(f'data_sources[{index}].value', sources=(value,), value=source, reason='Answer label')
+        context.record_mapping(f'data_sources[{index}].resource_type', sources=(value,), value=detail,
+                               outcome='defaulted' if fallback else 'mapped',
+                               reason='Creation-method vocabulary mapping')
         sources.append(Resource(source, detail))
+    if not values:
+        context.record_empty_mapping('data_sources', path)
     return sources
 
 
 def _read_rights(context: ProjectReadContext) -> Rights | None:
     path = 'project/dataset/sharing/conditions'
-    values = [value for value in context.get_values(path) if value.is_true]
+    all_values = context.get_values(path)
+    values = [value for value in all_values if value.is_true]
+    for value in all_values:
+        if not value.is_true:
+            context.record_mapping('rights', sources=(value,), outcome='skipped', reason='Answer is not selected')
     if not values:
+        context.record_empty_mapping('rights', path)
         return None
     rights = []
+    selected = []
     mapped = context.map_options(path, XMLVocabulary.controlled_rights_options, values=values)
     for value, controlled in zip(values, mapped, strict=True):
-        controlled = controlled or 'Other'
-        additional = value.text or (answer_label(value) if controlled == 'Other' else None)
-        right = Rights(controlled, additional)
+        additional = value.text or (answer_label(value) if not controlled or controlled == 'Other' else None)
+        right = Rights(controlled or 'Other', additional)
         if right not in rights:
             rights.append(right)
+            selected.append((value, controlled))
+        else:
+            context.record_mapping('rights', sources=(value,), outcome='skipped', reason='Duplicate license')
     if len(rights) > 1:
         context.warn(
-            'rights',
-            path,
-            'Multiple licenses selected; choose the applicable license in RADAR',
+            'rights', path, 'Multiple licenses selected; choose the applicable license in RADAR',
             '; '.join(answer_label(value) for value in values),
         )
+        context.record_mapping('rights', sources=values, outcome='rejected', reason='Multiple licenses selected')
         return None
+    value, controlled = selected[0]
+    context.record_mapping('rights.controlled', sources=(value,), value=rights[0].controlled,
+                           outcome='defaulted' if controlled is None else 'mapped', reason='License vocabulary mapping')
+    if rights[0].additional:
+        context.record_mapping('rights.additional', sources=(value,), value=rights[0].additional,
+                               reason='Preserved license details')
     return rights[0]
 
 
@@ -166,8 +210,18 @@ def _read_software(context):
     mapped = context.map_options(path, {SOFTWARE_REQUIREMENT: True}, values=values)
     for value, required in zip(values, mapped, strict=True):
         if required and value.text and value.text.strip():
+            index = len(software)
+            context.record_mapping(f'software[{index}].name', sources=(value,), value=value.text.strip(),
+                                   reason='Normalized software name')
+            context.record_mapping(f'software[{index}].software_type', value='Resource Viewing',
+                                   outcome='defaulted', reason='Software requirement category')
             software.append(Software(value.text.strip(), 'Resource Viewing'))
             context.warn('software.softwareVersion', path, 'Software version is unavailable; complete it in RADAR')
+        else:
+            context.record_mapping('software', sources=(value,), outcome='skipped',
+                                   reason='No applicable software requirement or software name')
+    if not values:
+        context.record_empty_mapping('software', path)
     return software
 
 

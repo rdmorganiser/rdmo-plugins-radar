@@ -1,18 +1,31 @@
 """RADAR operations with explicit dependencies and no presentation or plugin lifecycle."""
+import logging
 import re
 import time
 from dataclasses import dataclass, replace
 
 from .exceptions import ExportStoreError, XmlExportError
 from .mappings import ExportDataset
-from .metadata.types import MappingIssue
+from .metadata.provenance import project_provenance
+from .metadata.types import MappingAttempt, MappingIssue, MappingSource
 from .metadata.validation import missing_required_fields
+
+logger = logging.getLogger(__name__)
+
+
+def _project_provenance(provenance, metadata, events, output, *, xml=False):
+    try:
+        return project_provenance(provenance, metadata, events, output, xml=xml)
+    except Exception as error:
+        logger.warning('Could not prepare RADAR provenance: error_type=%s', type(error).__name__)
+        return None
 
 
 @dataclass(frozen=True)
 class ExportPayload:
     payload: dict
     issues: tuple[MappingIssue, ...] = ()
+    provenance: tuple[MappingAttempt, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,7 @@ class XmlExportFile:
     validation_errors: tuple[str, ...]
     issues: tuple[MappingIssue, ...] = ()
     validation_failed: bool = False
+    provenance: tuple[MappingAttempt, ...] | None = None
 
     @property
     def has_warnings(self):
@@ -49,25 +63,34 @@ class XmlExportFile:
 
 
 class RadarExportService:
-    def __init__(self, reader, mapping, serializer, writer, *, clock=time.time):
+    def __init__(self, reader, mapping, serializer, writer, *, clock=time.time, trace_serializer=False):
         self.reader = reader
         self.mapping = mapping
         self.serializer = serializer
         self.writer = writer
         self.clock = clock
+        self.trace_serializer = trace_serializer
 
-    def compute_payload(self, set_index, responsible_email) -> ExportPayload:
+    def compute_payload(self, set_index, responsible_email, *, mapping_result=None) -> ExportPayload:
         """Prepare the request and diagnostics without performing a remote request or local write."""
         set_index = set_index if isinstance(set_index, ExportDataset) else int(set_index)
-        result = self.mapping(self.reader(set_index))
+        result = mapping_result if mapping_result is not None else self.mapping(self.reader(set_index))
         metadata = result.metadata
+        provenance = result.provenance
         if not metadata.title:
             title = set_index.label if isinstance(set_index, ExportDataset) else f'Dataset #{set_index + 1}'
             metadata = replace(metadata, title=title or 'Dataset')
+            if provenance is not None:
+                provenance += (MappingAttempt('title', (MappingSource('Export dataset label', title or 'Dataset'),),
+                                              title or 'Dataset', 'defaulted', 'Draft title fallback'),)
+        events = []
+        kwargs = {'record_output': lambda *event: events.append(event)} if self.trace_serializer else {}
         payload = self.serializer(
             metadata, responsible_email=responsible_email, timestamp=int(self.clock() * 1000),
+            **kwargs,
         )
-        return ExportPayload(payload, result.issues)
+        provenance = _project_provenance(provenance, metadata, events, payload) if self.trace_serializer else None
+        return ExportPayload(payload, result.issues, provenance)
 
     def store_result(self, set_index, radar_id, radar_url) -> ExportResult:
         """Record an ID and complete URL after the caller has confirmed remote creation."""
@@ -76,12 +99,13 @@ class RadarExportService:
 
 
 class RadarXmlExportService:
-    def __init__(self, reader, mapping, serializer, renderer, validator):
+    def __init__(self, reader, mapping, serializer, renderer, validator, *, trace_serializer=False):
         self.reader = reader
         self.mapping = mapping
         self.serializer = serializer
         self.renderer = renderer
         self.validator = validator
+        self.trace_serializer = trace_serializer
 
     def compute_files(self, indices) -> list[XmlExportFile]:
         files = []
@@ -103,7 +127,11 @@ class RadarXmlExportService:
                     file_name = f'{stem}-{suffix}.xml'
                     suffix += 1
                 names.add(file_name.casefold())
-                xml_data = self.renderer(self.serializer(result.metadata))
+                events = []
+                kwargs = {'record_output': lambda *event, events=events: events.append(event)} if (
+                    self.trace_serializer
+                ) else {}
+                xml_data = self.renderer(self.serializer(result.metadata, **kwargs))
             except Exception as error:
                 raise XmlExportError(file_name) from error
 
@@ -116,6 +144,8 @@ class RadarXmlExportService:
                 validation_failed = True
             files.append(XmlExportFile(
                 file_name, xml_data, missing_fields, validation_errors, result.issues, validation_failed,
+                _project_provenance(result.provenance, result.metadata, events, xml_data, xml=True)
+                if self.trace_serializer else None,
             ))
         return files
 

@@ -172,6 +172,16 @@ operation; they are not mutable state on export instances. REST serialization ad
 email and millisecond timestamp to the fixed RDDM 9.3 technical metadata. Missing draft titles get a fallback
 without modifying the mapped metadata object. Frozen result dataclasses do not imply deep immutability.
 
+Built-in serializers have an optional `record_output` callback for canonical-field/output-location bindings.
+Each serializer records bindings beside the fields it emits, including in nested serialization helpers;
+there is no separate table repeating the REST and XML field layouts. Bindings contain format names, never
+RDMO Attributes. The generic recorder guards callback failures and invalidates the optional sidecar without
+interrupting serialization. Projection verifies XML paths against the exact rendered
+bytes and JSON pointers against the actual payload. Changed canonical values and XML-filtered entries become
+skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
+Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
+failures affect only the optional sidecar, never the generated export.
+
 ## Mapping profiles and datasets
 
 An `ExportDataset` describes the RDMO source answers for one RADAR dataset. It can represent the whole

@@ -333,6 +333,39 @@ This hook serves direct REST exports. Use a `RadarMetadata` mapping when the sam
 also support XML export.
 
 
+### Mapping provenance
+
+Custom canonical mappings can record their decisions with the optional `target=` argument. The target
+uses the corresponding `RadarMetadata` field name, with zero-based list indices. For example:
+
+```python
+def read_metadata(context):
+    return MappingResult(
+        RadarMetadata(
+            title=context.get_text('https://example.org/terms/domain/research/title', target='title'),
+            keywords=context.get_texts('https://example.org/terms/domain/research/keywords', target='keywords'),
+        ),
+        tuple(context.issues),
+    )
+```
+
+Use the same `replace(PROJECT_MAPPING, compute_metadata=read_metadata)` registration shown above.
+The prepared context records normalization, Option vocabulary conversion, duplicates, conflicts, and
+missing answers only when mapping preview collection is enabled. `get_texts(..., target='keywords')`
+records `keywords[0]`, `keywords[1]`, and so on. `get_option(..., target='language')` and
+`get_identifier(..., target='creators[0].identifiers[0].value')` work the same way. For composed values
+or explicit defaults, use `context.record_mapping(target, sources=(value,), value=result,
+outcome='defaulted', reason='...')`; `value` in `sources` is a native RDMO Value. Labelled literals use
+`MappingSource('Project.title', context.project.title)`. The factory attaches recorded attempts to
+`MappingResult`; authors do not need to wrap the result differently.
+
+Serializers bind canonical fields to JSON pointers or XML element/attribute paths and check them against
+the actual generated output. A replaced or omitted value is shown as skipped. Fields without supplied
+provenance are shown as untraced. An uninstrumented custom mapping or custom serializer reports
+provenance as unavailable; it still exports normally. Existing mapping functions need no changes unless
+their authors want to provide field provenance.
+
+
 Usage
 -----
 

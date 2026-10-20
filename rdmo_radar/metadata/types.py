@@ -123,3 +123,29 @@ class RadarMetadata:
 class MappingResult:
     metadata: RadarMetadata
     issues: tuple[MappingIssue, ...] = ()
+    provenance: tuple['MappingAttempt', ...] | None = None
+
+
+@dataclass(frozen=True)
+class MappingSource:
+    """A native RDMO Value or an explicitly labelled property or literal."""
+
+    reference: str
+    value: object = None
+
+
+@dataclass(frozen=True)
+class MappingAttempt:
+    """One mapping decision, optionally bound to a verified serialized output value."""
+
+    field: str
+    sources: tuple[MappingSource, ...] = ()
+    value: object = None
+    outcome: str = 'mapped'
+    reason: str = ''
+    output_path: str | None = None
+    output_value: object = None
+
+    @property
+    def unsuccessful(self):
+        return self.outcome in ('empty', 'skipped', 'rejected')

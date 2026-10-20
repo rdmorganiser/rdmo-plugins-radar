@@ -118,7 +118,7 @@ def test_custom_attribute_uris_preserve_nested_dataset_scope(scope_project):
     assert read_metadata(export, 10).metadata.resource.value == 'Resource 10'
 
 
-def test_multiple_questionset_levels_use_outermost_first_coordinates(scope_project):
+def test_multiple_questionset_levels_use_outermost_first_coordinates(scope_project, django_assert_num_queries):
     page = add_page(scope_project, 'project/dataset/id', collection=True)
     middle = add_questionset(page)
     creators = add_questionset(middle, 'project/dataset/creator/name', collection=True)
@@ -139,6 +139,20 @@ def test_multiple_questionset_levels_use_outermost_first_coordinates(scope_proje
         assert [creator.given_name for creator in read_metadata(export, dataset).metadata.creators] == [
             f'Person {dataset}-3', f'Person {dataset}-7',
         ]
+    service = build_xml_export_service(scope_project, collect_mapping=True)
+    datasets = export.get_datasets()
+    with django_assert_num_queries(0):
+        files = service.compute_files(datasets)
+        for dataset, file in zip(datasets, files, strict=True):
+            names = [row for row in file.provenance if row.field in ('creators[0].name', 'creators[1].name')
+                     and row.output_path]
+            assert len(names) == 2
+            assert [row.output_value for row in names] == [
+                f'Example, Person {dataset.key}-3', f'Example, Person {dataset.key}-7',
+            ]
+            assert {source.value.set_prefix for row in names for source in row.sources} == {
+                f'{dataset.key}|0|3', f'{dataset.key}|0|7',
+            }
 
 
 def test_reused_questionset_retains_each_catalog_placement(scope_project):
@@ -523,6 +537,8 @@ def test_template_framework_datasets_keep_repeated_nested_indices_and_result_coo
     assert scope_project.values.get(attribute__path='project/dataset/radar_url', set_prefix='10|3').text == (
         'https://radar.test/confirmed'
     )
+
+
 
 
 @pytest.mark.parametrize('native_ids', [False, True])
