@@ -42,6 +42,7 @@ def pointer_value(data, path):
 
 
 def json_leaves(data, path=''):
+    """Yield JSON pointers and scalar values, including None, omitting empty objects and arrays."""
     if isinstance(data, dict):
         for key, value in data.items():
             key = str(key).replace('~', '~0').replace('/', '~1')

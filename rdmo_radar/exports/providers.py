@@ -62,7 +62,13 @@ class RadarExportProviderBase(Export):
         return self.get_service().reader(dataset)
 
     def get_payload(self, dataset) -> dict:
-        """Return the complete RADAR REST request body, ready for submission."""
+        """Prepare the complete RADAR REST request body without external side effects.
+
+        Previews may call this repeatedly for every dataset, including in RADAR_DEBUG.
+        Submission prepares the selected payload again. Do not make external requests,
+        create files, or change persistent state; remote creation belongs to submission.
+        Operation-local provenance recording is supported, and timestamps may differ.
+        """
         result = self.get_service().compute_payload(
             dataset, self.request.user.email, mapping_result=self._get_mapping_result(dataset),
         )

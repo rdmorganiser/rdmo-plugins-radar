@@ -58,13 +58,16 @@ request dictionary directly or call `super()` and customize it. The provider che
 then sends the returned dictionary unchanged. Preparation failures produce a form error before submission
 or result storage. Actual export calls the hook after valid dataset selection. When any preview setting is
 enabled, displaying the export form also calls it for every dataset. Mapping warnings and OAuth replay
-do not call the hook.
+do not call the hook. The hook must prepare data without external requests, file creation, or persistent
+changes; remote dataset creation belongs exclusively to the submission workflow. Operation-local provenance
+recording remains supported. Repeated calls may produce different timestamps.
 `get_context(dataset)` returns a reader using the same prepared operation and selected scope.
 
 The independent Django settings `RADAR_PREVIEW_PAYLOAD`, `RADAR_PREVIEW_SOURCE_ANSWERS`, and `RADAR_PREVIEW_MAPPING` default to
 false. The shared `render_form()` helper prepares **Preview from current answers** automatically for every
 current dataset, without requiring valid dataset/workspace choices. Preview preparation belongs to form
-display, outside form construction and validation. It performs no remote requests, writes, or session changes.
+display, outside form construction and validation. The built-in preparation performs no remote requests,
+writes, or session changes. Custom hooks must obey the same preparation contract.
 Payload previews use the same preparation hook and JSON checks as actual export;
 `get_source_values(dataset)` reads prepared Attribute identities through the selected context's accessor.
 It never automatically expands to shared project scope. Source rows list available Values with their recorded
@@ -119,6 +122,8 @@ RDMO Attributes. The generic recorder guards callback failures and invalidates t
 interrupting serialization. Projection verifies XML paths against the exact rendered
 bytes and JSON pointers against the actual payload. Changed canonical values and XML-filtered entries become
 skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
+Automatic JSON output coverage tracks scalar leaves, including `null`, and omits empty objects and arrays.
+These containers remain visible in the raw payload preview but receive no automatic provenance rows.
 Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
 failures affect only the optional sidecar, never the generated export.
 
@@ -141,8 +146,9 @@ The form substitutes a local workspace without persisting it or reading `RADAR_P
 and preview settings still apply. Export is hidden and submissions cannot authenticate, send requests, or
 store export results; displayed forms still prepare enabled previews. Cancel retains priority. The OAuth
 callback clears pending request/state/operation/destination data before token exchange or replay, without rebuilding a reader or
-discarding an existing access token. Django's `DEBUG` has no effect on this behavior. Clients, services,
-mapping profiles, and the XML pipeline are unchanged.
+discarding an existing access token. Enabled previews still invoke custom preparation hooks; `RADAR_DEBUG`
+cannot prevent network calls made inside those hooks. Django's `DEBUG` has no effect on this behavior.
+Clients, services, mapping profiles, and the XML pipeline are unchanged.
 
 `show_mapping_warnings = None` retains canonical mapping warnings for the default payload hook and suppresses
 them when a subclass overrides it. Explicit `True` or `False` enables or disables these profile-derived

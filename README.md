@@ -61,7 +61,8 @@ RADAR_PREVIEW_MAPPING = True
 
 All three settings default to `False` and can be enabled independently. Previews appear automatically for every
 dataset when the dataset/workspace form opens, for both credentials and OAuth exports. You do not need to
-select a dataset or workspace first. Preview preparation sends no RADAR requests and saves no results.
+select a dataset or workspace first. The built-in preview preparation sends no RADAR requests and saves no results.
+Custom hooks must follow the [payload preparation contract](#custom-radar-request-payload).
 Previews use the existing project-export permissions and do not depend on Django's `DEBUG` setting.
 
 **Preview from current answers** appears above the dataset/workspace selection and export controls. It groups
@@ -121,6 +122,8 @@ dataset/workspace form directly, without authenticating or fetching RADAR worksp
 the registered mapping, and existing export permissions. **Export to RADAR** is hidden, and export
 submissions are rejected. Cancel remains available, and any preview setting enables automatic previews. The three
 preview settings control their panels independently. Debug mode alone does not enable previews.
+Custom preparation hooks still run for enabled previews; `RADAR_DEBUG` cannot prevent network calls made
+inside them. They must follow the same payload preparation contract.
 
 Use an existing credentials or OAuth registration, or register a project-level provider directly:
 
@@ -332,6 +335,13 @@ then builds the REST request for the selected dataset.
 
 For direct REST exports, override `get_payload(dataset)` to define the complete request body.
 You can keep the project-level dataset and export workflow without writing a metadata mapping.
+
+`get_payload()` must be a side-effect-free preparation method. Previews may call it repeatedly for every
+dataset whenever the form opens, including in `RADAR_DEBUG`; export submission prepares the selected
+dataset's payload again. The hook must not make external requests, create files, or change persistent state.
+Remote dataset creation belongs exclusively to the provider's submission workflow. Operation-local
+provenance recording remains supported, and timestamps may differ between calls.
+
 Save this example as `example_rdmo_plugin/exports.py`:
 
 ```python
@@ -390,9 +400,7 @@ independently of this payload hook.
 `get_context(dataset)` returns a `ProjectReadContext`, which provides safe Attribute access to prepared
 project Values within the selected profile's scope. When any preview setting is enabled, form display calls
 the payload hook for every dataset. Source-answer previews use it to identify the actual output destinations.
-Actual export prepares the selected dataset's payload again.
-The hook must prepare data without submitting it to RADAR or changing stored answers.
-OAuth saves that request and replays it after authorization without calling the hook again.
+OAuth saves the prepared request and replays it after authorization without calling the hook again.
 Canceling clears the pending request. Dataset creation requires a complete saved export context, and a
 confirmed RADAR ID remains available even if its local destination can no longer be recovered.
 
@@ -458,6 +466,9 @@ the actual generated output. A replaced or omitted value is shown as skipped. Fi
 provenance are shown as untraced. An uninstrumented custom mapping or custom serializer reports
 provenance as unavailable; it still exports normally. Existing mapping functions need no changes unless
 their authors want to provide field provenance.
+
+Automatic output coverage tracks scalar JSON leaves, including `null`. Empty objects (`{}`) and arrays
+(`[]`) receive no automatic provenance rows; they remain visible in the raw payload preview.
 
 A custom `get_payload()` override also reports provenance as unavailable by default, including overrides
 that call `super()`. To supply it, override the optional companion hook explicitly. This complete provider
