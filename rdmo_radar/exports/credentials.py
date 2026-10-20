@@ -41,6 +41,9 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
     def render(self):
         self.prepare_export_session()
 
+        if self.debug_mode:
+            return self.render_debug_form()
+
         if self.get_from_session(self.request, 'access_token'):
             return self.render_export_form()
 
@@ -50,6 +53,9 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
         if 'cancel' in self.request.POST:
             self.clear_session(self.request)
             return redirect('project', self.project.id)
+
+        if self.debug_mode:
+            return self.render_debug_form(data=self.request.POST)
 
         if self.request.POST.get('stage') == 'export':
             return self.submit_export_form()
@@ -98,12 +104,12 @@ class RadarCredentialsExportProvider(RadarExportProviderBase):
                 if not workspace_choices:
                     error = _('No RADAR workspaces are available for this account.')
 
-        return render(self.request, 'plugins/exports_radar.html', {
-            'form': form,
-            'error': error
-        }, status=200)
+        return self.render_form(form, error=error)
 
     def submit_export_form(self):
+        if 'export' not in self.request.POST:
+            return self.render_form(self.get_export_form(data=self.request.POST))
+
         if not self.get_from_session(self.request, 'access_token'):
             return self.render_credentials_form(
                 error=_('Your RADAR login has expired. Please log in again.')

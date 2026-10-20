@@ -51,7 +51,96 @@ RADAR_PROVIDER = {
 }
 ```
 
-The modes are:
+Optional export previews are configured separately from `RADAR_PROVIDER`:
+
+```python
+RADAR_PREVIEW_PAYLOAD = True
+RADAR_PREVIEW_SOURCE_ANSWERS = True
+RADAR_PREVIEW_MAPPING = True
+```
+
+All three settings default to `False` and can be enabled independently. Previews appear automatically for every
+dataset when the dataset/workspace form opens, for both credentials and OAuth exports. You do not need to
+select a dataset or workspace first. Preview preparation sends no RADAR requests and saves no results.
+Previews use the existing project-export permissions and do not depend on Django's `DEBUG` setting.
+
+**Preview from current answers** appears above the dataset/workspace selection and export controls. It groups
+each dataset's mapping warnings with collapsed JSON request, **RDMO Attributes and answers**, and field-mapping
+panels. Warnings remain visible even when previews are disabled. Each answer has a compact bordered row:
+the full Attribute URI is at the top left, and the answer appears below using RDMO's `Value.value_and_unit`
+formatting for text, units, Options, booleans, dates, and file names. Option URIs and external IDs appear
+indented below the answer. External IDs are displayed separately because `value_and_unit` does not include them.
+Attribute and Option URIs use RDMO's `code-domain` and `code-options` styles, with the background confined to
+the URI text. Coordinate badges appear at the top right only when `RADAR_DEBUG = True`; coordinates in the
+field-mapping cards follow the same setting. Hover over a badge to see its native HTML title: `set_prefix`,
+`set_index`, or `collection_index`, in that order. Accessible labels include the coordinate name and value.
+An empty prefix is shown as `""`.
+Rows contain Values available through that dataset's reader scope; shared answers outside it are omitted.
+The separate field-mapping panel provides provenance. Providers can override `get_source_values(dataset)`
+to customize the returned list of native RDMO Values.
+
+`RADAR_PREVIEW_MAPPING` adds a separate **RADAR Field mapping** panel. It records actual mapping decisions,
+the contributing answers with full Attribute and Option URIs and coordinates, and the verified output
+location and value. Empty, skipped, and rejected attempts appear in a nested details block. Shared
+project answers can appear here when they contributed to the mapping. Defaults and fields without
+supplied provenance are labelled explicitly; matching text alone is never used to guess a source.
+The built-in Template Framework and project mappings supply provenance. Custom mappings can opt in
+as described under [mapping provenance](#mapping-provenance).
+
+Each source-answer card lists its recorded RADAR
+destinations below the Attribute URI. REST destinations use JSON dot notation with array indices, for
+example `descriptiveMetadata.title` or `descriptiveMetadata.creators.creator[0].creatorName`. XML previews
+show the actual XML destination paths. An answer contributing to multiple fields lists each destination.
+Missing provenance is marked explicitly; source matching uses the individual Value identity, including
+collection entries and snapshots, rather than guessing from Attribute paths or matching answer text.
+`RADAR_PREVIEW_SOURCE_ANSWERS` enables these inline destinations; `RADAR_PREVIEW_MAPPING` controls only the
+separate **RADAR Field mapping** panel.
+
+The same settings apply to `radar-xml`: the payload panel shows the actual generated XML rather than
+JSON. When any preview setting is enabled, the XML page lists every dataset, including valid files,
+with its own warnings and enabled panels. Without preview settings, valid XML exports download directly
+as before. **Download XML** (or **Download anyway** when warnings exist) and `?download=1` produce the
+usual XML-only ZIP; previews and provenance are never added to the archive.
+
+Previews are display-only and are not retained in the session. Reload the page after editing answers.
+Export prepares a fresh payload, so timestamps and subsequently edited answers can differ. A failed panel
+shows an error for its dataset without hiding other previews or preventing selection of another dataset.
+Only the explicitly named Export action can submit a dataset; the former Preview button is removed.
+
+For local catalog and mapping development, enable preview-only debug mode in your Django settings:
+
+```python
+RADAR_DEBUG = True
+RADAR_PREVIEW_PAYLOAD = True
+RADAR_PREVIEW_SOURCE_ANSWERS = True
+```
+
+`RADAR_DEBUG` defaults to `False` and is independent of Django's `DEBUG`. Both REST providers open the
+dataset/workspace form directly, without authenticating or fetching RADAR workspaces. The form shows a
+**Local RADAR debug mode** notice and a **Local workspace (debug)** choice. It uses real project answers,
+the registered mapping, and existing export permissions. **Export to RADAR** is hidden, and export
+submissions are rejected. Cancel remains available, and any preview setting enables automatic previews. The three
+preview settings control their panels independently. Debug mode alone does not enable previews.
+
+Use an existing credentials or OAuth registration, or register a project-level provider directly:
+
+```python
+PROJECT_EXPORTS += [
+    (
+        'radar-local',
+        _('RADAR (local preview)'),
+        'rdmo_radar.exports.RadarProjectCredentialsExportProvider',
+    ),
+]
+```
+
+With a directly registered provider, `RADAR_PROVIDER` can be empty or omitted in this mode. No fake
+tokens or export results are created, and the local workspace exists only in the form, never in saved
+workspace choices. Pending OAuth callbacks are cleared before any token exchange or request replay.
+To resume real exports, disable `RADAR_DEBUG`, configure `RADAR_PROVIDER`, and reopen the export form
+to authenticate and fetch actual workspaces.
+
+The authentication modes are:
 
 * `oauth`: use `RadarExportProvider`, the browser authorization-code flow, and `redirect_uri`. This is the default
   for existing installations without an `authentication_mode` setting.
@@ -299,7 +388,10 @@ and intentionally disables local result storage. Advanced profiles can customize
 independently of this payload hook.
 
 `get_context(dataset)` returns a `ProjectReadContext`, which provides safe Attribute access to prepared
-project Values within the selected profile's scope. The hook runs once for the selected dataset on submission.
+project Values within the selected profile's scope. When any preview setting is enabled, form display calls
+the payload hook for every dataset. Source-answer previews use it to identify the actual output destinations.
+Actual export prepares the selected dataset's payload again.
+The hook must prepare data without submitting it to RADAR or changing stored answers.
 OAuth saves that request and replays it after authorization without calling the hook again.
 Canceling clears the pending request. Dataset creation requires a complete saved export context, and a
 confirmed RADAR ID remains available even if its local destination can no longer be recovered.
@@ -325,13 +417,15 @@ Profile-derived mapping warnings are automatically disabled when `get_payload()`
 the form does not report missing fields from a mapping you bypassed. Set `show_mapping_warnings = True`
 on your subclass when those warnings still describe your payload, or `False` to disable them explicitly.
 The default `None` selects this automatic behavior. You can also override `get_mapping_warnings()` to
-provide your own diagnostics; payload hooks are never called to generate warnings or form previews.
+provide your own diagnostics. Each warning dictionary includes `dataset_key` matching the dataset's `key`,
+alongside `title`, `missing`, and `issues`, so warnings attach correctly even when dataset titles repeat.
+Mapping warnings do not call payload hooks; automatic payload previews call and validate the same hook
+used by export. With all preview settings disabled, ordinary form display does not call it.
 Custom payloads do not inherit canonical completeness checks, and diagnostics from custom context reads
 are available through `context.issues` for your own warning implementation.
 
 This hook serves direct REST exports. Use a `RadarMetadata` mapping when the same interpretation should
 also support XML export.
-
 
 ### Mapping provenance
 
@@ -364,6 +458,47 @@ the actual generated output. A replaced or omitted value is shown as skipped. Fi
 provenance are shown as untraced. An uninstrumented custom mapping or custom serializer reports
 provenance as unavailable; it still exports normally. Existing mapping functions need no changes unless
 their authors want to provide field provenance.
+
+A custom `get_payload()` override also reports provenance as unavailable by default, including overrides
+that call `super()`. To supply it, override the optional companion hook explicitly. This complete provider
+example records the exact Value used while preparing its payload:
+
+```python
+from rdmo_radar.exports import RadarProjectExportProvider
+from rdmo_radar.metadata.types import MappingAttempt, MappingSource
+
+
+class ExampleRadarExportProvider(RadarProjectExportProvider):
+    def get_payload(self, dataset):
+        context = self.get_context(dataset)
+        attribute = 'https://example.org/terms/domain/research/title'
+        answer = next((value for value in context.get_values(attribute)
+                       if value.text and value.text.strip() and not value.option), None)
+        title = answer.text.strip() if answer is not None else self.project.title
+        sources = (MappingSource(attribute, answer),) if answer is not None else (
+            MappingSource('Project.title', title),
+        )
+        payload = {
+            'technicalMetadata': {'responsibleEmail': self.request.user.email},
+            'descriptiveMetadata': {'title': title},
+        }
+        self._example_provenance = (MappingAttempt(
+            field='title', sources=sources, value=title,
+            outcome='mapped' if answer is not None else 'defaulted',
+            reason='First nonempty text answer' if answer is not None else 'Project title fallback',
+            output_path='/descriptiveMetadata/title', output_value=title,
+        ),)
+        return payload
+
+    def get_payload_provenance(self, dataset, payload):
+        return self._example_provenance
+```
+
+The companion hook returns `tuple[MappingAttempt, ...] | None`; it is called immediately after preparing
+that dataset's payload, only for the mapping preview. Successful rows must identify their actual JSON
+pointer and value. Invalid records show a panel error without changing the payload or blocking export;
+uncovered output fields are marked untraced. Provenance is kept only for the current operation and is
+never inserted into RADAR XML/JSON, saved in the OAuth session, or persisted to the project.
 
 
 Usage

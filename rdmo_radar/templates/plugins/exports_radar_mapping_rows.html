@@ -1,0 +1,61 @@
+{% load i18n %}
+{% if rows %}
+<ul class="list-group radar-attribute-answers radar-field-mapping">
+    {% for row in rows %}
+    <li class="list-group-item">
+        <div class="radar-attribute-header">
+            <div class="radar-attribute-reference">
+                <code class="text-muted">{{ row.field }}</code>
+                {% if row.output_path %}
+                <div class="radar-source-fields"><code class="text-muted">{{ row.output_path }}</code></div>
+                {% endif %}
+            </div>
+            <span class="label label-default">{{ row.outcome }}</span>
+        </div>
+        {% for source in row.sources %}
+        <div class="radar-mapping-source">
+            <div class="radar-attribute-header">
+                <div class="radar-attribute-reference">
+                    <code class="{% if source.value.attribute %}code-domain{% else %}text-muted{% endif %}">{{ source.reference }}</code>
+                </div>
+                {% if source.value.attribute and debug_mode %}
+                <div class="radar-attribute-coordinates">
+                    <span class="label label-default" tabindex="0" title="set_prefix" aria-label="set_prefix: {{ source.value.set_prefix }}">"{{ source.value.set_prefix }}"</span>
+                    <span class="label label-default" tabindex="0" title="set_index" aria-label="set_index: {{ source.value.set_index }}">{{ source.value.set_index }}</span>
+                    <span class="label label-default" tabindex="0" title="collection_index" aria-label="collection_index: {{ source.value.collection_index }}">{{ source.value.collection_index }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% if source.value.attribute %}
+            <div class="radar-source-text">{{ source.value.value_and_unit }}</div>
+            {% if source.value.option or source.value.external_id or source.value.snapshot_id %}
+            <div class="radar-source-details">
+                {% if source.value.option %}
+                <div>{% trans 'Option' %}: <code class="code-options">{{ source.value.option.uri }}</code></div>
+                {% endif %}
+                {% if source.value.external_id %}
+                <div>{% trans 'External ID' %}: {{ source.value.external_id }}</div>
+                {% endif %}
+                {% if source.value.snapshot_id %}
+                <div>{% trans 'Snapshot' %}: {{ source.value.snapshot_id }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="radar-source-text">{{ source.value|default_if_none:'' }}</div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="text-muted">{% trans 'No answer source recorded' %}</p>
+        {% endfor %}
+        {% if row.output_path %}
+        <div><strong>{% trans 'Result' %}:</strong></div>
+        <div class="radar-source-text">{{ row.output_value|default_if_none:'' }}</div>
+        {% endif %}
+        <div class="text-muted">{{ row.reason }}</div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>{% trans 'No mapping attempts were recorded.' %}</p>
+{% endif %}

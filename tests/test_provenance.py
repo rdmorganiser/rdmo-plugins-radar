@@ -1,13 +1,24 @@
 """Provenance follows real mapping decisions and the emitted XML/REST values."""
+import json
 from dataclasses import fields, is_dataclass, replace
 from unittest.mock import Mock
+from xml.etree import ElementTree
 
 import pytest
+
+from django.template.loader import render_to_string
 
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 
+from rdmo_radar.exports import (
+    RadarCredentialsExportProvider,
+    RadarExportProvider,
+    RadarProjectCredentialsExportProvider,
+    RadarProjectExportProvider,
+)
+from rdmo_radar.exports.previews import compute_mapping_preview, compute_payload_field_path, compute_source_answers
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.project import PROJECT_MAPPING
@@ -28,7 +39,8 @@ from rdmo_radar.metadata.types import (
     Software,
 )
 
-from .helpers import add_answer, add_namespaced_attribute, complete_metadata
+from .helpers import add_answer, add_namespaced_attribute, complete_metadata, export_for
+from .test_exports import export_provider
 
 
 def test_context_records_actual_normalization_ambiguity_and_missing_answers():
@@ -200,6 +212,55 @@ def test_custom_serializers_keep_their_existing_signature_and_report_unavailable
     assert 'record_output' not in serializer.call_args.kwargs
 
 
+@pytest.mark.parametrize('provider_class', [RadarProjectCredentialsExportProvider, RadarProjectExportProvider])
+def test_raw_payload_provenance_requires_explicit_hook(provider_class, settings, monkeypatch):
+    settings.RADAR_PREVIEW_MAPPING = True
+    calls = []
+    payload = {'custom': {'field': '<script>Exact</script>'}}
+
+    class ExampleRadarExportProvider(provider_class):
+        def get_payload(self, dataset):
+            calls.append(dataset.key)
+            return payload
+
+    provider = export_provider(ExampleRadarExportProvider)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
+    result = provider.render_form(provider.get_export_form())
+    assert calls == ['0']
+    assert not result['dataset_previews'][0]['mapping_preview']['available']
+
+    def provenance(self, dataset, supplied):
+        assert supplied is payload
+        return (MappingAttempt(
+            '/custom/field', (MappingSource('Explicit source', 'Exact'),), supplied['custom']['field'],
+            output_path='/custom/field', output_value=supplied['custom']['field'],
+        ),)
+
+    monkeypatch.setattr(ExampleRadarExportProvider, 'get_payload_provenance', provenance)
+    result = provider.render_form(provider.get_export_form())
+    row, = result['dataset_previews'][0]['mapping_preview']['mapped']
+    assert row.output_value == payload['custom']['field']
+    assert calls == ['0', '0']
+    assert provider.request.session.get(provider.get_session_key('request')) is None
+
+
+@pytest.mark.parametrize('bad', [42, (MappingAttempt('title', output_path='/missing', output_value='Missing'),)])
+def test_invalid_custom_provenance_cannot_change_payload(bad, settings, monkeypatch):
+    settings.RADAR_PREVIEW_PAYLOAD = True
+    settings.RADAR_PREVIEW_MAPPING = True
+    provider = export_provider()
+    payload = {'descriptiveMetadata': {'title': 'Real'}}
+    provider.get_payload = Mock(return_value=payload)
+    provider.get_payload_provenance = Mock(return_value=bad)
+    # Instance hooks are used by tests; the provider class has the default payload hook.
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
+    result = provider.render_form(provider.get_export_form())
+    preview, = result['dataset_previews']
+    assert preview['mapping_error']
+    assert json.loads(preview['payload_preview']) == payload
+    assert not result['form'].errors
+
+
 def test_raw_trace_json_pointers_and_partial_coverage():
     payload = {'a/b': {'~field': ['Value', None]}}
     row = MappingAttempt('custom', value='Value', output_path='/a~1b/~0field/0', output_value='Value')
@@ -325,3 +386,112 @@ def test_provenance_failures_do_not_change_export_output(traced_project, kind, f
     assert (after.xml_data == before.xml_data) if kind == 'xml' else (after.payload == before.payload)
     assert 'error_type=RuntimeError' in caplog.text
     assert 'Private failure detail' not in caplog.text
+
+
+def test_rest_warnings_and_previews_share_one_prepared_mapping(traced_project, settings, django_assert_num_queries):
+    from rdmo_radar.exports import RadarExportProvider
+
+    settings.RADAR_PREVIEW_MAPPING = True
+    provider = export_for(traced_project, RadarExportProvider)
+    provider.prepare_export_session()
+    service = provider.get_service()
+    original = service.mapping
+    calls = []
+
+    def mapping(context):
+        calls.append(context.set_index)
+        return original(context)
+
+    service.mapping = mapping
+    with django_assert_num_queries(0):
+        form = provider.get_export_form()
+        previews = provider.compute_dataset_previews(form)
+    assert calls == [1, 10]
+    assert len(previews) == 2
+    assert all(preview['payload_preview'] is None and preview['source_values'] is None for preview in previews)
+    assert all(preview['mapping_preview']['available'] for preview in previews)
+
+
+@pytest.mark.parametrize('provider_class', [RadarCredentialsExportProvider, RadarExportProvider])
+@pytest.mark.parametrize('mapping_panel', [False, True])
+def test_inline_source_fields_follow_real_payload_indices_without_extra_queries(
+    traced_project, settings, django_assert_num_queries, provider_class, mapping_panel,
+):
+    settings.RADAR_PREVIEW_MAPPING = mapping_panel
+    settings.RADAR_PREVIEW_SOURCE_ANSWERS = True
+    provider = export_for(traced_project, provider_class)
+    provider.prepare_export_session()
+    with django_assert_num_queries(0):
+        form = provider.get_export_form()
+        previews = provider.compute_dataset_previews(form)
+    assert form.preview_mapping is mapping_panel
+    first, tenth = previews
+    for preview in previews:
+        title = next(row for row in preview['source_answers']
+                     if row['value'].attribute.path == 'project/dataset/title')
+        assert title['radar_fields'] == ['descriptiveMetadata.title']
+    given_name = next(row for row in first['source_answers']
+                      if row['value'].attribute.path == 'project/dataset/creator/given_name')
+    assert set(given_name['radar_fields']) == {
+        'descriptiveMetadata.creators.creator[0].creatorName',
+        'descriptiveMetadata.creators.creator[0].givenName',
+    }
+    other = next(row for row in tenth['source_answers']
+                 if row['value'].attribute.path == 'project/dataset/creator/name')
+    assert other['radar_fields'] == ['descriptiveMetadata.creators.creator[0].creatorName']
+    assert other['value'].text == 'Other creator'
+    content = render_to_string('plugins/exports_radar_source_answers.html', {
+        'source_answers': [given_name], 'mapping_available': True,
+    })
+    root = ElementTree.fromstring(f'<root>{content}</root>')
+    reference = root.find('.//div[@class="radar-attribute-reference"]')
+    assert reference.find('./code').text == given_name['value'].attribute.uri
+    destinations = reference.findall('./div/div/code')
+    assert {field.text for field in destinations} == set(given_name['radar_fields'])
+
+
+def test_source_fields_match_native_value_identity_not_paths_or_equal_text():
+    values = [Value(attribute=Attribute(uri=f'https://{namespace}.test/domain/title', path='title'), text='Same')
+              for namespace in ('first', 'second', 'third')]
+    payload = {'descriptiveMetadata': {'title': 'Same', 'keywords': {'keyword': [{'value': 'Same'}]}}}
+    traces = (
+        MappingAttempt('title', (MappingSource('title', values[0]),), value='Same',
+                       output_path='/descriptiveMetadata/title', output_value='Same'),
+        MappingAttempt('keywords[0]', (MappingSource('title', values[1]),), value='Same',
+                       output_path='/descriptiveMetadata/keywords/keyword/0/value', output_value='Same'),
+        MappingAttempt('ignored', (MappingSource('title', values[2]),), outcome='rejected'),
+    )
+    rows = compute_source_answers(values, compute_mapping_preview((*traces, traces[0])), payload=payload)
+    assert [row['radar_fields'] for row in rows] == [
+        ['descriptiveMetadata.title'], ['descriptiveMetadata.keywords.keyword[0].value'], [],
+    ]
+
+
+@pytest.mark.parametrize('pointer, expected', [
+    ('/descriptiveMetadata/title', 'descriptiveMetadata.title'),
+    ('/descriptiveMetadata/creators/creator/0/creatorName',
+     'descriptiveMetadata.creators.creator[0].creatorName'),
+    ('/descriptiveMetadata/a.b/a~1b/~0field', 'descriptiveMetadata["a.b"]["a/b"]["~field"]'),
+    ('/descriptiveMetadata/2026', 'descriptiveMetadata["2026"]'),
+])
+def test_payload_field_paths_preserve_json_keys_and_array_positions(pointer, expected):
+    payload = {'descriptiveMetadata': {
+        'title': 'Title', 'creators': {'creator': [{'creatorName': 'Person'}]},
+        'a.b': {'a/b': {'~field': 'Detail'}}, '2026': 'Year',
+    }}
+    assert compute_payload_field_path(payload, pointer) == expected
+
+
+@pytest.mark.parametrize('provenance, expected', [
+    (None, 'RADAR field unavailable'), ((), 'No recorded RADAR field'),
+])
+def test_missing_inline_provenance_does_not_guess_a_destination(provenance, expected):
+    value = Value(attribute=Attribute(uri='https://example.test/domain/title'), text='Title')
+    mapping = compute_mapping_preview(provenance)
+    rows = compute_source_answers([value], mapping, payload={'descriptiveMetadata': {'title': 'Title'}})
+    assert rows[0]['radar_fields'] == []
+    content = render_to_string('plugins/exports_radar_source_answers.html', {
+        'source_answers': rows, 'mapping_available': mapping['available'],
+    })
+    assert expected in content
+    assert 'descriptiveMetadata.title' not in content

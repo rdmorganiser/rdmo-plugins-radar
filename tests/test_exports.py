@@ -591,7 +591,7 @@ def test_workspace_request_uses_client_token(monkeypatch):
         return [('workspace-1', 'Workspace')]
 
     fake_client(monkeypatch, get_workspaces=get_workspaces)
-    monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
     context = provider.render_export_form()
     assert captured == ['bearer-token']
     assert context['form'].fields['workspace'].widget.choices == [('workspace-1', 'Workspace')]
@@ -625,7 +625,7 @@ def test_workspace_non_authentication_failure_preserves_token(monkeypatch, error
         raise error
 
     fake_client(monkeypatch, get_workspaces=get_workspaces)
-    monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
     context = provider.render_export_form()
     assert context['error']
     assert provider.get_from_session(provider.request, 'access_token') == 'bearer-token'
@@ -635,7 +635,7 @@ def test_no_workspaces_is_reported_without_discarding_token(monkeypatch):
     provider = make_provider()
     provider.store_in_session(provider.request, 'access_token', 'bearer-token')
     fake_client(monkeypatch, get_workspaces=lambda token: [])
-    monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
     context = provider.render_export_form()
     assert 'No RADAR workspaces' in str(context['error'])
     assert not context['form'].fields['workspace'].choices
@@ -656,7 +656,9 @@ def test_cancel_clears_export_session(monkeypatch):
 
 
 def export_provider(provider_class=RadarCredentialsExportProvider):
-    provider = make_provider({'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'}, provider_class)
+    provider = make_provider(
+        {'export': '1', 'stage': 'export', 'dataset': '0', 'workspace': 'workspace-1'}, provider_class,
+    )
     for key, value in (
         ('access_token', 'bearer-token'), ('dataset_choices', [(0, 'Dataset')]),
         ('workspace_choices', [('workspace-1', 'Workspace')]), ('radar_urls', [None]), ('project_id', 1),
@@ -808,11 +810,11 @@ def test_custom_mapping_warnings_remain_independently_overridable():
             pytest.fail('Payload hook called for warnings')
 
         def get_mapping_warnings(self):
-            return [{'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': ()}]
+            return [{'dataset_key': '0', 'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': ()}]
 
     provider = export_provider(ExampleRadarExportProvider)
     assert provider.get_export_form().mapping_warnings == [{
-        'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': (),
+        'dataset_key': '0', 'title': 'Custom request', 'missing': ['Custom requirement'], 'issues': (),
     }]
 
 
@@ -856,7 +858,7 @@ def test_dataset_failure_keeps_bound_form_and_token(monkeypatch, caplog, error, 
         raise error
 
     fake_client(monkeypatch, create_dataset=create_dataset)
-    monkeypatch.setattr('rdmo_radar.exports.credentials.render', lambda request, template, context, status: context)
+    monkeypatch.setattr('rdmo_radar.exports.providers.render', lambda request, template, context, status: context)
     context = provider.submit_export_form()
     assert len(calls) == 1
     if raw_payload:

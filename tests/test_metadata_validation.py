@@ -63,4 +63,6 @@ def test_rest_warnings_do_not_use_xml_adapter(monkeypatch):
     provider.get_datasets = lambda: [ExportDataset('0', 'Dataset', {'set_index': 0})]
     provider.get_service().mapping = lambda context: MappingResult(complete_metadata(resource=Resource('Description')))
     monkeypatch.setattr('rdmo_radar.metadata.xml.to_xml_payload', lambda metadata: pytest.fail('XML called'))
-    assert provider.get_mapping_warnings() == [{'title': 'Dataset', 'issues': (), 'missing': ['Resource type']}]
+    assert provider.get_mapping_warnings() == [{
+        'dataset_key': '0', 'title': 'Dataset', 'issues': (), 'missing': ['Resource type'],
+    }]

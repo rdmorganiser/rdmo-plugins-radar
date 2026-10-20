@@ -1,52 +1,79 @@
 {% extends 'core/page.html' %}
-{% load i18n %}
+{% load i18n static %}
+
+{% block head %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'rdmo_radar/css/exports.css' %}" />
+{% endblock %}
 
 {% block page %}
 
+    {% if preview_payload or preview_source_answers or preview_mapping %}
+    <h1>{% trans 'RADAR XML export preview' %}</h1>
+    {% else %}
     <h1>{% trans 'RADAR XML validation warnings' %}</h1>
+    {% endif %}
 
+    {% if has_warnings %}
     <div class="alert alert-warning" role="alert">
         {% blocktrans trimmed %}
         An XML file for each dataset was generated. You can review the warnings and download the
         files to test them with RADAR, but RADAR may reject some of them.
         {% endblocktrans %}
     </div>
+    {% endif %}
+    {% if preview_payload or preview_source_answers or preview_mapping %}
+    {% if snapshot %}
+    <p>{% blocktrans with title=snapshot.title %}Preview from snapshot “{{ title }}”.{% endblocktrans %}</p>
+    {% else %}
+    <h2>{% trans 'Preview from current answers' %}</h2>
+    {% endif %}
+    <p>{% trans 'Reload after editing answers. Download prepares the files again from the current project or selected snapshot.' %}</p>
+    {% endif %}
 
     {% for file in files %}
-        {% if file.has_warnings %}
+    <section class="radar-dataset-preview">
         <h2>{{ file.file_name }}</h2>
-
         {% if file.mapping_issues %}
         <h3>{% trans 'Mapping warnings' %}</h3>
         <ul>
-            {% for issue in file.mapping_issues %}
-            <li>{{ issue }}</li>
-            {% endfor %}
+            {% for issue in file.mapping_issues %}<li>{{ issue }}</li>{% endfor %}
         </ul>
         {% endif %}
-
         {% if file.missing_fields %}
         <h3>{% trans 'Missing required metadata' %}</h3>
         <ul>
-            {% for field in file.missing_fields %}
-            <li>{{ field.label }} (<code>{{ field.path }}</code>)</li>
-            {% endfor %}
+            {% for field in file.missing_fields %}<li>{{ field.label }} (<code>{{ field.path }}</code>)</li>{% endfor %}
         </ul>
         {% endif %}
-
         {% if file.validation_errors %}
         <h3>{% trans 'RDDM schema warnings' %}</h3>
         <ul>
-            {% for error in file.validation_errors %}
-            <li>{{ error }}</li>
-            {% endfor %}
+            {% for error in file.validation_errors %}<li>{{ error }}</li>{% endfor %}
         </ul>
         {% endif %}
+        {% if preview_payload %}
+        <details>
+            <summary>{% trans 'Generated RADAR XML' %}</summary>
+            {% if file.payload_error %}<p class="text-danger">{{ file.payload_error }}</p>
+            {% else %}<pre>{{ file.payload_preview }}</pre>{% endif %}
+        </details>
         {% endif %}
-    {% endfor %}
+        {% if preview_source_answers %}
+        <details>
+            <summary>{% trans 'RDMO Attributes and answers' %}</summary>
+            {% if file.source_error %}<p class="text-danger">{{ file.source_error }}</p>
+            {% else %}{% include 'plugins/exports_radar_source_answers.html' with source_answers=file.source_answers mapping_available=file.mapping_preview.available %}{% endif %}
+        </details>
+        {% endif %}
+        {% if preview_mapping %}
+        {% include 'plugins/exports_radar_mapping.html' with mapping=file.mapping_preview mapping_error=None %}
+        {% endif %}
+    </section>
+    {% empty %}<p>{% trans 'No datasets are available for export.' %}</p>{% endfor %}
 
     <p>
-        <a class="btn btn-primary" href="?download=1">{% trans 'Download anyway' %}</a>
+        <a class="btn btn-primary" href="?download=1">{% if has_warnings %}{% trans 'Download anyway' %}{% else %}{% trans 'Download XML' %}{% endif %}</a>
         <a class="btn btn-default" href="{{ project_url }}">{% trans 'Back to project' %}</a>
     </p>
 

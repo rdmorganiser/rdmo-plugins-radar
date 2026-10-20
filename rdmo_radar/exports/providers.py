@@ -15,7 +15,7 @@ from django.utils.translation import gettext_lazy as _
 import requests
 
 from rdmo.projects.exports import Export
-from rdmo.projects.models import Project
+from rdmo.projects.models import Project, Value
 from rdmo.services.providers import OauthProviderMixin
 
 from rdmo_radar.client import dataset_page_url, dataset_url, workspace_choices, workspaces_url
@@ -24,9 +24,11 @@ from rdmo_radar.factories import build_export_service
 from rdmo_radar.mappings import ExportDataset, validate_datasets
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.metadata.provenance import validate_payload_provenance
 from rdmo_radar.metadata.validation import missing_required_fields
 from rdmo_radar.services import store_confirmed_result
 
+from .previews import compute_mapping_preview, compute_source_answers
 from .validation import REQUIRED_FIELD_LABELS
 
 logger = logging.getLogger(__name__)
@@ -36,12 +38,22 @@ class RadarExportProviderBase(Export):
     mapping = TEMPLATE_FRAMEWORK_MAPPING
     show_mapping_warnings = None
 
+    @property
+    def debug_mode(self):
+        return getattr(settings, 'RADAR_DEBUG', False)
+
     def get_service(self):
         if self.project is None and self.snapshot is not None:
             self.project = self.snapshot.project
-        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping))
+        collect_mapping = (
+            getattr(settings, 'RADAR_PREVIEW_MAPPING', False)
+            or getattr(settings, 'RADAR_PREVIEW_SOURCE_ANSWERS', False)
+        )
+        key = (id(self.project), self.snapshot, self.project.catalog_id, id(self.mapping), collect_mapping)
         if getattr(self, '_service_key', None) != key:
-            self._service = build_export_service(self.project, snapshot=self.snapshot, profile=self.mapping)
+            self._service = build_export_service(
+                self.project, snapshot=self.snapshot, profile=self.mapping, collect_mapping=collect_mapping,
+            )
             self._service_key = key
         return self._service
 
@@ -51,14 +63,40 @@ class RadarExportProviderBase(Export):
 
     def get_payload(self, dataset) -> dict:
         """Return the complete RADAR REST request body, ready for submission."""
-        return self.get_service().compute_payload(dataset, self.request.user.email).payload
+        result = self.get_service().compute_payload(
+            dataset, self.request.user.email, mapping_result=self._get_mapping_result(dataset),
+        )
+        self._payload_provenance = (dataset.key, result.payload, result.provenance)
+        return result.payload
+
+    def _get_mapping_result(self, dataset):
+        service = self.get_service()
+        key = (id(service), id(service.mapping))
+        if getattr(self, '_mapping_key', None) != key:
+            self._mapping_results = {}
+            self._mapping_key = key
+        if dataset.key not in self._mapping_results:
+            self._mapping_results[dataset.key] = service.mapping(service.reader(dataset))
+        return self._mapping_results[dataset.key]
+
+    def get_payload_provenance(self, dataset, payload):
+        """Return provenance captured for this exact payload preparation."""
+        prepared = getattr(self, '_payload_provenance', None)
+        if prepared is not None and prepared[0] == dataset.key and prepared[1] is payload:
+            return prepared[2]
+        return None
+
+    def _validated_payload(self, dataset):
+        self._payload_provenance = None
+        payload = self.get_payload(dataset)
+        if not isinstance(payload, dict):
+            raise TypeError('The RADAR request payload must be a dictionary.')
+        json.dumps(payload, allow_nan=False)
+        return payload
 
     def _prepare_payload(self, dataset, form):
         try:
-            payload = self.get_payload(dataset)
-            if not isinstance(payload, dict):
-                raise TypeError('The RADAR request payload must be a dictionary.')
-            json.dumps(payload, allow_nan=False)
+            payload = self._validated_payload(dataset)
         except Exception as error:
             logger.warning(
                 'Could not prepare RADAR export payload: provider=%s error_type=%s',
@@ -67,6 +105,79 @@ class RadarExportProviderBase(Export):
             form.add_error(None, _('The RADAR export could not be prepared. Please contact support.'))
             return None
         return payload
+
+    def get_source_values(self, dataset) -> list[Value]:
+        """Return available answers in the selected reader's scope, without extra queries."""
+        return self.get_context(dataset).get_scope_values()
+
+    def compute_dataset_previews(self, form):
+        """Build display-only previews and dataset-specific diagnostics from prepared Values."""
+        warnings = {}
+        for warning in form.mapping_warnings:
+            warnings.setdefault(warning['dataset_key'], []).append(warning)
+        previews = []
+        for dataset in self.get_datasets():
+            dataset_warnings = warnings.get(dataset.key, [])
+            if not (form.preview_payload or form.preview_source_answers or form.preview_mapping or dataset_warnings):
+                continue
+            preview = {
+                'dataset': dataset, 'warnings': dataset_warnings,
+                'payload_preview': None, 'source_values': None,
+                'payload_error': None, 'source_error': None,
+                'mapping_preview': None, 'mapping_error': None,
+                'source_answers': None,
+            }
+            payload = None
+            if form.preview_payload or form.preview_mapping or form.preview_source_answers:
+                try:
+                    payload = self._validated_payload(dataset)
+                    if form.preview_payload:
+                        preview['payload_preview'] = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False)
+                except Exception as error:
+                    logger.warning(
+                        'Could not prepare RADAR payload preview: provider=%s error_type=%s',
+                        self.class_name, type(error).__name__,
+                    )
+                    preview['payload_error'] = _('The RADAR export could not be prepared. Please contact support.')
+                    preview['mapping_error'] = preview['payload_error']
+                else:
+                    if form.preview_mapping or form.preview_source_answers:
+                        try:
+                            provenance = None
+                            if (
+                                type(self).get_payload is RadarExportProviderBase.get_payload
+                                or type(self).get_payload_provenance
+                                is not RadarExportProviderBase.get_payload_provenance
+                            ):
+                                provenance = self.get_payload_provenance(dataset, payload)
+                            preview['mapping_preview'] = compute_mapping_preview(
+                                validate_payload_provenance(provenance, payload)
+                            )
+                        except Exception as error:
+                            logger.warning('Could not prepare RADAR mapping preview: provider=%s error_type=%s',
+                                           self.class_name, type(error).__name__)
+                            preview['mapping_error'] = _(
+                                'The field mapping could not be prepared. Please contact support.'
+                            )
+            if form.preview_source_answers:
+                try:
+                    preview['source_values'] = self.get_source_values(dataset)
+                    preview['source_answers'] = compute_source_answers(
+                        preview['source_values'], preview['mapping_preview'], payload=payload,
+                    )
+                except Exception as error:
+                    logger.warning(
+                        'Could not prepare RADAR source answers: provider=%s error_type=%s',
+                        self.class_name, type(error).__name__,
+                    )
+                    preview['source_error'] = _('The source answers could not be prepared. Please contact support.')
+            previews.append(preview)
+        return previews
+
+    def render_form(self, form, error=None):
+        return render(self.request, 'plugins/exports_radar.html', {
+            'form': form, 'error': error, 'dataset_previews': self.compute_dataset_previews(form),
+        }, status=200)
 
     def get_datasets(self):
         """Return the datasets that this mapping can export from the RDMO project."""
@@ -95,6 +206,10 @@ class RadarExportProviderBase(Export):
             workspace_choices = kwargs.pop('workspace_choices')
             radar_urls = kwargs.pop('radar_urls')
             self.mapping_warnings = kwargs.pop('mapping_warnings', [])
+            self.preview_payload = kwargs.pop('preview_payload', False)
+            self.preview_source_answers = kwargs.pop('preview_source_answers', False)
+            self.preview_mapping = kwargs.pop('preview_mapping', False)
+            self.debug_mode = kwargs.pop('debug_mode', False)
 
             super().__init__(*args, **kwargs)
 
@@ -126,13 +241,25 @@ class RadarExportProviderBase(Export):
         self.store_in_session(self.request, 'project_id', self.project.id)
 
     def get_export_form(self, data=None, workspace_choices=None):
+        if self.debug_mode:
+            workspace_choices = [('local-workspace', _('Local workspace (debug)'))]
         return self.Form(
             data,
             dataset_choices=self.get_from_session(self.request, 'dataset_choices') or [],
             workspace_choices=workspace_choices or self.get_from_session(self.request, 'workspace_choices') or [],
             radar_urls=self.get_from_session(self.request, 'radar_urls') or [],
             mapping_warnings=self.get_mapping_warnings(),
+            preview_payload=getattr(settings, 'RADAR_PREVIEW_PAYLOAD', False),
+            preview_source_answers=getattr(settings, 'RADAR_PREVIEW_SOURCE_ANSWERS', False),
+            preview_mapping=getattr(settings, 'RADAR_PREVIEW_MAPPING', False),
+            debug_mode=self.debug_mode,
         )
+
+    def render_debug_form(self, data=None):
+        form = self.get_export_form(data=data)
+        if form.is_bound:
+            form.add_error(None, _('RADAR export is disabled in local debug mode.'))
+        return self.render_form(form)
 
     def get_mapping_warnings(self):
         show_warnings = self.show_mapping_warnings
@@ -142,12 +269,23 @@ class RadarExportProviderBase(Export):
             return []
         warnings = []
         for dataset in self.get_datasets():
-            service = self.get_service()
-            result = service.mapping(service.reader(dataset))
-            metadata = result.metadata
-            missing = missing_required_fields(metadata)
+            try:
+                result = self._get_mapping_result(dataset)
+                metadata = result.metadata
+                missing = missing_required_fields(metadata)
+            except Exception as error:
+                logger.warning(
+                    'Could not prepare RADAR mapping warnings: provider=%s error_type=%s',
+                    self.class_name, type(error).__name__,
+                )
+                warnings.append({
+                    'dataset_key': dataset.key, 'title': dataset.label, 'issues': (), 'missing': [],
+                    'error': _('The mapping warnings could not be prepared. Please contact support.'),
+                })
+                continue
             if missing or result.issues:
                 warnings.append({
+                    'dataset_key': dataset.key,
                     'title': metadata.title or dataset.label,
                     'issues': result.issues,
                     'missing': [REQUIRED_FIELD_LABELS.get(path, path) for path in missing],
@@ -366,6 +504,12 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
 
     def callback(self, request):
         self.request = request
+        if self.debug_mode:
+            self.clear_pending_request(request)
+            return render(request, 'core/error.html', {
+                'title': _('Local RADAR debug mode'),
+                'errors': [_('RADAR authentication and export are disabled in local debug mode.')],
+            }, status=200)
         pending = self.get_from_session(request, 'request')
         if (
             not isinstance(pending, list | tuple) or not pending
@@ -396,9 +540,12 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
     def render(self):
         self.prepare_export_session()
 
+        if self.debug_mode:
+            return self.render_debug_form()
+
         if self.pop_from_session(self.request, 'get') is True:
             form = self.get_export_form()
-            return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+            return self.render_form(form)
 
         self.store_in_session(self.request, 'operation', 'get_workspaces')
         return self.get(self.request, self.get_get_url())
@@ -410,15 +557,18 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
             self.pop_from_session(self.request, 'workspace_choices')
             return redirect('project', self.project.id)
 
+        if self.debug_mode:
+            return self.render_debug_form(data=self.request.POST)
+
         form = self.get_export_form(data=self.request.POST)
-        if form.is_valid():
+        if 'export' in self.request.POST and form.is_valid():
             dataset = self.get_selected_dataset(form)
             if dataset is None:
-                return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+                return self.render_form(form)
             radar_url = self.radar_url
             payload = self._prepare_payload(dataset, form)
             if payload is None:
-                return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+                return self.render_form(form)
             self.store_in_session(self.request, 'export_context', {
                 'project_id': self.project.pk, 'dataset': asdict(dataset),
                 'provider': self.class_name, 'persist': self.mapping.store_result is not None,
@@ -429,7 +579,7 @@ class RadarExportProvider(RadarExportProviderBase, OauthProviderMixin):
                 self.request, dataset_url(radar_url, form.cleaned_data['workspace']), payload,
             )
 
-        return render(self.request, 'plugins/exports_radar.html', {'form': form}, status=200)
+        return self.render_form(form)
 
     def get_success(self, request, response):
         try:

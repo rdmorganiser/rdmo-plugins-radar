@@ -56,8 +56,93 @@ Both REST providers inherit `get_payload(dataset)` from `RadarExportProviderBase
 `RadarExportService.compute_payload(dataset, responsible_email).payload`. A subclass can return the complete
 request dictionary directly or call `super()` and customize it. The provider checks JSON serializability,
 then sends the returned dictionary unchanged. Preparation failures produce a form error before submission
-or result storage. The hook runs only after valid dataset selection, never for warnings or OAuth replay.
+or result storage. Actual export calls the hook after valid dataset selection. When any preview setting is
+enabled, displaying the export form also calls it for every dataset. Mapping warnings and OAuth replay
+do not call the hook.
 `get_context(dataset)` returns a reader using the same prepared operation and selected scope.
+
+The independent Django settings `RADAR_PREVIEW_PAYLOAD`, `RADAR_PREVIEW_SOURCE_ANSWERS`, and `RADAR_PREVIEW_MAPPING` default to
+false. The shared `render_form()` helper prepares **Preview from current answers** automatically for every
+current dataset, without requiring valid dataset/workspace choices. Preview preparation belongs to form
+display, outside form construction and validation. It performs no remote requests, writes, or session changes.
+Payload previews use the same preparation hook and JSON checks as actual export;
+`get_source_values(dataset)` reads prepared Attribute identities through the selected context's accessor.
+It never automatically expands to shared project scope. Source rows list available Values with their recorded
+output destinations. All panels are escaped and independently optional. Failures appear within the affected dataset
+and panel without invalidating the form or hiding other datasets. Warnings are grouped by `dataset_key`,
+never title, and remain visible even when preview panels are disabled. Mapping-warning failures are also
+isolated per dataset. The complete preview section appears before dataset/workspace selection and form controls.
+The shared **RDMO Attributes and answers** panel uses compact Bootstrap 3 list-group rows: a visible full
+Attribute URI above each answer, with coordinate badges aligned to the right only in `RADAR_DEBUG` mode.
+The same setting controls coordinates in the mapping cards, independently of Django's `DEBUG`. Native HTML titles identify
+`set_prefix`, `set_index`, and `collection_index` on hover; accessible labels include both the name and value.
+There is no tooltip JavaScript or Bootstrap tooltip initialization. Attribute and Option URIs reuse RDMO's
+`code-domain` and `code-options` classes. An unstyled flex wrapper handles URI layout while the inline
+code background covers only the URI text. Answers use RDMO's `Value.value_and_unit`; Option URIs and external
+IDs appear as indented metadata below them. External IDs remain separate because the native display property
+does not include them. Narrow layouts wrap the header without truncating URIs.
+The **RADAR Field mapping** panel uses the same compact list-group styling, with each card
+showing the canonical field, verified output path, outcome, source answers, result, and reason.
+Source cards always display their verified destinations, independently of the separate field-mapping panel.
+`compute_source_answers()` prepares presentation rows around the existing native Values; `get_source_values()`
+and the `source_values` context entries keep their native Value lists. Destinations are joined using Value
+primary keys, or object identity for unsaved Values, and include only mapped/defaulted emitted fields.
+REST JSON pointers are displayed in dot notation with array indices and quoted keys where necessary;
+XML paths retain their actual emitted locations. Missing or partial provenance is labelled explicitly.
+Source-answer previews prepare the payload and provenance once per dataset even when its JSON display is disabled.
+The join performs no queries or further mapping/payload preparation and does not alter export bodies.
+Preview data is not retained; Export prepares a fresh payload. The form wrapper reuses RDMO's field
+template, CSRF protection, and hidden stage fields. The named Export submit action is required to create a
+dataset, preventing old Preview submissions from creating one. Existing export permissions apply to previews.
+
+Both exporters delegate scoped answer access to `ProjectReadContext.get_scope_values()`. It selects native
+Values by their prepared Attribute identities and preserves the existing Attribute/coordinate ordering
+without further queries. Preview helpers do not interpret the prepared lookup structures. Empty mapping
+attempts use the public `record_empty_mapping(target, path)` method, including ambiguity diagnostics.
+`compute_dataset_previews()` prepares the REST presentation; shared helpers use `compute_mapping_preview()`,
+`compute_source_answers()`, and `compute_payload_field_path()`.
+
+`RADAR_PREVIEW_MAPPING` or `RADAR_PREVIEW_SOURCE_ANSWERS` enables operation-local `MappingAttempt`/`MappingSource` sidecars on the existing
+`MappingResult`, `ExportPayload`, and `XmlExportFile` result types. A native Value is retained as a source,
+preserving its Attribute/Option identity, set coordinates, and snapshot. Project properties and constants
+are explicitly labelled literals. `ProjectReadContext` accessors accept optional canonical `target=` fields;
+shared and grouped contexts append to the same recorder. Built-in mappings record composed fields, vocabulary
+crosswalks, defaults, and rejected/empty/skipped inputs at the decision point. Uninstrumented custom mappings
+remain supported and report provenance as unavailable. Factories copy prepared contexts without reloading
+Values; collection is disabled unless requested. REST warnings and payload previews reuse a single mapping
+result per dataset within the operation, avoiding duplicate decisions.
+
+Built-in serializers have an optional `record_output` callback for canonical-field/output-location bindings.
+Each serializer records bindings beside the fields it emits, including in nested serialization helpers;
+there is no separate table repeating the REST and XML field layouts. Bindings contain format names, never
+RDMO Attributes. The generic recorder guards callback failures and invalidates the optional sidecar without
+interrupting serialization. Projection verifies XML paths against the exact rendered
+bytes and JSON pointers against the actual payload. Changed canonical values and XML-filtered entries become
+skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
+Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
+failures affect only the optional sidecar, never the generated export.
+
+Raw REST overrides keep `get_payload(dataset) -> dict`. Their optional companion
+`get_payload_provenance(dataset, payload)` returns `tuple[MappingAttempt, ...] | None`; successful rows are
+checked against the returned payload. A raw override must explicitly override this companion to opt in,
+even if its payload hook calls `super()`. No inference from identical strings or inherited mapping provenance
+is performed. Incomplete supplied traces show uncovered output fields as untraced. Companion failures remain
+panel-local. Neither sidecars nor preview data enter HTTP bodies, OAuth session requests, or local storage.
+
+XML uses the same source-answer and mapping partials through presentation helpers that do not depend on
+authentication providers. Enabled flags render the XML page for valid files too; each dataset retains its
+own warnings and actual XML, source, and mapping sections. Snapshots are labelled. All flags disabled preserve
+the existing warning/direct-download behavior. `?download=1` skips preview extraction and provenance recording
+and returns the usual ZIP containing XML files only.
+
+`RADAR_DEBUG` is an independent, opt-in Django setting, defaulting to false. After ordinary dataset
+preparation, both REST adapters render the same form before authentication or remote workspace discovery.
+The form substitutes a local workspace without persisting it or reading `RADAR_PROVIDER`; existing mapping
+and preview settings still apply. Export is hidden and submissions cannot authenticate, send requests, or
+store export results; displayed forms still prepare enabled previews. Cancel retains priority. The OAuth
+callback clears pending request/state/operation/destination data before token exchange or replay, without rebuilding a reader or
+discarding an existing access token. Django's `DEBUG` has no effect on this behavior. Clients, services,
+mapping profiles, and the XML pipeline are unchanged.
 
 `show_mapping_warnings = None` retains canonical mapping warnings for the default payload hook and suppresses
 them when a subclass overrides it. Explicit `True` or `False` enables or disables these profile-derived
@@ -171,16 +256,6 @@ For project edits, construct a new service. Preparation is not cached across req
 operation; they are not mutable state on export instances. REST serialization adds explicit responsible
 email and millisecond timestamp to the fixed RDDM 9.3 technical metadata. Missing draft titles get a fallback
 without modifying the mapped metadata object. Frozen result dataclasses do not imply deep immutability.
-
-Built-in serializers have an optional `record_output` callback for canonical-field/output-location bindings.
-Each serializer records bindings beside the fields it emits, including in nested serialization helpers;
-there is no separate table repeating the REST and XML field layouts. Bindings contain format names, never
-RDMO Attributes. The generic recorder guards callback failures and invalidates the optional sidecar without
-interrupting serialization. Projection verifies XML paths against the exact rendered
-bytes and JSON pointers against the actual payload. Changed canonical values and XML-filtered entries become
-skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
-Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
-failures affect only the optional sidecar, never the generated export.
 
 ## Mapping profiles and datasets
 
@@ -399,6 +474,7 @@ with `ruff check rdmo_radar tests`; the hook remains `ruff-check`, without a rep
 
 Compatibility checks use released RDMO 2.5.1/2.5.2 and the pinned 2.6 source revision
 `9f48c2fc93e021ff8eef3e087c1368235bef2e56`, with dependency versions reported explicitly.
+That recorded 2.6 branch baseline also carries the 2.5.1 release tag; it is not a separate 2.6 release.
 M7a passed 276 tests with one expected upstream failure on each RDMO 2 target, using Python 3.14.7,
 Django 5.2.18, DRF 3.18.3, and pytest 8.4.2. Its 26 added regression cases cover identity/URI access, local
 path ambiguity, catalog-only collisions, unsaved and deferred models, Option collisions, namespace-safe

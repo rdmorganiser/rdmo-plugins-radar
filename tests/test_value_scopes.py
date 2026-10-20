@@ -539,6 +539,23 @@ def test_template_framework_datasets_keep_repeated_nested_indices_and_result_coo
     )
 
 
+def test_source_preview_uses_complete_nested_dataset_scope(scope_project, django_assert_num_queries):
+    from rdmo_radar.exports import RadarExportProvider
+
+    outer = add_page(scope_project, 'research/record', collection=True)
+    dataset = add_questionset(outer, 'project/dataset/id', collection=True)
+    fields = add_questionset(dataset)
+    add_question(fields, 'project/dataset/description')
+    for parent in (1, 10):
+        add_answer(scope_project, 'project/dataset/id', f'Dataset {parent}', set_prefix=str(parent), set_index=3)
+        add_answer(scope_project, 'project/dataset/description', f'Description {parent}', set_prefix=f'{parent}|3')
+    provider = export_for(scope_project, RadarExportProvider)
+    datasets = provider.get_datasets()
+    with django_assert_num_queries(0):
+        for dataset, parent in zip(datasets, (1, 10), strict=True):
+            values = provider.get_source_values(dataset)
+            assert {value.text for value in values} == {f'Dataset {parent}', f'Description {parent}'}
+            assert all(value.set_prefix in (str(parent), f'{parent}|3') for value in values)
 
 
 @pytest.mark.parametrize('native_ids', [False, True])

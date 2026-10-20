@@ -1,0 +1,60 @@
+.radar-attribute-answers {
+    font-size: 0.875em;
+}
+
+.radar-attribute-answers details,
+.radar-attribute-answers summary {
+    margin-bottom: 0;
+}
+
+.radar-attribute-answers code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.radar-source-text {
+    white-space: pre-wrap;
+}
+
+.radar-attribute-answers > .list-group-item {
+    padding: 6px 8px;
+    overflow-wrap: anywhere;
+}
+
+.radar-attribute-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px 8px;
+    margin-bottom: 4px;
+}
+
+.radar-attribute-reference {
+    flex: 1 1 18rem;
+    min-width: 0;
+}
+
+.radar-source-details {
+    margin-left: 1em;
+}
+
+.radar-source-fields {
+    margin-top: 2px;
+}
+
+.radar-attribute-coordinates {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.radar-attribute-coordinates > .label,
+.radar-attribute-header > .label {
+    font-size: inherit;
+    font-weight: normal;
+}
+
+.radar-mapping-source {
+    margin-bottom: 6px;
+}

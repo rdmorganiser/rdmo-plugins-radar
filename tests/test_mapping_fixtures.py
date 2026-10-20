@@ -560,15 +560,20 @@ def test_mapping_warnings_render_and_escape_answer_text(prototype):
     template_directory = Path(__file__).parents[1] / 'rdmo_radar' / 'templates'
     engine = Engine(
         dirs=[str(template_directory)],
-        libraries={'i18n': 'django.templatetags.i18n', 'core_tags': 'rdmo.core.templatetags.core_tags'},
+        libraries={
+            'i18n': 'django.templatetags.i18n', 'core_tags': 'rdmo.core.templatetags.core_tags',
+            'widget_tweaks': 'widget_tweaks.templatetags.widget_tweaks',
+            'static': 'django.templatetags.static',
+        },
         loaders=[
             ('django.template.loaders.locmem.Loader', {'core/page.html': '{% block page %}{% endblock %}'}),
             'django.template.loaders.filesystem.Loader',
+            'django.template.loaders.app_directories.Loader',
         ],
     )
     export = export_for(prototype)
     html = engine.get_template('plugins/exports_radar_xml_validation.html').render(Context({
-        'files': export.prepare_files(), 'project_url': '/projects/1/',
+        'files': export.prepare_files(), 'project_url': '/projects/1/', 'has_warnings': True,
     }))
     assert 'Mapping warnings' in html
     assert 'Download anyway' in html
@@ -578,8 +583,10 @@ def test_mapping_warnings_render_and_escape_answer_text(prototype):
     provider.prepare_export_session()
     form = provider.get_export_form(workspace_choices=[('workspace', 'Workspace')])
     request = RequestFactory().get('/')
-    html = engine.get_template('plugins/exports_radar.html').render(RequestContext(request, {'form': form}))
-    assert 'You can export them as drafts' in html
+    html = engine.get_template('plugins/exports_radar.html').render(RequestContext(request, {
+        'form': form, 'dataset_previews': provider.compute_dataset_previews(form),
+    }))
+    assert 'You can export it as a draft' in html
     assert 'Radar Testdatensatz Nr 2' in html
     assert '&lt;script&gt;' in html
     assert '<script>' not in html

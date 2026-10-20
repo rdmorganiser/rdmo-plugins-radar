@@ -57,6 +57,7 @@ include = ["rdmo_radar*"]
 [tool.setuptools.package-data]
 rdmo_radar = [
   "schemas/*.xsd",
+  "static/**/*.css",
   "templates/**/*.html",
   "xml/**/*.xml",
 ]

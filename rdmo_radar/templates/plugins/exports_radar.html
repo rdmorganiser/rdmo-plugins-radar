@@ -1,32 +1,84 @@
 {% extends 'core/page.html' %}
-{% load i18n %}
-{% load core_tags %}
+{% load i18n static %}
+
+{% block head %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'rdmo_radar/css/exports.css' %}" />
+{% endblock %}
 
 {% block page %}
 
     <h1>{% trans 'Export to RADAR' %}</h1>
 
+    {% if form.debug_mode %}
+    <div class="alert alert-info" role="alert">
+        <strong>{% trans 'Local RADAR debug mode' %}</strong>
+        <p>{% trans 'RADAR authentication and export are disabled. The local workspace is for form previews only. Previews use your current RDMO answers.' %}</p>
+    </div>
+    {% endif %}
+
     {% if error %}
     <div class="alert alert-danger" role="alert">{{ error }}</div>
     {% endif %}
 
-    {% if form.mapping_warnings %}
+    {% if dataset_previews %}
+    {% if form.preview_payload or form.preview_source_answers or form.preview_mapping %}
+    <h2>{% trans 'Preview from current answers' %}</h2>
+    <p>{% trans 'Reload this page after editing answers. Export prepares the payload again, so timestamps and subsequently edited answers may differ.' %}</p>
+    {% endif %}
+
+    {% for preview in dataset_previews %}
+    <section class="radar-dataset-preview">
+    <h3>{{ preview.dataset.label }}</h3>
+
+    {% for warning in preview.warnings %}
     <div class="alert alert-warning" role="alert">
-        <p>{% trans 'These datasets need metadata completed in RADAR. You can export them as drafts.' %}</p>
-        {% for warning in form.mapping_warnings %}
-        <h2>{{ warning.title }}</h2>
+        {% if warning.error %}
+        <p>{{ warning.error }}</p>
+        {% else %}
+        <p>{% trans 'This dataset needs metadata completed in RADAR. You can export it as a draft.' %}</p>
+        {% endif %}
         {% if warning.missing %}
         <p>{% trans 'Missing required metadata:' %} {{ warning.missing|join:', ' }}</p>
         {% endif %}
+        {% if warning.issues %}
         <ul>
             {% for issue in warning.issues %}
             <li>{{ issue }}</li>
             {% endfor %}
         </ul>
-        {% endfor %}
+        {% endif %}
     </div>
+    {% endfor %}
+
+    {% if form.preview_payload %}
+    <details>
+        <summary>{% trans 'RADAR request body' %}</summary>
+        {% if preview.payload_error %}
+        <p class="text-danger">{{ preview.payload_error }}</p>
+        {% else %}
+        <pre>{{ preview.payload_preview }}</pre>
+        {% endif %}
+    </details>
     {% endif %}
 
-    {% bootstrap_form submit=_('Export to RADAR') %}
+    {% if form.preview_source_answers %}
+    <details>
+        <summary>{% trans 'RDMO Attributes and answers' %}</summary>
+        {% if preview.source_error %}
+        <p class="text-danger">{{ preview.source_error }}</p>
+        {% else %}
+        {% include 'plugins/exports_radar_source_answers.html' with source_answers=preview.source_answers mapping_available=preview.mapping_preview.available debug_mode=form.debug_mode %}
+        {% endif %}
+    </details>
+    {% endif %}
+    {% if form.preview_mapping %}
+    {% include 'plugins/exports_radar_mapping.html' with mapping=preview.mapping_preview mapping_error=preview.mapping_error debug_mode=form.debug_mode %}
+    {% endif %}
+    </section>
+    {% endfor %}
+    {% endif %}
+
+    {% include 'plugins/exports_radar_form.html' %}
 
 {% endblock %}
