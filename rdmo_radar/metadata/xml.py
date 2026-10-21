@@ -335,16 +335,12 @@ def _serialize_people_and_organizations(
                 )
             item['nameIdentifier'] = identifiers
         if person_or_organization.affiliations:
-            affiliations = [
-                _serialize_affiliation(
-                    affiliation,
-                    target=f'{target}.affiliations[{number}]',
-                    path=f'{path}/re:{prefix}Affiliation',
-                    record_output=record_output if number == 0 else None,
-                )
-                for number, affiliation in enumerate(person_or_organization.affiliations)
-            ]
-            item[f'{prefix}Affiliation'] = affiliations[0]
+            item[f'{prefix}Affiliation'] = _serialize_affiliation(
+                person_or_organization.affiliations[0],
+                target=f'{target}.affiliations[0]',
+                path=f'{path}/re:{prefix}Affiliation',
+                record_output=record_output,
+            )
         data[container][prefix].append(item)
 
 

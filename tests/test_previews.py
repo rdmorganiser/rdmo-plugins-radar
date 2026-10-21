@@ -291,9 +291,9 @@ def test_answer_cards_preserve_native_value_display_and_debug_coordinates(debug_
     text = 'First line\n<script>Text & details</script>'
     option = Option(uri='https://example.test/options/example', text_lang1='<b>Option label</b>', additional_input=True)
     values = [
-        Value(attribute=attribute, text=text, set_prefix='', set_index=0, collection_index=0),
+        Value(attribute=attribute, text=text, set_prefix='', set_index=0, collection_index=0, snapshot_id=17),
         Value(attribute=attribute, option=option, text='Extra input', unit='kg', external_id='<external-id>',
-              set_prefix='1|0|10', set_index=10, collection_index=2),
+              set_prefix='1|0|10', set_index=10, collection_index=2, snapshot_id=17),
         Value(attribute=attribute, text='42', unit='m'),
         Value(attribute=attribute, text='0', value_type=VALUE_TYPE_BOOLEAN),
         Value(attribute=attribute, text='2026-10-19', value_type=VALUE_TYPE_DATETIME),
@@ -329,6 +329,8 @@ def test_answer_cards_preserve_native_value_display_and_debug_coordinates(debug_
     assert option_uri.get('class') == 'code-options'
     assert '<external-id>' in ''.join(cards[1].itertext())
     assert 'External ID: external-only' in ''.join(cards[-1].itertext())
+    assert cards[0].find('./div[@class="radar-source-details"]') is None
+    assert 'Snapshot:' not in ''.join(root.itertext())
     assert root.find('.//details') is None
     assert root.find('.//script') is None
     assert root.find('.//b') is None
@@ -341,9 +343,14 @@ def test_answer_cards_preserve_native_value_display_and_debug_coordinates(debug_
     rows = mapping_root.findall('./ul/li')
     assert len(rows) == len(values)
     assert mapping_root.find('.//table') is None
-    for row, answer in zip(rows, expected, strict=True):
+    for row, value, answer in zip(rows, values, expected, strict=True):
         source = row.find('./div[@class="radar-mapping-source"]')
         assert source.find('./div[@class="radar-source-text"]').text == answer
+        if value.snapshot_id:
+            details = source.find('./div[@class="radar-source-details"]')
+            assert 'Snapshot: 17' in ''.join(details.itertext())
+        else:
+            assert 'Snapshot:' not in ''.join(source.itertext())
         badges = source.findall('.//div[@class="radar-attribute-coordinates"]/span')
         assert len(badges) == (3 if debug_mode else 0)
     assert rows[1].find('.//code[@class="code-options"]').text == option.uri

@@ -24,17 +24,7 @@
             </div>
             {% endif %}
         </div>
-        <div class="radar-source-text">{{ value.value_and_unit }}</div>
-        {% if value.option or value.external_id %}
-        <div class="radar-source-details">
-        {% if value.option %}
-            <div>{% trans 'Option' %}: <code class="code-options">{{ value.option.uri }}</code></div>
-        {% endif %}
-        {% if value.external_id %}
-            <div>{% trans 'External ID' %}: {{ value.external_id }}</div>
-        {% endif %}
-        </div>
-        {% endif %}
+        {% include 'plugins/exports_radar_value_details.html' with value=value show_snapshot=False only %}
     </li>
     {% endwith %}
     {% endfor %}

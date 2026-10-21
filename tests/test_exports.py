@@ -993,6 +993,41 @@ def test_renderer_preserves_structured_names_and_contributor_type(capsys):
     assert capsys.readouterr().out == ''
 
 
+@pytest.mark.parametrize('container, tag', [('publishers', 'publisher'), ('rightsHolders', 'rightsHolder')])
+def test_renderer_preserves_named_values_and_identifier_attributes(container, tag):
+    attributes = {'nameIdentifierScheme': 'ROR', 'schemeURI': 'https://ror.org/', 'nameIdentifier': 'example-id'}
+    xml = RadarExportRenderer().render({container: {tag: [
+        'Plain <& name',
+        {'value': 'Identified <& name', **attributes},
+        {'value': 'No attributes', 'nameIdentifierScheme': '', 'schemeURI': None},
+        None, '', {'value': ''},
+    ]}})
+    namespace = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    root = ElementTree.fromstring(xml)
+    entries = root.findall(f'{namespace}{container}/{namespace}{tag}')
+    assert [(entry.text, entry.attrib) for entry in entries] == [
+        ('Plain <& name', {}), ('Identified <& name', attributes), ('No attributes', {}),
+    ]
+    assert '&lt;&amp;' in xml
+    for dataset in ({}, {container: {}}, {container: {tag: []}}):
+        empty = ElementTree.fromstring(RadarExportRenderer().render(dataset))
+        assert empty.find(f'{namespace}{container}') is None
+
+
+def test_renderer_keeps_publisher_and_rights_holder_override_points():
+    class ExampleRadarExportRenderer(RadarExportRenderer):
+        def render_publishers(self, xml, dataset):
+            super().render_publishers(xml, {'publishers': {'publisher': ['Custom publisher']}})
+
+        def render_rights_holders(self, xml, dataset):
+            super().render_rights_holders(xml, {'rightsHolders': {'rightsHolder': ['Custom rights holder']}})
+
+    root = ElementTree.fromstring(ExampleRadarExportRenderer().render({}))
+    namespace = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.findtext(f'{namespace}publishers/{namespace}publisher') == 'Custom publisher'
+    assert root.findtext(f'{namespace}rightsHolders/{namespace}rightsHolder') == 'Custom rights holder'
+
+
 def test_zip_export_is_complete_and_readable():
     export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
     export.project = SimpleNamespace(title='Project')

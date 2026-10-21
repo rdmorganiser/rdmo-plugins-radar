@@ -27,20 +27,7 @@
                 {% endif %}
             </div>
             {% if source.value.attribute %}
-            <div class="radar-source-text">{{ source.value.value_and_unit }}</div>
-            {% if source.value.option or source.value.external_id or source.value.snapshot_id %}
-            <div class="radar-source-details">
-                {% if source.value.option %}
-                <div>{% trans 'Option' %}: <code class="code-options">{{ source.value.option.uri }}</code></div>
-                {% endif %}
-                {% if source.value.external_id %}
-                <div>{% trans 'External ID' %}: {{ source.value.external_id }}</div>
-                {% endif %}
-                {% if source.value.snapshot_id %}
-                <div>{% trans 'Snapshot' %}: {{ source.value.snapshot_id }}</div>
-                {% endif %}
-            </div>
-            {% endif %}
+            {% include 'plugins/exports_radar_value_details.html' with value=source.value show_snapshot=True only %}
             {% else %}
             <div class="radar-source-text">{{ source.value|default_if_none:'' }}</div>
             {% endif %}

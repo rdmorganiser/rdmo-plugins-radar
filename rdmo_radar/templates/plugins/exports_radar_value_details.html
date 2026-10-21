@@ -1,0 +1,15 @@
+{% load i18n %}
+<div class="radar-source-text">{{ value.value_and_unit }}</div>
+{% if value.option or value.external_id or show_snapshot and value.snapshot_id %}
+<div class="radar-source-details">
+    {% if value.option %}
+    <div>{% trans 'Option' %}: <code class="code-options">{{ value.option.uri }}</code></div>
+    {% endif %}
+    {% if value.external_id %}
+    <div>{% trans 'External ID' %}: {{ value.external_id }}</div>
+    {% endif %}
+    {% if show_snapshot and value.snapshot_id %}
+    <div>{% trans 'Snapshot' %}: {{ value.snapshot_id }}</div>
+    {% endif %}
+</div>
+{% endif %}

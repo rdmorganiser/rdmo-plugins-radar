@@ -1,7 +1,7 @@
 """Scoped access to prepared project Values and mapping diagnostics."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
@@ -36,32 +36,10 @@ class ProjectReadContext:
             self.prepared = prepare_read_data(self.values, self.placements)
 
     def shared(self):
-        return ProjectReadContext(
-            self.values,
-            self.placements,
-            scope='project',
-            issues=self.issues,
-            prepared=self.prepared,
-            project=self.project,
-            value_selector=self.value_selector,
-            field_names=self.field_names,
-            provenance=self.provenance,
-        )
+        return replace(self, set_prefix='', set_index=0, scope='project', dataset_prefix=None)
 
     def group(self, prefix, index):
-        return ProjectReadContext(
-            self.values,
-            self.placements,
-            prefix,
-            index,
-            scope='group',
-            issues=self.issues,
-            prepared=self.prepared,
-            project=self.project,
-            value_selector=self.value_selector,
-            field_names=self.field_names,
-            provenance=self.provenance,
-        )
+        return replace(self, set_prefix=prefix, set_index=index, scope='group', dataset_prefix=None)
 
     def resolve_attribute(self, selector):
         """Resolve only prepared project/catalog identities; never query installed models."""

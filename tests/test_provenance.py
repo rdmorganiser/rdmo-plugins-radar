@@ -161,7 +161,8 @@ def test_all_populated_canonical_fields_have_verified_format_bindings(kind):
         creators=[PersonOrOrganization('Creator', given_name='Given', family_name='Family', name_type='Personal',
                                       identifiers=[Identifier('1234', 'ORCID'), Identifier('5678', 'ISNI')],
                                       affiliations=[Affiliation('Org', 'org-id', 'ROR'), Affiliation('Omitted')])],
-        contributors=[PersonOrOrganization('Contributor', name_type='Personal', contributor_type='Other')],
+        contributors=[PersonOrOrganization('Contributor', name_type='Personal', contributor_type='Other',
+                                          affiliations=[Affiliation('Contributor org'), Affiliation('Omitted')])],
         additional_titles=['Extra'], descriptions=[Description('Description')], keywords=['Keyword'],
         publishers=[PersonOrOrganization('Publisher', identifiers=[Identifier('publisher-id', 'ROR')])],
         publication_year='2026', geo_locations=[GeoLocation('Germany', 'Region', 0.0, 10.0)],
@@ -184,6 +185,19 @@ def test_all_populated_canonical_fields_have_verified_format_bindings(kind):
             output = xml_leaves(result.xml_data) if kind == 'xml' else dict(json_leaves(result.payload))
             assert output[row.output_path] == row.output_value
     if kind == 'xml':
+        for container, prefix, name in (
+            ('creators', 'creator', 'Org'), ('contributors', 'contributor', 'Contributor org'),
+        ):
+            affiliation = next(row for row in result.provenance if row.field == f'{container}[0].affiliations[0].name')
+            assert affiliation.outcome == 'mapped'
+            assert affiliation.output_path.endswith(f'/re:{prefix}Affiliation[1]')
+            assert affiliation.output_value == name
+            omitted = next(row for row in result.provenance if row.field == f'{container}[0].affiliations[1].name')
+            assert omitted.outcome == 'skipped'
+            assert omitted.output_path is None
+        identifier = next(row for row in result.provenance if row.field == 'creators[0].affiliations[0].identifier')
+        assert identifier.output_path.endswith('/re:creatorAffiliation[1]/@affiliationIdentifier')
+        assert identifier.output_value == 'org-id'
         assert any(row.field == 'data_sources[0].value' and row.outcome == 'skipped' for row in result.provenance)
         assert any(row.field == 'data_sources[1].value' and row.output_path.endswith('/re:dataSource[1]')
                    for row in result.provenance)

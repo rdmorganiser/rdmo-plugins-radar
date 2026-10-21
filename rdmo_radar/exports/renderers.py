@@ -138,19 +138,21 @@ class RadarExportRenderer(BaseXMLRenderer):
             xml.endElement('re:keywords')
 
     def render_publishers(self, xml, dataset):
-        publishers = dataset.get('publishers', {}).get('publisher')
-        if publishers:
-            xml.startElement('re:publishers', {})
-            for publisher in publishers:
-                if isinstance(publisher, dict):
-                    self.render_optional_text(xml, 'publisher', publisher.get('value'), {
-                        'nameIdentifierScheme': publisher.get('nameIdentifierScheme'),
-                        'schemeURI': publisher.get('schemeURI'),
-                        'nameIdentifier': publisher.get('nameIdentifier')
-                    })
-                else:
-                    self.render_optional_text(xml, 'publisher', publisher)
-            xml.endElement('re:publishers')
+        self.render_named_values(xml, dataset, 'publishers', 'publisher')
+
+    def render_named_values(self, xml, dataset, container, tag):
+        values = dataset.get(container, {}).get(tag)
+        if not values:
+            return
+
+        xml.startElement(f're:{container}', {})
+        for value in values:
+            if isinstance(value, dict):
+                attrs = {key: value.get(key) for key in ('nameIdentifierScheme', 'schemeURI', 'nameIdentifier')}
+                self.render_optional_text(xml, tag, value.get('value'), attrs)
+            else:
+                self.render_optional_text(xml, tag, value)
+        xml.endElement(f're:{container}')
 
     def render_subject_areas(self, xml, dataset):
         subject_areas = dataset.get('subjectAreas', {}).get('subjectArea')
@@ -237,19 +239,7 @@ class RadarExportRenderer(BaseXMLRenderer):
             xml.endElement('re:rights')
 
     def render_rights_holders(self, xml, dataset):
-        rights_holders = dataset.get('rightsHolders', {}).get('rightsHolder')
-        if rights_holders:
-            xml.startElement('re:rightsHolders', {})
-            for rights_holder in rights_holders:
-                if isinstance(rights_holder, dict):
-                    self.render_optional_text(xml, 'rightsHolder', rights_holder.get('value'), {
-                        'nameIdentifierScheme': rights_holder.get('nameIdentifierScheme'),
-                        'schemeURI': rights_holder.get('schemeURI'),
-                        'nameIdentifier': rights_holder.get('nameIdentifier')
-                    })
-                else:
-                    self.render_optional_text(xml, 'rightsHolder', rights_holder)
-            xml.endElement('re:rightsHolders')
+        self.render_named_values(xml, dataset, 'rightsHolders', 'rightsHolder')
 
     def render_related_informations(self, xml, dataset):
         related_informations = dataset.get('relatedInformations')

@@ -1,4 +1,6 @@
 """Catalog-aware behavior contracts, independent of the answer access implementation."""
+from dataclasses import dataclass
+
 import pytest
 
 from django.db import connection
@@ -213,7 +215,13 @@ def test_generic_context_does_not_interpret_template_framework_attributes():
     assert template_framework.issues[0].field == 'title'
 
 
-def test_scoped_contexts_preserve_mapping_selection_and_diagnostics(monkeypatch):
+@pytest.mark.parametrize('use_subclass', [False, True])
+def test_scoped_contexts_preserve_mapping_selection_and_diagnostics(monkeypatch, use_subclass):
+    @dataclass
+    class ExampleProjectReadContext(ProjectReadContext):
+        namespace: str = 'example'
+
+    context_class = ExampleProjectReadContext if use_subclass else ProjectReadContext
     attribute = Attribute(path='research/title')
     values = [Value(attribute=attribute, text='Shared'),
               Value(attribute=attribute, text='Nested', set_prefix='3', set_index=10)]
@@ -225,29 +233,40 @@ def test_scoped_contexts_preserve_mapping_selection_and_diagnostics(monkeypatch)
             return [values[1]]
         return select_values(context, attribute_key)
 
-    context = ProjectReadContext(
+    context = context_class(
         {attribute.path: values}, {}, set_prefix='3', set_index=10, scope='record', dataset_prefix='7',
-        value_selector=selector, field_names={attribute.path: 'title'},
+        value_selector=selector, field_names={attribute.path: 'title'}, project=object(), provenance=[],
     )
+    if use_subclass:
+        context.namespace = 'custom'
     monkeypatch.setattr('rdmo_radar.metadata.read_context.prepare_read_data',
                         lambda *args: pytest.fail('Scoped contexts must reuse prepared data'))
     shared = context.shared()
     group = context.group('', 0)
     for child in (shared, group):
+        assert type(child) is context_class
         assert child.value_selector is selector
         assert child.field_names is context.field_names
         assert child.prepared is context.prepared
         assert child.values is context.values
         assert child.placements is context.placements
         assert child.issues is context.issues
+        assert child.project is context.project
+        assert child.provenance is context.provenance
         assert child.dataset_prefix is None
+        if use_subclass:
+            assert child.namespace == 'custom'
+    assert (context.set_prefix, context.set_index, context.scope, context.dataset_prefix) == ('3', 10, 'record', '7')
     assert (shared.set_prefix, shared.set_index) == ('', 0)
+    assert (group.set_prefix, group.set_index, group.scope) == ('', 0, 'group')
     assert context.get_text(attribute.path) == 'Nested'
     assert shared.get_values(attribute.path) == values
     assert group.get_text(attribute.path) == 'Shared'
     assert calls == ['record', 'project', 'group']
     group.warn(attribute.path, attribute.path, 'Example warning')
     assert context.issues[0].field == 'title'
+    group.record_mapping('title', sources=(values[0],), value='Shared')
+    assert context.provenance[0].value == 'Shared'
 
 
 @pytest.mark.parametrize('count', [2, 50, 100])
