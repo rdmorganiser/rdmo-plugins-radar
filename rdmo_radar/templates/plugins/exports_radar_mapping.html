@@ -8,11 +8,11 @@
     {% else %}
     <p>{% trans 'Recorded mapping decisions and their verified output locations. Untraced fields have no supplied source provenance.' %}</p>
     {% include 'plugins/exports_radar_mapping_rows.html' with rows=mapping.mapped %}
-    {% if mapping.attempts %}
-    <details>
-        <summary>{% trans 'Empty, skipped, and rejected attempts' %} ({{ mapping.attempts|length }})</summary>
-        {% include 'plugins/exports_radar_mapping_rows.html' with rows=mapping.attempts %}
-    </details>
-    {% endif %}
     {% endif %}
 </details>
+{% if not mapping_error and mapping.available and mapping.attempts %}
+<details>
+    <summary>{% trans 'Empty, skipped, and rejected attempts' %} ({{ mapping.attempts|length }})</summary>
+    {% include 'plugins/exports_radar_mapping_rows.html' with rows=mapping.attempts %}
+</details>
+{% endif %}
