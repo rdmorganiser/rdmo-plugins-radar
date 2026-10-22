@@ -9,6 +9,8 @@ on:
     paths:
       - '.github/workflows/**'
       - 'rdmo_radar/**'
+      - 'tests/**'
+      - pytest.ini
       - .pre-commit-config.yaml
       - pyproject.toml
 
@@ -34,7 +36,7 @@ jobs:
         python-version: "3.12"
         cache: pip
     - run: python -m pip install --upgrade pip setuptools wheel
-    - run: python -m pip install -e .[dev]
+    - run: python -m pip install -e .[dev] 'rdmo==2.5.2'
     - name: Set up pre-commit cache
       uses: actions/cache@v3
       with:
@@ -56,14 +58,39 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -Im pip install -e .[dev]
+      - run: python -Im pip install -e .[dev] 'rdmo==2.5.2'
       - run: python -Ic 'import rdmo_radar; print(rdmo_radar.__version__)'
+
+  test:
+    name: Test (${{ matrix.label }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: RDMO
+            rdmo: rdmo
+            test-args: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip setuptools wheel
+      - run: python -m pip install -e .[dev] '${{ matrix.rdmo }}'
+      - name: Report installed versions
+        run: >-
+          python -c 'import importlib.metadata as m;
+          print({name: m.version(name) for name in ("rdmo", "Django", "djangorestframework", "pytest")})'
+      - run: python -m pytest ${{ matrix.test-args }}
 
   required-checks-pass:
     if: always()
     needs:
       - lint
       - dev-setup
+      - test
     runs-on: ubuntu-22.04
     steps:
       - uses: re-actors/alls-green@release/v1

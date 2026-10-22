@@ -1,0 +1,34 @@
+{% load i18n %}
+<p>{% trans 'These RDMO Attributes and answers are available within the selected dataset scope. Shared project answers outside this scope are omitted.' %}</p>
+{% if source_answers %}
+<ul class="list-group radar-attribute-answers">
+    {% for answer in source_answers %}
+    {% with value=answer.value %}
+    <li class="list-group-item">
+        <div class="radar-attribute-header">
+            <div class="radar-attribute-reference">
+                <code class="code-domain">{{ value.attribute.uri }}</code>
+                <div class="radar-source-fields">
+                    {% for field in answer.radar_fields %}
+                    <div><code class="text-muted">{{ field }}</code></div>
+                    {% empty %}
+                    <span class="text-muted">{% if mapping_available %}{% trans 'No recorded RADAR field' %}{% else %}{% trans 'RADAR field unavailable' %}{% endif %}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if debug_mode %}
+            <div class="radar-attribute-coordinates">
+                <span class="label label-default" tabindex="0" title="set_prefix" aria-label="set_prefix: {{ value.set_prefix }}">"{{ value.set_prefix }}"</span>
+                <span class="label label-default" tabindex="0" title="set_index" aria-label="set_index: {{ value.set_index }}">{{ value.set_index }}</span>
+                <span class="label label-default" tabindex="0" title="collection_index" aria-label="collection_index: {{ value.collection_index }}">{{ value.collection_index }}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% include 'plugins/exports_radar_value_details.html' with value=value show_snapshot=False only %}
+    </li>
+    {% endwith %}
+    {% endfor %}
+</ul>
+{% else %}
+<p>{% trans 'No RDMO answers were found in the selected scope.' %}</p>
+{% endif %}

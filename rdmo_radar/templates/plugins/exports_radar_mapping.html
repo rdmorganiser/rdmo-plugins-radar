@@ -1,0 +1,18 @@
+{% load i18n %}
+<details>
+    <summary>{% trans 'RADAR Field mapping' %}</summary>
+    {% if mapping_error %}
+    <p class="text-danger">{{ mapping_error }}</p>
+    {% elif not mapping.available %}
+    <p>{% trans 'Provenance is unavailable for this mapping or payload provider.' %}</p>
+    {% else %}
+    <p>{% trans 'Recorded mapping decisions and their verified output locations. Untraced fields have no supplied source provenance.' %}</p>
+    {% include 'plugins/exports_radar_mapping_rows.html' with rows=mapping.mapped %}
+    {% endif %}
+</details>
+{% if not mapping_error and mapping.available and mapping.attempts %}
+<details>
+    <summary>{% trans 'Empty, skipped, and rejected attempts' %} ({{ mapping.attempts|length }})</summary>
+    {% include 'plugins/exports_radar_mapping_rows.html' with rows=mapping.attempts %}
+</details>
+{% endif %}

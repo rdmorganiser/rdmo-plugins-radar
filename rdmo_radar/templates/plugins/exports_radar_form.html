@@ -1,0 +1,13 @@
+{% load i18n %}
+
+<form method="post" action="" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}" />
+
+    {% include 'core/bootstrap_form_fields.html' %}
+
+    {% if not form.debug_mode %}
+    <input type="submit" name="export" value="{% trans 'Export to RADAR' %}" class="btn btn-primary" />
+    {% endif %}
+    <input type="submit" name="cancel" value="{% trans 'Cancel' %}" class="btn" />
+</form>
