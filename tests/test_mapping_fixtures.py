@@ -160,6 +160,24 @@ def test_both_providers_export_observed_radar_draft(observed_draft_project, cls)
     assert 'dataSources' not in payload['descriptiveMetadata']
 
 
+@pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
+def test_tf_rights_holders_reach_radar_output_for_the_selected_dataset(prototype, cls):
+    path = 'project/dataset/sharing/rights_holder'
+    add_value(prototype, path, 'Example University', set_index=0, collection_index=0)
+    add_value(prototype, path, 'Doe, Jane', set_index=0, collection_index=1)
+    add_value(prototype, path, 'Other Institution', set_index=1)
+    provider = export_for(prototype, cls)
+
+    for index, names in ((0, ['Example University', 'Doe, Jane']), (1, ['Other Institution'])):
+        metadata = read_metadata(provider, index).metadata
+        assert metadata.rights_holders == [PersonOrOrganization(name) for name in names]
+        assert 'rightsHolders.rightsHolder' not in missing_required_fields(metadata)
+        payload = dataset_payload(provider, index)
+        assert payload['rightsHolders'] == {'rightsHolder': [{'value': name} for name in names]}
+        xml = RadarExportRenderer().render(to_xml_payload(metadata))
+        assert parse_xml(ElementTree.fromstring(xml)).rights_holders == metadata.rights_holders
+
+
 def test_prototype_metadata_preserves_answers_and_dataset_boundaries(prototype):
     export = export_for(prototype)
     assert [dataset.key for dataset in export.get_datasets()] == ['0', '1']

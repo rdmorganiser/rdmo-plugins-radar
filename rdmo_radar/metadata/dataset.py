@@ -37,7 +37,7 @@ def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
         processing=context.get_texts('project/dataset/method', target='processing'),
         rights=_read_rights(context),
         rights_holders=[PersonOrOrganization(name=name) for name in context.get_texts(
-            'project/dataset/ipr/owner/name', target='rights_holders[{index}].name',
+            'project/dataset/sharing/rights_holder', target='rights_holders[{index}].name',
         )],
     )
 
@@ -70,7 +70,7 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
             text=metadata.rights.additional,
         )
     for collection_index, holder in enumerate(metadata.rights_holders):
-        context.add('project/dataset/ipr/owner/name', holder.name, collection_index=collection_index)
+        context.add('project/dataset/sharing/rights_holder', holder.name, collection_index=collection_index)
     for collection_index, source in enumerate(metadata.data_sources):
         if source.resource_type:
             context.add_option(

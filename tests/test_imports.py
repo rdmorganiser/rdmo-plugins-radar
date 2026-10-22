@@ -221,6 +221,21 @@ def test_write_metadata_loads_once_for_direct_callers(db, django_assert_num_quer
     ]
 
 
+def test_import_writes_rights_holders_to_tf_sharing_attribute(db):
+    attribute = add_attribute('project/dataset/sharing/rights_holder')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    metadata = RadarMetadata(rights_holders=[
+        PersonOrOrganization('Example University'), PersonOrOrganization('Doe, Jane'),
+    ])
+
+    assert write_metadata(plugin, metadata, 3, existing_values={}) == ()
+    assert [(value.attribute_id, value.text, value.set_index, value.collection_index)
+            for value in plugin.values] == [
+        (attribute.pk, 'Example University', 3, 0),
+        (attribute.pk, 'Doe, Jane', 3, 1),
+    ]
+
+
 def test_import_requires_an_existing_project():
     from django.core.exceptions import ValidationError
 

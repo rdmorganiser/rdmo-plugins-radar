@@ -62,11 +62,12 @@ produce the existing storage-failure result page after confirmed creation rather
 | Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
 | Rights | `project/dataset/sharing/conditions`: CC-BY, CC-BY-NC, CC-BY-ND, CC-BY-SA, CC0, ODC-By, ODbL, and Other. Preserve additional text. Multiple distinct selections omit rights and report all selections for completion in RADAR. |
+| Rights holders | `project/dataset/sharing/rights_holder`: person or institution names for the selected dataset. RADAR imports write holder names to the same attribute. |
 | Funding | Discover populated name, grant-number, and programme fields without requiring a funder-ID marker. Keep fields grouped by their answer coordinates. `project/funder/id` remains a set marker, never a persistent funder identifier. Existing programme-URL support remains available. |
 | Keywords | All `project/research_question/keywords` text values, ordered and deduplicated. |
 | Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. No parsing of names/versions or mapping of other usage requirements. Missing version is reported. |
 | Creators and contributors | Preserve established creator and partner fields, including structured names and external ORCID values. Partner responsibility options are not names. Contributor roles remain `Other`; broader role/person mappings are deferred. |
-| Other established fields | Preserve acronym as additional title, recognized language options, rights-holder names, geolocation region, and `project/dataset/method` processing text when available. |
+| Other established fields | Preserve acronym as additional title, recognized language options, geolocation region, and `project/dataset/method` processing text when available. |
 
 ## Incompleteness and deferred decisions
 

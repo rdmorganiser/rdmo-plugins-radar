@@ -82,7 +82,7 @@ to customize the returned list of native RDMO Values.
 
 `RADAR_PREVIEW_MAPPING` adds a separate **RADAR Field mapping** panel. It records actual mapping decisions,
 the contributing answers with full Attribute and Option URIs and coordinates, and the verified output
-location and value. Empty, skipped, and rejected attempts appear in a nested details block. Shared
+location and value. Empty, skipped, and rejected attempts appear in their own top-level details block. Shared
 project answers can appear here when they contributed to the mapping. Defaults and fields without
 supplied provenance are labelled explicitly; matching text alone is never used to guess a source.
 The built-in Template Framework and project mappings supply provenance. Custom mappings can opt in
