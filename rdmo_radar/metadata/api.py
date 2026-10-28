@@ -1,8 +1,8 @@
 """RADAR REST serialization, independent of the XML renderer's payload format."""
 
-from .constants import to_api_value
+from .constants import KEYWORD_ATTRIBUTES, SCHEME_URIS, to_api_value
 from .provenance import json_leaves, record_binding
-from .types import Affiliation, FundingReference, GeoLocation, PersonOrOrganization, RadarMetadata, Software
+from .types import Affiliation, FundingReference, GeoLocation, PersonOrOrganization, RadarMetadata, Software, as_keyword
 
 
 def compute_radar_payload(
@@ -121,9 +121,28 @@ def to_api_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             )
         data['descriptions'] = {'description': items}
     if metadata.keywords:
-        data['keywords'] = {'keyword': [{'value': value} for value in metadata.keywords]}
-        for index, value in enumerate(metadata.keywords):
-            record_binding(record_output, f'keywords[{index}]', f'{path}/keywords/keyword/{index}/value', value)
+        items = []
+        for index, original in enumerate(metadata.keywords):
+            keyword = as_keyword(original)
+            target = f'keywords[{index}]'
+            output_path = f'{path}/keywords/keyword/{index}'
+            item = {'value': keyword.value}
+            value_target = target if isinstance(original, str) else f'{target}.value'
+            record_binding(record_output, value_target, f'{output_path}/value', keyword.value)
+            for field, name in KEYWORD_ATTRIBUTES:
+                value = getattr(keyword, field)
+                if field == 'keyword_scheme':
+                    value = to_api_value(value)
+                if field == 'scheme_uri' and value is None:
+                    value = _scheme_uri(keyword, target, output_path, record_output, keyword.keyword_scheme)
+                    if value is not None:
+                        item[name] = value
+                    continue
+                if value is not None:
+                    item[name] = value
+                    record_binding(record_output, f'{target}.{field}', f'{output_path}/{name}', value)
+            items.append(item)
+        data['keywords'] = {'keyword': items}
     if metadata.publishers:
         data['publishers'] = {
             'publisher': [
@@ -281,6 +300,13 @@ def _present(**values) -> dict:
     return {key: value for key, value in values.items() if value is not None}
 
 
+def _scheme_uri(value, target, path, record_output, scheme=None):
+    uri = value.scheme_uri or SCHEME_URIS.get(scheme or getattr(value, 'identifier_type', None))
+    field = f'{target}.scheme_uri' if value.scheme_uri else '$schemeURI'
+    record_binding(record_output, field, f'{path}/schemeURI', uri, 'Identifier scheme URI')
+    return uri
+
+
 def _person_or_organization(
     person_or_organization: PersonOrOrganization,
     prefix: str,
@@ -311,8 +337,11 @@ def _person_or_organization(
         identifiers = []
         for index, identifier in enumerate(person_or_organization.identifiers):
             scheme = to_api_value(identifier.identifier_type)
-            identifiers.append(_present(value=identifier.value, nameIdentifierScheme=scheme))
             output_path = f'{path}/nameIdentifier/{index}'
+            identifiers.append(_present(
+                value=identifier.value, nameIdentifierScheme=scheme,
+                schemeURI=_scheme_uri(identifier, f'{target}.identifiers[{index}]', output_path, record_output),
+            ))
             record_binding(
                 record_output, f'{target}.identifiers[{index}].value', f'{output_path}/value', identifier.value
             )
@@ -338,7 +367,8 @@ def _affiliation(affiliation: Affiliation, *, target='', path='', record_output=
     data = _present(
         value=affiliation.name,
         affiliationIdentifier=affiliation.identifier,
-        affiliationIdentifierScheme=to_api_value(affiliation.identifier_scheme),
+        affiliationIdentifierScheme=affiliation.identifier_scheme,
+        schemeURI=_scheme_uri(affiliation, target, path, record_output, affiliation.identifier_scheme),
     )
     record_binding(record_output, f'{target}.name', f'{path}/value', affiliation.name)
     record_binding(record_output, f'{target}.identifier', f'{path}/affiliationIdentifier', affiliation.identifier)
@@ -357,7 +387,10 @@ def _named_value(person_or_organization: PersonOrOrganization, *, target='', pat
     if person_or_organization.identifiers:
         identifier = person_or_organization.identifiers[0]
         scheme = to_api_value(identifier.identifier_type)
-        data.update(_present(nameIdentifier=identifier.value, nameIdentifierScheme=scheme))
+        data.update(_present(
+            nameIdentifier=identifier.value, nameIdentifierScheme=scheme,
+            schemeURI=_scheme_uri(identifier, f'{target}.identifiers[0]', path, record_output),
+        ))
         record_binding(record_output, f'{target}.identifiers[0].value', f'{path}/nameIdentifier', identifier.value)
         record_binding(
             record_output, f'{target}.identifiers[0].identifier_type', f'{path}/nameIdentifierScheme', scheme
@@ -418,7 +451,10 @@ def _funding(reference: FundingReference, *, target='', path='', record_output=N
     if reference.funder_identifier:
         identifier = reference.funder_identifier
         scheme = to_api_value(identifier.identifier_type)
-        data['funderIdentifier'] = _present(value=identifier.value, type=scheme)
+        data['funderIdentifier'] = _present(
+            value=identifier.value, type=scheme,
+            schemeURI=_scheme_uri(identifier, f'{target}.funder_identifier', f'{path}/funderIdentifier', record_output),
+        )
         record_binding(
             record_output, f'{target}.funder_identifier.value', f'{path}/funderIdentifier/value', identifier.value
         )

@@ -4,8 +4,8 @@
   "relatedIdentifiers": {"relatedIdentifier": [{"value": "10.1234/related", "relatedIdentifierType": "DOI", "relationType": "IS_CITED_BY"}]},
   "creators": {"creator": [{
     "creatorName": "Doe, Jane", "nameType": "Personal", "givenName": "Jane", "familyName": "Doe",
-    "nameIdentifier": [{"value": "0000-0001", "nameIdentifierScheme": "ORCID"}],
-    "creatorAffiliation": {"value": "University", "affiliationIdentifier": "https://ror.org/example", "affiliationIdentifierScheme": "ROR"}
+    "nameIdentifier": [{"value": "0000-0001", "nameIdentifierScheme": "ORCID", "schemeURI": "https://orcid.org/"}],
+    "creatorAffiliation": {"value": "University", "affiliationIdentifier": "https://ror.org/example", "affiliationIdentifierScheme": "ROR", "schemeURI": "https://ror.org/"}
   }]},
   "contributors": {"contributor": [{
     "contributorName": "Example organization", "nameType": "Organizational", "contributorType": "DATA_MANAGER",
@@ -15,7 +15,7 @@
   "additionalTitles": {"additionalTitle": [{"value": "DATA", "additionalTitleType": "OTHER"}, {"value": "Alternative title", "additionalTitleType": "OTHER"}]},
   "descriptions": {"description": [{"value": "Abstract", "descriptionType": "ABSTRACT"}, {"value": "Changes", "descriptionType": "VERSION_NOTES"}]},
   "keywords": {"keyword": [{"value": "FAIR"}, {"value": "Science"}]},
-  "publishers": {"publisher": [{"value": "Repository"}, {"value": "University", "nameIdentifier": "ror-1", "nameIdentifierScheme": "ROR"}]},
+  "publishers": {"publisher": [{"value": "Repository"}, {"value": "University", "nameIdentifier": "ror-1", "nameIdentifierScheme": "ROR", "schemeURI": "https://ror.org/"}]},
   "productionYear": "2025",
   "publicationYear": "2026",
   "language": "ENG",
@@ -29,10 +29,10 @@
   }]},
   "processing": {"dataProcessing": ["Cleaned", "Aggregated"]},
   "rights": {"controlledRights": "CC_BY_4_0_ATTRIBUTION", "additionalRights": "Attribution details"},
-  "rightsHolders": {"rightsHolder": [{"value": "University"}, {"value": "Doe, Jane", "nameIdentifier": "0000-0001", "nameIdentifierScheme": "ORCID"}]},
+  "rightsHolders": {"rightsHolder": [{"value": "University"}, {"value": "Doe, Jane", "nameIdentifier": "0000-0001", "nameIdentifierScheme": "ORCID", "schemeURI": "https://orcid.org/"}]},
   "relatedInformations": {"relatedInformation": [{"value": "Project website", "relatedInformationType": "Other"}]},
   "fundingReferences": {"fundingReference": [{
-    "funderName": "Funder", "funderIdentifier": {"value": "ror-2", "type": "ROR"}, "awardNumber": "ABC-123",
+    "funderName": "Funder", "funderIdentifier": {"value": "ror-2", "type": "ROR", "schemeURI": "https://ror.org/"}, "awardNumber": "ABC-123",
     "awardURI": "https://example.test/award", "awardTitle": "Award title"
   }]},
   "version": "2.1"

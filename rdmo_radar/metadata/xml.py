@@ -1,5 +1,6 @@
 from xml.etree.ElementTree import Element
 
+from .constants import KEYWORD_ATTRIBUTES, SCHEME_URIS
 from .provenance import record_binding
 from .types import (
     Affiliation,
@@ -7,15 +8,24 @@ from .types import (
     FundingReference,
     GeoLocation,
     Identifier,
+    Keyword,
     PersonOrOrganization,
     RadarMetadata,
     Resource,
     Rights,
     Software,
     SubjectArea,
+    as_keyword,
 )
 
 ELEMENTS_NS = 'http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements'
+
+
+def _scheme_uri(value, target, path, record_output, scheme=None):
+    uri = value.scheme_uri or SCHEME_URIS.get(scheme or getattr(value, 'identifier_type', None))
+    field = f'{target}.scheme_uri' if value.scheme_uri else '$schemeURI'
+    record_binding(record_output, field, f'{path}/@schemeURI', uri, 'Identifier scheme URI')
+    return uri
 
 
 def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
@@ -88,9 +98,26 @@ def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             )
         data['descriptions'] = {'description': items}
     if metadata.keywords:
-        data['keywords'] = {'keyword': [{'value': keyword} for keyword in metadata.keywords]}
-        for index, value in enumerate(metadata.keywords):
-            record_binding(record_output, f'keywords[{index}]', f'{path}/re:keywords/re:keyword[{index + 1}]', value)
+        items = []
+        for index, original in enumerate(metadata.keywords):
+            keyword = as_keyword(original)
+            target = f'keywords[{index}]'
+            output_path = f'{path}/re:keywords/re:keyword[{index + 1}]'
+            item = {'value': keyword.value}
+            value_target = target if isinstance(original, str) else f'{target}.value'
+            record_binding(record_output, value_target, output_path, keyword.value)
+            for field, name in KEYWORD_ATTRIBUTES:
+                value = getattr(keyword, field)
+                if field == 'scheme_uri' and value is None:
+                    value = _scheme_uri(keyword, target, output_path, record_output, keyword.keyword_scheme)
+                    if value is not None:
+                        item[name] = value
+                    continue
+                if value is not None:
+                    item[name] = value
+                    record_binding(record_output, f'{target}.{field}', f'{output_path}/@{name}', value)
+            items.append(item)
+        data['keywords'] = {'keyword': items}
     if metadata.publishers:
         data['publishers'] = {
             'publisher': [
@@ -263,7 +290,11 @@ def parse_xml(root: Element) -> RadarMetadata:
     for element in _findall(root, 'descriptions', 'description'):
         if element.text:
             metadata.descriptions.append(Description(element.text, element.get('descriptionType') or 'Abstract'))
-    metadata.keywords.extend(_texts(root, 'keywords', 'keyword'))
+    for element in _findall(root, 'keywords', 'keyword'):
+        if element.text:
+            attributes = {field: element.get(name) for field, name in KEYWORD_ATTRIBUTES}
+            # Untyped XML retains the established public string representation.
+            metadata.keywords.append(Keyword(element.text, **attributes) if any(attributes.values()) else element.text)
     metadata.publishers.extend(_parse_named_values(root, 'publishers', 'publisher'))
     metadata.production_year = _text(root, 'productionYear')
     metadata.publication_year = _text(root, 'publicationYear')
@@ -324,8 +355,11 @@ def _serialize_people_and_organizations(
         if person_or_organization.identifiers:
             identifiers = []
             for number, identifier in enumerate(person_or_organization.identifiers):
-                identifiers.append({'value': identifier.value, 'nameIdentifierScheme': identifier.identifier_type})
                 output_path = f'{path}/re:nameIdentifier[{number + 1}]'
+                identifiers.append({
+                    'value': identifier.value, 'nameIdentifierScheme': identifier.identifier_type,
+                    'schemeURI': _scheme_uri(identifier, f'{target}.identifiers[{number}]', output_path, record_output),
+                })
                 record_binding(record_output, f'{target}.identifiers[{number}].value', output_path, identifier.value)
                 record_binding(
                     record_output,
@@ -352,6 +386,7 @@ def _serialize_affiliation(affiliation: Affiliation, *, target='', path='', reco
         'value': affiliation.name,
         'affiliationIdentifier': affiliation.identifier,
         'affiliationIdentifierScheme': affiliation.identifier_scheme,
+        'schemeURI': _scheme_uri(affiliation, target, path, record_output, affiliation.identifier_scheme),
     }
     record_binding(record_output, f'{target}.identifier', f'{path}/@affiliationIdentifier', affiliation.identifier)
     record_binding(
@@ -378,6 +413,7 @@ def _serialize_named_value(
         'value': person_or_organization.name,
         'nameIdentifier': identifier.value,
         'nameIdentifierScheme': identifier.identifier_type,
+        'schemeURI': _scheme_uri(identifier, f'{target}.identifiers[0]', path, record_output),
     }
     record_binding(record_output, f'{target}.identifiers[0].value', f'{path}/@nameIdentifier', identifier.value)
     record_binding(
@@ -450,6 +486,9 @@ def _serialize_funding(reference: FundingReference, *, target='', path='', recor
         data['funderIdentifier'] = {
             'value': identifier.value,
             'type': identifier.identifier_type,
+            'schemeURI': _scheme_uri(
+                identifier, f'{target}.funder_identifier', f'{path}/re:funderIdentifier', record_output,
+            ),
         }
         record_binding(
             record_output, f'{target}.funder_identifier.value', f'{path}/re:funderIdentifier', identifier.value
@@ -470,7 +509,7 @@ def _parse_people_and_organizations(root: Element, container: str, prefix: str) 
         if not name:
             continue
         identifiers = [
-            Identifier(value.text, value.get('nameIdentifierScheme'))
+            Identifier(value.text, value.get('nameIdentifierScheme'), scheme_uri=value.get('schemeURI'))
             for value in element.findall(_q('nameIdentifier'))
             if value.text
         ]
@@ -482,6 +521,7 @@ def _parse_people_and_organizations(root: Element, container: str, prefix: str) 
                     affiliation.text,
                     affiliation.get('affiliationIdentifier'),
                     affiliation.get('affiliationIdentifierScheme'),
+                    affiliation.get('schemeURI'),
                 )
             )
         people_and_organizations.append(
@@ -507,7 +547,8 @@ def _parse_named_values(root: Element, container: str, name: str) -> list[Person
         people_and_organizations.append(
             PersonOrOrganization(
                 name=element.text,
-                identifiers=[Identifier(identifier, element.get('nameIdentifierScheme'))] if identifier else [],
+                identifiers=[Identifier(identifier, element.get('nameIdentifierScheme'),
+                                        scheme_uri=element.get('schemeURI'))] if identifier else [],
             )
         )
     return people_and_organizations
@@ -572,7 +613,8 @@ def _parse_funding(root: Element) -> list[FundingReference]:
         references.append(
             FundingReference(
                 funder_name=_text(element, 'funderName'),
-                funder_identifier=Identifier(identifier.text, identifier.get('type'))
+                funder_identifier=Identifier(identifier.text, identifier.get('type'),
+                                             scheme_uri=identifier.get('schemeURI'))
                 if identifier is not None and identifier.text
                 else None,
                 award_number=_text(element, 'awardNumber'),

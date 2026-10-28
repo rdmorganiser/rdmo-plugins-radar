@@ -94,7 +94,7 @@ class RadarExportRenderer(BaseXMLRenderer):
                 scheme = identifier.get('nameIdentifierScheme')
                 self.render_optional_text(xml, 'nameIdentifier', identifier.get('value'), {
                     'nameIdentifierScheme': scheme,
-                    'schemeURI': self.scheme_uri.get(scheme)
+                    'schemeURI': identifier.get('schemeURI') or self.scheme_uri.get(scheme)
                 })
 
             affiliation = name.get(f'{prefix}Affiliation')
@@ -102,7 +102,8 @@ class RadarExportRenderer(BaseXMLRenderer):
                 self.render_optional_text(xml, f'{prefix}Affiliation', affiliation.get('value'), {
                     'affiliationIdentifier': affiliation.get('affiliationIdentifier'),
                     'affiliationIdentifierScheme': affiliation.get('affiliationIdentifierScheme'),
-                    'schemeURI': self.scheme_uri.get(affiliation.get('affiliationIdentifierScheme'))
+                    'schemeURI': affiliation.get('schemeURI') or self.scheme_uri.get(
+                        affiliation.get('affiliationIdentifierScheme'))
                 })
             else:
                 self.render_optional_text(xml, f'{prefix}Affiliation', affiliation)
@@ -134,7 +135,10 @@ class RadarExportRenderer(BaseXMLRenderer):
         if keywords:
             xml.startElement('re:keywords', {})
             for keyword in keywords:
-                self.render_optional_text(xml, 'keyword', keyword.get('value'))
+                self.render_optional_text(xml, 'keyword', keyword.get('value'), {
+                    key: keyword.get(key)
+                    for key in ('keywordScheme', 'schemeURI', 'valueURI', 'classificationCode')
+                })
             xml.endElement('re:keywords')
 
     def render_publishers(self, xml, dataset):
@@ -261,7 +265,8 @@ class RadarExportRenderer(BaseXMLRenderer):
                 identifier = reference.get('funderIdentifier')
                 if identifier:
                     self.render_optional_text(xml, 'funderIdentifier', identifier.get('value'), {
-                        'type': identifier.get('type')
+                        'type': identifier.get('type'),
+                        'schemeURI': identifier.get('schemeURI'),
                     })
                 self.render_optional_text(xml, 'awardNumber', reference.get('awardNumber'))
                 self.render_optional_text(xml, 'awardURI', reference.get('awardURI'))

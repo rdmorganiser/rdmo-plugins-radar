@@ -2,8 +2,10 @@ from dataclasses import replace
 
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
+from .entities import prefer_name_source, read_named_values
+from .keywords import read_keywords
 from .read_context import ProjectReadContext
-from .types import GeoLocation, Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, Software, SubjectArea
+from .types import GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea, as_keyword
 from .values import answer_label, get_option_path, model_key, normalize
 from .write_context import ProjectWriteContext
 
@@ -27,7 +29,8 @@ def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
         identifier=Identifier(identifier_value, identifier_type) if identifier_value else None,
         title=title,
         additional_titles=[acronym] if acronym else [],
-        keywords=context.shared().get_texts('project/research_question/keywords', target='keywords'),
+        keywords=read_keywords(context.shared()),
+        publishers=read_named_values(context, 'project/dataset/curation/responsible_person/name', target='publishers'),
         language=context.get_option('project/dataset/language', XMLVocabulary.language_options, target='language'),
         subject_areas=_read_subjects(context),
         resource=Resource(resource_value) if resource_value else None,
@@ -36,9 +39,7 @@ def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
         software=_read_software(context),
         processing=context.get_texts('project/dataset/method', target='processing'),
         rights=_read_rights(context),
-        rights_holders=[PersonOrOrganization(name=name) for name in context.get_texts(
-            'project/dataset/sharing/rights_holder', target='rights_holders[{index}].name',
-        )],
+        rights_holders=_read_rights_holders(context),
     )
 
 
@@ -53,7 +54,10 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
         )
     _merge_acronym(context, metadata.additional_titles)
     for keyword in metadata.keywords:
-        context.add_unique_text('project/research_question/keywords', keyword)
+        term = as_keyword(keyword)
+        context.add_unique_text('project/research_question/keywords', term.value)
+        if any((term.keyword_scheme, term.scheme_uri, term.value_uri, term.classification_code)):
+            context.warn('keywords', 'Only keyword labels have an established RDMO import destination', term.value)
     _merge_subjects(context, metadata.subject_areas)
     context.add_option('project/dataset/language', metadata.language, XMLVocabulary.language_options)
     if metadata.resource:
@@ -71,6 +75,9 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
         )
     for collection_index, holder in enumerate(metadata.rights_holders):
         context.add('project/dataset/sharing/rights_holder', holder.name, collection_index=collection_index)
+        if holder.identifiers:
+            context.warn('rightsHolders', 'Only rights-holder names have an established RDMO import destination',
+                         holder.name)
     for collection_index, source in enumerate(metadata.data_sources):
         if source.resource_type:
             context.add_option(
@@ -86,6 +93,13 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
         context.add('project/dataset/method', processing, collection_index=collection_index)
     _write_geo_location(context, metadata.geo_locations)
     _warn_unmapped_fields(context, metadata)
+
+
+def _read_rights_holders(context):
+    preferred = 'project/dataset/ipr/rightsholder'
+    legacy = 'project/dataset/sharing/rights_holder'
+    path = preferred if prefer_name_source(context, (preferred,), (legacy,), target='rights_holders') else legacy
+    return read_named_values(context, path, target='rights_holders')
 
 
 def _read_subjects(context: ProjectReadContext) -> list[SubjectArea]:

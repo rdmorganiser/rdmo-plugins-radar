@@ -20,6 +20,28 @@ ATTRIBUTE_TO_RADAR_FIELDS = {
     'project/funder/grant_nr': 'fundingReferences.awardNumber',
     'project/funder/programme/title': 'fundingReferences.awardTitle',
     'project/funder/programme/url': 'fundingReferences.awardURI',
+    'project/funder/id/type': 'fundingReferences.funderIdentifier.type',
+    'project/dataset/owner/name': 'creators.creatorName',
+    'project/dataset/owner/given_name': 'creators.givenName',
+    'project/dataset/owner/family_name': 'creators.familyName',
+    'project/dataset/owner/orcid': 'creators.nameIdentifier',
+    'project/dataset/owner/ror': 'creators.nameIdentifier',
+    'project/dataset/owner/organization/name': 'creators.creatorAffiliation',
+    'project/dataset/owner/organization/name/identifier/value': 'creators.creatorAffiliation.affiliationIdentifier',
+    'project/dataset/owner/organization/name/identifier/type': (
+        'creators.creatorAffiliation.affiliationIdentifierScheme'
+    ),
+    'project/dataset/curation/responsible_person/name': 'publishers',
+    'project/dataset/ipr/rightsholder': 'rightsHolders',
+    'project/research_question/keywords': 'keywords',
+    'project/research_question/keywords/gnd': 'keywords',
+    'project/contributor/name': 'contributors.contributorName',
+    'project/contributor/person_or_entity': 'contributors.nameType',
+    'project/contributor/given_name': 'contributors.givenName',
+    'project/contributor/family_name': 'contributors.familyName',
+    'project/contributor/orcid': 'contributors.nameIdentifier',
+    'project/contributor/role': 'contributors.contributorType',
+    'dmp/contributor/role': 'contributors.contributorType',
 }
 
 
@@ -54,7 +76,7 @@ def select_template_framework_values(context, key):
             )
         ]
     attribute_values = attribute_values_map.get(key, ())
-    if key[2].startswith('project/dataset/creator/'):
+    if key[2].startswith(('project/dataset/creator/', 'project/dataset/owner/')):
         set_prefix = (
             f'{context.dataset_prefix}|{context.set_index}' if context.dataset_prefix else str(context.set_index)
         )

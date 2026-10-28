@@ -14,9 +14,12 @@ def compute_metadata(
     creators: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_creators,
     contributors: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_contributors,
     funding: Callable[[ProjectReadContext], list[FundingReference]] = read_funding,
+    publishers: Callable[[ProjectReadContext], list[PersonOrOrganization]] | None = None,
 ) -> MappingResult:
     metadata = dataset(context)
     metadata.creators = creators(context)
     metadata.contributors = contributors(context)
     metadata.funding_references = funding(context)
+    if publishers is not None:
+        metadata.publishers = publishers(context)
     return MappingResult(metadata, tuple(context.issues))

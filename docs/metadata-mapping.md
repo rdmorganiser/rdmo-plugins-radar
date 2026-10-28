@@ -7,10 +7,11 @@ from `Project.description` nor write results to Template Framework Attributes. M
 remain visible. See [mapping selection](../README.md#mapping-selection) and the
 [profile contract](architecture.md#mapping-profiles-and-datasets).
 
-The export mapping implements the conservative first version agreed from the 2026 Template Framework workbook:
+The export mapping includes the reviewed 27 October 2026 update to the Template Framework workbook.
+The source is `Mapping_radar-plugin_dmp-tf.xlsx - [neu]Mapping RADAR-RDMO-271026.csv`, reviewed on
+2026-10-28. The original subject crosswalk and regression inputs remain:
 
-- [Field mapping CSV](<Mapping_radar-plugin_dmp-tf.xlsx/Mapping_radar-plugin_dmp-tf.xlsx - [neu]Mapping RADAR-RDMO.csv>)
-- [Subject mapping](<Mapping_radar-plugin_dmp-tf.xlsx/[neu]Mapping Fachgebiet.html>)
+- Workbook subject sheet `[neu]Mapping Fachgebiet`, implemented in `metadata/crosswalks.py`.
 - [DMP4NFDI 2.0.0 catalog](../tests/xml/dmp4nfdi_v2-0-0.xml)
 - [Prototype project](<../tests/xml/RADAR Plugin Testprojekt.xml>)
 
@@ -62,11 +63,13 @@ produce the existing storage-failure result page after confirmed creation rather
 | Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
 | Rights | `project/dataset/sharing/conditions`: CC-BY, CC-BY-NC, CC-BY-ND, CC-BY-SA, CC0, ODC-By, ODbL, and Other. Preserve additional text. Multiple distinct selections omit rights and report all selections for completion in RADAR. |
-| Rights holders | `project/dataset/sharing/rights_holder`: person or institution names for the selected dataset. RADAR imports write holder names to the same attribute. |
-| Funding | Discover populated name, grant-number, and programme fields without requiring a funder-ID marker. Keep fields grouped by their answer coordinates. `project/funder/id` remains a set marker, never a persistent funder identifier. Existing programme-URL support remains available. |
-| Keywords | All `project/research_question/keywords` text values, ordered and deduplicated. |
+| Rights holders | Prefer `project/dataset/ipr/rightsholder`, falling back to `project/dataset/sharing/rights_holder`. Preserve ORCID/ROR provider identities alongside names. Import destinations remain unchanged. |
+| Publishers | `project/dataset/curation/responsible_person/name`: text or provider names, with ORCID/ROR identity when available. Responsibility Options are not publisher names. A custom publisher callable can replace this reader. |
+| Funding | Read name, grant-number, and programme fields grouped by answer coordinates. Split `project/funder/name` provider answers into funder name and identifier. Optional `project/funder/id/type` supplies an explicit identifier scheme; it never creates an identifier. `project/funder/id` remains a set marker. Existing programme-URL support remains available. |
+| Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped; GND entries retain label, scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
 | Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. No parsing of names/versions or mapping of other usage requirements. Missing version is reported. |
-| Creators and contributors | Preserve established creator and partner fields, including structured names and external ORCID values. Partner responsibility options are not names. Contributor roles remain `Other`; broader role/person mappings are deferred. |
+| Creators | Prefer `project/dataset/owner/name`, `/given_name`, `/family_name`; fall back to established `project/dataset/creator/*`. Read provider identities and creator-linked affiliations. Project coordination organisations require a custom mapping. |
+| Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. Responsibility labels never become names. |
 | Other established fields | Preserve acronym as additional title, recognized language options, geolocation region, and `project/dataset/method` processing text when available. |
 
 ## Incompleteness and deferred decisions
@@ -75,11 +78,51 @@ The supplied catalog has no explicit dataset-title, creator-name, language, geol
 rights-holder-name, dataset-method, or funder-ID attribute. Missing answers cannot be manufactured
 by the exporter. The prototype intentionally remains incomplete for publication.
 
-New mappings for production/publication dates, descriptive description types, contributor roles,
-related/alternate identifiers, persistent funder identifiers, and processing interpretations are
+New mappings for production/publication dates, descriptive description types,
+related/alternate identifiers, inferred contributor roles and processing interpretations are
 deferred. Project dates do not become dataset production dates. `dataset/usage_description` is not
-treated as a processing statement. Fields marked “n/a (2026)” do not trigger new mappings; compatible
-existing readers are retained. No catalog changes or answer migrations are required.
+treated as a processing statement. TS4NFDI and ontology metadata are deferred pending clarification of
+RADAR's requirements. Unsupported terminology identifiers retain their labels with a warning; they are
+not exported as GND. No catalog changes or answer migrations are required.
+
+## 27 October 2026 Attribute audit
+
+The CSV still marks several rows `n/a (2026)` and contains tentative comments. The approved update
+supports the following optional source paths when installations supply them; it does not create domain
+Attributes or parse the CSV at runtime. The domain-status column describes the checked-in reference
+catalog snapshot, not every RDMO installation.
+
+| CSV field | Source and status | Implementation decision |
+| --- | --- | --- |
+| Creator name / structured names | `project/dataset/owner/name`, `/given_name`, `/family_name`: absent | Prefer this source family when populated; retain legacy creator fields as fallback. |
+| Creator institution | `project/coordination/organization`: present | Custom mapping only. It neither supplies automatic creators nor establishes their affiliations. |
+| Creator identifier | CSV leaves `/orcid` and `/ror` children unspecified | Optional `project/dataset/owner/orcid` and `/ror` are plugin conventions. Provider identities in name answers are supported too. |
+| Creator affiliation | `project/dataset/owner/organization/name` and `/identifier/value`, `/identifier/type`: absent | Read creator-linked names and explicit scheme/value pairs, including nested collections and intervening non-collection levels. |
+| Publisher | `project/dataset/curation/responsible_person/name`: present | Text/provider names only. Existing Horizon Europe responsibility choices do not name entities; they produce a mapping issue. |
+| Rights holder | `project/dataset/ipr/rightsholder`: absent | Preferred optional source. Do not substitute `project/dataset/ipr/owner/name`, which is used for a yes/no question. |
+| GND keyword | `project/research_question/keywords/gnd`: present | Read alongside the established free-text Attribute. The Attribute supplies GND context for bare external IDs. Creatable free text stays free text. |
+| Contributor | `project/contributor/person_or_entity`: present | This is a discriminator, not a name. Read sibling `name`, `given_name`, `family_name`, `orcid`, `organization`, `organization/ror` and SMP autocomplete fields. |
+| Contributor role | CSV: `dmp/contributor/role`, absent; actual domain: `project/contributor/role`, present | Prefer actual domain semantics. Also accept the literal CSV alias when it shares the contributor's prepared catalog group. Match Option identities or exact canonical RADAR role text, never translated labels or task descriptions. |
+| Description type | `project/dataset/description/type`: absent | Deferred, following the explicit CSV instruction not to choose a mapping. |
+| Funder identifier/type | `project/funder/name`: present; `/id/type`: absent | Split label and external ID from the same answer; accept an explicit supported scheme. A marker, scheme alone or plain name never becomes an identifier. |
+| Other source paths | Title, research field, resource description, licence, language, geolocation, creation methods, method, grant/programme fields | Retain established readers and crosswalks. Language remains optional when supplied by an installation. |
+| Ambiguous interpretations | Format as resource type, datatype as source detail, re-used dataset URI without identifier/relation types | Deferred. Preserve the current incomplete-draft diagnostics instead of inventing required classifications. |
+
+New source families take precedence over legacy families when name-bearing answers are present. Both
+populated families produce a warning; fields are not joined across them. Ambiguous preferred Attribute
+identities do not silently enable fallback. Names and identifiers remain associated through full answer
+coordinates and catalog ancestry; matching numeric indices alone do not establish a relationship.
+
+Known provider display decorations are removed before export. In particular, ROR's display URL is not
+part of the organisation name, and GND identifier links or synonym decorations are not keyword labels.
+`external_id` has precedence; its scheme must be established by an explicit field or recognized URI/link
+format. Conflicting identifiers are omitted with diagnostics. A provider configured to store only an ID
+cannot supply the mandatory entity name; the exporter reports this without looking it up remotely.
+
+REST and XML use the same canonical identities and standard scheme URIs. `Other` becomes `OTHER` only
+for REST controlled enums. Free-text affiliation schemes and URIs retain their spelling. RADAR accepts
+one affiliation per creator/contributor; additional mapped affiliations remain in canonical metadata,
+produce a warning, and are omitted from both outputs after the first.
 
 Mapping issues carry a target, source attribute, and reason, but are never serialized into RADAR
 metadata. XML shows mapping issues, missing required fields, and bundled-XSD validation errors
@@ -93,6 +136,12 @@ RADAR XML import retains its merge behavior and warnings for unsupported fields.
 are not imported into `project/dataset/format`; they produce an unsupported-mapping warning.
 Export-only crosswalks are not reversed: a RADAR category can correspond to multiple DFG
 subjects. Additional ODC license options are shared with the existing license vocabulary.
+
+The XML parser preserves supported keyword and identifier attributes in canonical metadata. RDMO import
+still writes labels/names to its established destinations and warns when GND keyword identity, affiliation
+identity or rights-holder identity has no destination. Funder-ID import remains explicitly unsupported;
+it never writes a persistent ID to `project/funder/id`. Publisher import remains unsupported. New export
+paths do not change answer allocation or merge rules, and full identifier-preserving RDMO import is deferred.
 
 Import destinations retain known-prefix precedence through RDMO's import APIs. Explicit full URIs bypass
 fallback. Ambiguous custom-prefix Attribute or Option resolution reports a mapping issue and stages no
@@ -120,7 +169,7 @@ keywords, Ancient Cultures subject label, resource description, four creation me
 CC-BY licence, and DFG funding name, award number, and programme title. Comparison with
 the saved prototype plus the confirmed extra method found no clear loss in those fields.
 
-| Gap in the downloaded document | Current mapping or source limitation |
+| Gap in the downloaded document | Mapping or source limitation at observation time |
 | --- | --- |
 | Identifier and scheme | No populated dataset publication PID in the prototype; no identifier is invented. |
 | Creators | No established dataset-creator answers. Coordination and data-management names exist, but mapping them to creators or contributors is deferred. |

@@ -324,6 +324,69 @@ Template Framework field mappings: historical registrations still use that profi
 can customize discovery, scoping, imports, and persistence through the existing
 [profile contracts and factory overrides](docs/architecture.md#mapping-profiles-and-datasets).
 
+### Typed metadata and Template Framework overrides
+
+The TF mapping supports the reviewed 27 October 2026 Attribute paths for dataset owners, their
+affiliations, named publishers, rights holders and structured contributors. Existing creator/partner
+and rights-holder paths remain fallbacks. See the [source audit](docs/metadata-mapping.md#27-october-2026-attribute-audit)
+for source priority, optional future Attributes and fields still awaiting semantic decisions.
+
+GND keyword and ORCID/ROR entity identities are exported alongside clean labels in both REST and XML.
+Free-text keyword strings remain supported. Custom mappings can also supply
+`Keyword('Term', keyword_scheme='GND', value_uri='https://d-nb.info/gnd/4079154-3')`,
+`Identifier(value, identifier_type, scheme_uri=...)` and
+`Affiliation(name, identifier, identifier_scheme, scheme_uri=...)` from `rdmo_radar.metadata.types`.
+Standard ORCID/ROR and GND keyword scheme URIs are supplied when omitted. TS4NFDI integration is deferred.
+
+Use ordinary callable composition to override publishers. This complete example reads an explicitly
+chosen local Attribute and retains the TF readers for all other fields:
+
+```python
+from dataclasses import replace
+from functools import partial
+
+from rdmo_radar.exports import RadarTemplateFrameworkExport
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.metadata.builder import compute_metadata
+from rdmo_radar.metadata.entities import read_named_values
+
+
+def read_publishers(context):
+    return read_named_values(
+        context, 'https://example.org/terms/domain/research/publisher', target='publishers',
+    )
+
+
+class LocalRadarExport(RadarTemplateFrameworkExport):
+    mapping = replace(
+        TEMPLATE_FRAMEWORK_MAPPING,
+        compute_metadata=partial(compute_metadata, publishers=read_publishers),
+    )
+```
+
+The optional `publishers` callable overrides the dataset reader's publishers. Omitting it preserves
+publishers supplied by the dataset reader. Registered direct-export subclasses can use the same mapping.
+`read_named_values` accepts an optional explicit scheme such as `scheme='ROR'` for bare provider IDs;
+it excludes responsibility Options and reports missing names or conflicting identities.
+
+Coordination organisations require an explicit installation decision to count as creators. For an
+installation that has made that decision, supply a creator callable instead:
+
+```python
+def read_institutional_creators(context):
+    return read_named_values(context.shared(), 'project/coordination/organization', target='creators')
+
+
+institutional_mapping = replace(
+    TEMPLATE_FRAMEWORK_MAPPING,
+    compute_metadata=partial(compute_metadata, creators=read_institutional_creators),
+)
+```
+
+This explicitly replaces the creator reader. It does not establish affiliations between project
+organisations and individual dataset owners. All readers must use prepared answers without network
+requests or persistent changes, because the same mapping runs during previews and export.
+
 ### Custom RADAR request payload
 
 `get_datasets()` returns the datasets to export as `ExportDataset` objects. Each describes which RDMO

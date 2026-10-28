@@ -18,6 +18,7 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `services.py` | Prepare REST payloads, generate XML files, and coordinate parsing with import mapping. |
 | `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
 | `metadata/dataset.py`, `metadata/people.py`, `metadata/funding.py` | Map their respective metadata fields. |
+| `metadata/normalization.py`, `metadata/entities.py`, `metadata/keywords.py` | Normalize supported provider displays without I/O; read names and free-text/GND keywords with native Value provenance. |
 | `metadata/values.py` | Prepare native Values/catalog placements, match coordinates, and provide shared answer helpers. |
 | `metadata/read_context.py` | Scoped project Value access and mapping diagnostics through `ProjectReadContext`. |
 | `metadata/write_context.py` | Resolve import destinations, merge answers, and stage unsaved Values through `ProjectWriteContext`. |
@@ -251,7 +252,7 @@ For project edits, construct a new service. Preparation is not cached across req
 
 | Operation | Result |
 |---|---|
-| `compute_metadata(context, *, dataset, creators, contributors, funding)` | `MappingResult(metadata, issues)` |
+| `compute_metadata(context, *, dataset, creators, contributors, funding, publishers=None)` | `MappingResult(metadata, issues)`. An optional publisher callable replaces publishers supplied by the dataset reader. |
 | `write_metadata(plugin, metadata, set_index, *, existing_values, context, dataset, creators, contributors, funding)` | Tuple of mapping issues; Values are staged on the plugin. An optional prepared import context must match the plugin and index. |
 | `RadarExportService.compute_payload(selection, responsible_email)` | `ExportPayload(payload, issues)`; selection is a dataset or legacy numeric index. |
 | `RadarExportService.store_result(selection, radar_id, radar_url)` | `ExportResult(radar_id, radar_url)`; an absent writer succeeds without a local write. |
@@ -262,6 +263,43 @@ For project edits, construct a new service. Preparation is not cached across req
 operation; they are not mutable state on export instances. REST serialization adds explicit responsible
 email and millisecond timestamp to the fixed RDDM 9.3 technical metadata. Missing draft titles get a fallback
 without modifying the mapped metadata object. Frozen result dataclasses do not imply deep immutability.
+
+### Typed metadata and TF source selection
+
+`Keyword(value, keyword_scheme=None, scheme_uri=None, value_uri=None, classification_code=None)` retains
+supported GND identity. `RadarMetadata.keywords` also accepts legacy strings; `as_keyword()` adapts them
+at serialization/import boundaries without modifying caller-owned objects. Built-in free-text readers
+and untyped XML parsing keep strings, preserving existing custom mappings and free-text output.
+`Identifier.scheme_uri` and `Affiliation.scheme_uri` are optional trailing fields, preserving positional
+constructors. Both serializers supply standard ORCID/ROR and GND keyword scheme URIs when explicit URIs
+are absent.
+
+`normalization.py` uses only the standard library and canonical types. Its pure helpers recognize supported
+identifier namespaces and provider display formats, returning labels, identifiers and diagnostics. They
+do not import provider plugins, access Django models, resolve URLs or fetch missing names. Bare provider
+IDs require an explicit scheme or matching known provider link. `entities.py` applies these helpers to
+prepared Values, excludes Option/responsibility selections from names, and records mapping decisions.
+`read_named_values(context, attribute, *, target, scheme=None)` is reusable in custom profiles.
+
+The TF field readers own the dated source choices documented in the
+[Attribute audit](metadata-mapping.md#27-october-2026-attribute-audit). Owner/contributor families take
+precedence over legacy creator/partner families; absent or empty preferred sources allow fallback.
+Preferred-path ambiguity and conflicting populated families produce diagnostics. The generic read context
+contains no new TF paths. TF's catalog-less nested fallback covers both owner and legacy creator fields.
+Nested affiliation access uses a local descendant context constrained by complete coordinates and prepared
+catalog ancestry, leaving generic `group()` semantics unchanged. A literal contributor-role alias requires
+the same catalog group; numeric index equality alone is insufficient.
+
+The optional `publishers` callable receives the same prepared read context as the existing component
+callables. Its default `None` retains the dataset reader's publishers, including custom dataset mappings.
+The default TF dataset reader reads named curation-responsible people. The project profile remains
+title-only. No authentication, callback, persistence or dataset-discovery contract changes are needed.
+
+The XML parser preserves supported identity attributes; import writers keep their existing RDMO
+destinations and warn about unsupported identity information. Serialization provenance is recorded beside
+each emitted field, including explicit or derived scheme URIs. These changes add no runtime dependency
+on spreadsheets, external code checkouts, ROR/GND/ORCID plugins or TS4NFDI. TS4NFDI and ontology enrichment
+remain deferred; metadata preparation and previews remain offline.
 
 ## Mapping profiles and datasets
 

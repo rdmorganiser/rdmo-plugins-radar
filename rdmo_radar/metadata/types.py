@@ -6,6 +6,7 @@ class Identifier:
     value: str
     identifier_type: str | None = None
     relation_type: str | None = None
+    scheme_uri: str | None = None
 
 
 @dataclass
@@ -13,6 +14,21 @@ class Affiliation:
     name: str
     identifier: str | None = None
     identifier_scheme: str | None = None
+    scheme_uri: str | None = None
+
+
+@dataclass
+class Keyword:
+    value: str
+    keyword_scheme: str | None = None
+    scheme_uri: str | None = None
+    value_uri: str | None = None
+    classification_code: str | None = None
+
+
+def as_keyword(value: 'Keyword | str') -> Keyword:
+    """Adapt legacy custom mappings without changing their metadata objects."""
+    return Keyword(value) if isinstance(value, str) else value
 
 
 @dataclass
@@ -101,7 +117,7 @@ class RadarMetadata:
     title: str | None = None
     additional_titles: list[str] = field(default_factory=list)
     descriptions: list[Description] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=list)
+    keywords: list[Keyword | str] = field(default_factory=list)
     publishers: list[PersonOrOrganization] = field(default_factory=list)
     production_year: str | None = None
     publication_year: str | None = None

@@ -1,5 +1,18 @@
 import re
 
+SCHEME_URIS = {
+    'ORCID': 'https://orcid.org/',
+    'ROR': 'https://ror.org/',
+    'GND': 'https://d-nb.info/gnd/',
+}
+
+KEYWORD_ATTRIBUTES = (
+    ('keyword_scheme', 'keywordScheme'),
+    ('scheme_uri', 'schemeURI'),
+    ('value_uri', 'valueURI'),
+    ('classification_code', 'classificationCode'),
+)
+
 
 class XMLVocabulary:
     other = 'Other'

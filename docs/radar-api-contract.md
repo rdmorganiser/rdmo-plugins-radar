@@ -18,6 +18,60 @@ and affiliation names are `value` objects and geolocation coordinates are JSON n
 Missing draft fields are omitted. `alternateIdentifierType` and `relatedInformationType`
 are free text; controlled enums use the existing API enum conversion.
 
+## Typed identity extension (2026-10-28)
+
+The fixture now also specifies `schemeURI` for ORCID/ROR name identifiers, affiliations, publishers,
+rights holders and funder identifiers. These additions and the typed GND keyword expectations are based
+on the bundled RDDM 9.3 XSD, the official
+[metadata documentation](https://radar.products.fiz-karlsruhe.de/sites/default/files/radar/docs/info/RADAR_Metadaten_Dokumentation_v9.3.pdf),
+and the RADAR demo's `resources/RadarDatasetExample-correction.xml`. That example references schema 9.2;
+the bundled 9.3 XSD remains the offline XML validation reference. The API page and demo JSON examples do
+not independently verify every populated REST field. These changes have **not** been verified through
+an authenticated test-draft round trip.
+
+The independent REST expectations include:
+
+```json
+{
+  "keywords": {
+    "keyword": [
+      {"value": "Free text"},
+      {"value": "Term", "keywordScheme": "GND", "schemeURI": "https://d-nb.info/gnd/",
+       "valueURI": "https://d-nb.info/gnd/4079154-3", "classificationCode": "4079154-3"}
+    ]
+  },
+  "publishers": {
+    "publisher": [
+      {"value": "Institute", "nameIdentifierScheme": "ROR",
+       "nameIdentifier": "https://ror.org/0387prb75", "schemeURI": "https://ror.org/"}
+    ]
+  },
+  "fundingReferences": {
+    "fundingReference": [
+      {"funderName": "Funder", "funderIdentifier": {
+        "value": "https://ror.org/0387prb75", "type": "ROR", "schemeURI": "https://ror.org/"
+      }}
+    ]
+  }
+}
+```
+
+Creator/contributor `nameIdentifier` remains a list of objects with `value`, `nameIdentifierScheme`
+and optional `schemeURI`. Their single affiliation object uses `value`, `affiliationIdentifier`,
+`affiliationIdentifierScheme` and optional `schemeURI`. Rights-holder entries use the same named-value
+shape as publishers. Free-text affiliation schemes retain their case; only controlled enums are converted.
+TS4NFDI and ontology fields are outside this extension.
+
+### Test-draft verification procedure
+
+Use a separately configured RADAR test account and workspace. Create a pending draft through each REST
+provider with the populated identity cases above, an ORCID creator, a ROR affiliation and an identified
+rights holder. Read the dataset JSON and download its descriptive XML. Compare the names, identifier
+values, schemes and scheme URIs, validate the XML, and confirm that each funder retains its own grant
+fields. Include a free-text entry for each applicable field. Record the test-system date and observed
+responses here after running the procedure. Do not publish or archive the draft; handle its cleanup
+through the test account's ordinary workflow. Automated tests remain offline and never run this procedure.
+
 RDDM 9.3 permits one affiliation per creator/contributor. Both output adapters retain
 the first canonical affiliation, while leaving the canonical list unchanged. REST's
 name, software, processing, and identifier structures must not be copied from the
