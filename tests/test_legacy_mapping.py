@@ -23,6 +23,23 @@ from rdmo_radar.metadata.types import Affiliation, Identifier
 from .helpers import add_answer, add_attribute, add_namespaced_attribute
 
 
+def add_option_answer(project, path, option_path, **coordinates):
+    option, _ = Option.objects.get_or_create(
+        uri_prefix='https://rdmorganiser.github.io/terms', uri_path=option_path,
+        defaults={'text_lang1': 'Controlled choice'},
+    )
+    return add_answer(project, path, '', option=option, **coordinates)
+
+
+def legacy_outputs(project):
+    rest = build_export_service(project, profile=LEGACY_MAPPING, collect_mapping=True)
+    dataset, = LEGACY_MAPPING.get_datasets(project, rest.reader)
+    mapped = rest.mapping(rest.reader(dataset))
+    payload = rest.compute_payload(dataset, 'owner@example.test').payload['descriptiveMetadata']
+    xml = build_xml_export_service(project, profile=LEGACY_MAPPING).compute_files([dataset])[0]
+    return mapped, payload, ElementTree.fromstring(xml.xml_data)
+
+
 @pytest.fixture
 def legacy_project(db):
     fixture = json.loads((Path(__file__).parent / 'fixtures/legacy-mapping.json').read_text())
@@ -264,3 +281,140 @@ def test_legacy_diagnostics_do_not_leak_between_datasets(db):
     first, other = LEGACY_MAPPING.get_datasets(project, service.reader)
     assert service.compute_payload(first, 'owner@example.test').issues
     assert not service.compute_payload(other, 'owner@example.test').issues
+
+
+@pytest.mark.parametrize('license_option,license_value,rest_license', [
+    ('dataset_license_types/ODC-By', 'Attribution License (ODC-By)', 'ATTRIBUTION_LICENSE_ODC_BY'),
+    ('dataset_license_types/ODbl', 'Open Database License (ODC-ODbL)', 'OPEN_DATABASE_LICENSE_ODC_O_DB_L'),
+])
+def test_legacy_extended_shared_options_reach_rest_and_xml(db, license_option, license_value, rest_license):
+    project = Project.objects.create(title='Extended vocabulary')
+    add_answer(project, 'project/dataset/id', 'Dataset', set_index=1)
+    add_option_answer(project, 'project/dataset/language', 'language/fr', set_index=1)
+    add_answer(project, 'project/dataset/resource_type', 'Notebook data', set_index=1)
+    add_option_answer(project, 'project/dataset/resource_type_general',
+                      'resource_type_general/computational_notebook', set_index=1)
+    add_answer(project, 'project/dataset/data_source', 'Survey data', set_index=1)
+    add_option_answer(project, 'project/dataset/data_source_detail', 'radar_data_source/survey', set_index=1)
+    add_option_answer(project, 'project/dataset/sharing/conditions', license_option, set_index=1)
+    add_answer(project, 'project/dataset/contributor/name', 'Translator', set_prefix='1')
+    add_option_answer(project, 'project/dataset/contributor/contributor_type',
+                      'contributor_type/translator', set_prefix='1')
+    add_answer(project, 'project/dataset/alternate_identifier/identifier', 'radar-local', set_prefix='1')
+    add_option_answer(project, 'project/dataset/alternate_identifier/identifier_type',
+                      'identifier_type/radar', set_prefix='1')
+    add_answer(project, 'project/dataset/related_identifier/identifier', '10.1234/related', set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/identifier_type',
+                      'identifier_type/doi', set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/relation_type',
+                      'relation_type/is_translation_of', set_prefix='1')
+
+    result, payload, root = legacy_outputs(project)
+    metadata = result.metadata
+    assert result.issues == ()
+    assert metadata.language == 'fra'
+    assert metadata.resource.resource_type == 'ComputationalNotebook'
+    assert metadata.data_sources[0].resource_type == 'Survey'
+    assert metadata.rights.controlled == license_value
+    assert metadata.contributors[0].contributor_type == 'Translator'
+    assert metadata.alternate_identifiers == [Identifier('radar-local', 'RADAR')]
+    assert metadata.related_identifiers == [Identifier('10.1234/related', 'DOI', 'IsTranslationOf')]
+
+    assert payload['language'] == 'FRA'
+    assert payload['resource']['resourceType'] == 'COMPUTATIONAL_NOTEBOOK'
+    assert payload['dataSources']['dataSource'][0]['dataSourceDetail'] == 'SURVEY'
+    assert payload['rights']['controlledRights'] == rest_license
+    assert payload['contributors']['contributor'][0]['contributorType'] == 'TRANSLATOR'
+    assert payload['alternateIdentifiers']['alternateIdentifier'][0]['alternateIdentifierType'] == 'RADAR'
+    assert payload['relatedIdentifiers']['relatedIdentifier'][0]['relationType'] == 'IS_TRANSLATION_OF'
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.findtext(f'{ns}language') == 'fra'
+    assert root.find(f'{ns}resource').get('resourceType') == 'ComputationalNotebook'
+    assert root.find(f'{ns}dataSources/{ns}dataSource').get('dataSourceDetail') == 'Survey'
+    assert root.findtext(f'{ns}rights/{ns}controlledRights') == license_value
+    assert root.find(f'{ns}contributors/{ns}contributor').get('contributorType') == 'Translator'
+    assert root.find(f'{ns}alternateIdentifiers/{ns}alternateIdentifier').get('alternateIdentifierType') == 'RADAR'
+    assert root.find(f'{ns}relatedIdentifiers/{ns}relatedIdentifier').get('relationType') == 'IsTranslationOf'
+
+
+@pytest.mark.parametrize('role_option,relation_option', [
+    ('contributor_type/contact_person', 'relation_type/compiles'),
+    ('contributor_type/contact_persion', 'relation_type/Compiles'),
+])
+def test_legacy_keeps_modern_and_historical_option_aliases(db, role_option, relation_option):
+    project = Project.objects.create(title='Aliases')
+    add_answer(project, 'project/dataset/id', 'Dataset', set_index=1)
+    add_answer(project, 'project/dataset/contributor/name', 'Contact', set_prefix='1')
+    add_option_answer(project, 'project/dataset/contributor/contributor_type', role_option, set_prefix='1')
+    add_answer(project, 'project/dataset/related_identifier/identifier', 'https://example.org', set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/identifier_type',
+                      'identifier_type/url', set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/relation_type', relation_option, set_prefix='1')
+    result, payload, root = legacy_outputs(project)
+    assert result.issues == ()
+    assert result.metadata.contributors[0].contributor_type == 'ContactPerson'
+    assert result.metadata.related_identifiers[0].relation_type == 'Compiles'
+    assert payload['contributors']['contributor'][0]['contributorType'] == 'CONTACT_PERSON'
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.find(f'{ns}relatedIdentifiers/{ns}relatedIdentifier').get('relationType') == 'Compiles'
+
+
+@pytest.mark.parametrize('option_path,canonical,rest_value', [
+    ('identifier_type/arxiv', 'arXiv', 'ARXIV'),
+    ('identifier_type/raid', 'RAiD', 'RAID'),
+    ('identifier_type/swhid', 'SWHID', 'SWHID'),
+])
+def test_legacy_related_identifiers_use_the_dedicated_vocabulary(db, option_path, canonical, rest_value):
+    project = Project.objects.create(title='Related identifier')
+    add_answer(project, 'project/dataset/id', 'Dataset', set_index=1)
+    add_answer(project, 'project/dataset/related_identifier/identifier', 'https://example.org/related', set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/identifier_type', option_path, set_prefix='1')
+    add_option_answer(
+        project, 'project/dataset/related_identifier/relation_type', 'relation_type/cites', set_prefix='1'
+    )
+    result, payload, root = legacy_outputs(project)
+    assert result.issues == ()
+    assert result.metadata.related_identifiers[0].identifier_type == canonical
+    assert payload['relatedIdentifiers']['relatedIdentifier'][0]['relatedIdentifierType'] == rest_value
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.find(f'{ns}relatedIdentifiers/{ns}relatedIdentifier').get('relatedIdentifierType') == canonical
+
+
+@pytest.mark.parametrize('option_path', ['identifier_type/other', 'identifier_type/radar'])
+def test_unsupported_related_identifier_types_warn_and_retain_the_text(db, option_path):
+    project = Project.objects.create(title='Unsupported related type')
+    add_answer(project, 'project/dataset/id', 'Dataset', set_index=1)
+    value = 'https://example.org/related'
+    add_answer(project, 'project/dataset/related_identifier/identifier', value, set_prefix='1')
+    add_option_answer(project, 'project/dataset/related_identifier/identifier_type', option_path, set_prefix='1')
+    add_option_answer(
+        project, 'project/dataset/related_identifier/relation_type', 'relation_type/cites', set_prefix='1'
+    )
+    result, payload, root = legacy_outputs(project)
+    assert result.metadata.related_identifiers == [Identifier(value, None, 'Cites')]
+    assert any(issue.field == 'related_identifiers[0].identifier_type' and 'Unmapped' in issue.reason
+               for issue in result.issues)
+    identifier = payload['relatedIdentifiers']['relatedIdentifier'][0]
+    assert identifier['value'] == value
+    assert 'relatedIdentifierType' not in identifier
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    identifier = root.find(f'{ns}relatedIdentifiers/{ns}relatedIdentifier')
+    assert identifier.text == value
+    assert identifier.get('relatedIdentifierType') is None
+
+
+@pytest.mark.parametrize('option_path,scheme', [
+    ('name_identifier_scheme/insi', 'ISNI'),
+    ('name_identifier_scheme/grid', 'GRID'),
+])
+def test_legacy_name_identifier_scheme_overrides_still_apply(db, option_path, scheme):
+    project = Project.objects.create(title='Historical scheme')
+    add_answer(project, 'project/dataset/id', 'Dataset', set_index=1)
+    add_answer(project, 'project/dataset/creator/name', 'Creator', set_prefix='1')
+    add_answer(project, 'project/dataset/creator/name_identifier', 'historical-id', set_prefix='1')
+    add_option_answer(project, 'project/dataset/creator/name_identifier_scheme', option_path, set_prefix='1')
+    result, payload, root = legacy_outputs(project)
+    assert result.metadata.creators[0].identifiers == [Identifier('historical-id', scheme)]
+    assert payload['creators']['creator'][0]['nameIdentifier'][0]['nameIdentifierScheme'] == scheme
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.find(f'{ns}creators/{ns}creator/{ns}nameIdentifier').get('nameIdentifierScheme') == scheme

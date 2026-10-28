@@ -1,14 +1,12 @@
 """Export one conservative metadata record for an RDMO project."""
 from ..metadata.read_context import ProjectReadContext
 from ..metadata.types import MappingResult, MappingSource, RadarMetadata
-from ..metadata.values import fetch_catalog_placements, fetch_project_values, prepare_read_data
 from . import ExportDataset, RadarMapping
+from .common.readers import prepare_project_read
 
 
 def build_reader(project, snapshot=None):
-    attribute_values_map = fetch_project_values(project, snapshot)
-    attribute_placements_map = fetch_catalog_placements(project.catalog)
-    prepared = prepare_read_data(attribute_values_map, attribute_placements_map)
+    attribute_values_map, attribute_placements_map, prepared = prepare_project_read(project, snapshot)
 
     def read(dataset):
         return ProjectReadContext(

@@ -6,8 +6,8 @@ from functools import partial
 from ...metadata.builder import compute_metadata as compose_metadata
 from ...metadata.fields import Source
 from ...metadata.read_context import ProjectReadContext
-from ...metadata.values import fetch_catalog_placements, fetch_project_values, prepare_read_data
 from .. import ExportDataset, RadarMapping
+from ..common.readers import prepare_project_read
 from .fields import LEGACY_FIELDS, first_text, read_set
 
 
@@ -21,10 +21,9 @@ def select_values(context, attribute_key):
 
 
 def build_reader(project, snapshot=None):
-    values = fetch_project_values(project, snapshot)
-    placements = fetch_catalog_placements(project.catalog)
+    values, placements, prepared = prepare_project_read(project, snapshot)
     root = ProjectReadContext(
-        values, placements, prepared=prepare_read_data(values, placements), project=project,
+        values, placements, prepared=prepared, project=project,
         value_selector=select_values,
     )
 

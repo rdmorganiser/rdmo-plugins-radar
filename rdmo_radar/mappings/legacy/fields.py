@@ -159,12 +159,13 @@ def read_resource(context, *, target):
 
 def read_identifiers(context, *, base, related=False, target):
     result = []
+    identifier_options = options.RELATED_IDENTIFIER_TYPE_OPTIONS if related else options.IDENTIFIER_TYPE_OPTIONS
     for marker in read_set(context, f'{base}/identifier', str(context.set_index)):
         group = context.group(marker.set_prefix, marker.set_index)
         field = f'{target}[{len(result)}]'
         value = first_text(group, source=Source(f'{base}/identifier'), target=f'{field}.value')
         kind = first_option(group, source=Source(f'{base}/identifier_type'),
-                            option_map=options.IDENTIFIER_TYPE_OPTIONS, target=f'{field}.identifier_type')
+                            option_map=identifier_options, target=f'{field}.identifier_type')
         relation = first_option(group, source=Source(f'{base}/relation_type'), option_map=options.RELATION_TYPE_OPTIONS,
                                 target=f'{field}.relation_type') if related else None
         result.append(Identifier(value, kind, relation))

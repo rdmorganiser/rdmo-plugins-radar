@@ -2,18 +2,42 @@
 
 `rdmo_radar.mappings.legacy` ports the original plugin's active `get_dataset()` and
 `get_name()` mappings into the current architecture. It is an export-only comparison
-profile, independent of the Template Framework configuration. Its vocabulary decisions
-follow the old **REST provider** where the old XML and REST implementations disagreed.
+profile, independent of the Template Framework configuration. Its source selection follows
+the old **REST provider** where the old XML and REST implementations disagreed; supported Options come from the current shared RADAR vocabularies.
 
 The profile contains three ordinary pieces:
 
 - `fields.py`: `LEGACY_FIELDS` and its canonical field readers.
-- `vocabulary.py`: historical Option paths with canonical RDDM spellings.
+- `vocabulary.py`: complete copies of the shared RADAR crosswalks and two historical name-identifier
+  scheme overrides.
 - `__init__.py`: prepared answer access, dataset discovery, result storage, and `LEGACY_MAPPING`.
 
 No legacy exporter, renderer, or authentication implementation runs alongside the current
 pipeline. Both formats consume the same `RadarMetadata`; the shared services provide
 serialization, diagnostics, previews, and the export lifecycle.
+
+RADAR vocabulary data is defined once in `rdmo_radar.mappings.common.vocabulary`. Common tables
+are read-only; legacy and TF expose independent dictionary copies through existing public names. Legacy
+uses the complete compatible tables, including all twelve language Options, newer contributor roles,
+resource types, ODC licenses, survey data sources, and additional relations. Historical aliases such as
+`contact_persion` and capitalized `Compiles` remain supported.
+
+The only name-identifier scheme overrides are `name_identifier_scheme/insi` → `ISNI` and
+`name_identifier_scheme/grid` → `GRID`. Common/TF definitions map these entries to `Other`.
+The existing `RESOURCE_TYPE_OPTIONS` name refers to the shared general resource-type vocabulary.
+
+Related identifiers use the dedicated 24-type RADAR vocabulary rather than the general identifier table.
+Supported additions include arXiv, RAiD, and SWHID. `Other` and `RADAR` are unmapped for related identifiers:
+the existing mapping warning is recorded, the identifier text is retained, and the type stays unset.
+XML validation reports the missing required type for completion. Alternate identifiers continue to accept
+the general type vocabulary, including `RADAR`.
+
+All three built-in profiles use `common.readers.prepare_project_read()` to load Values, catalog
+placements, and identity lookups once per operation. Each profile still constructs its own contexts.
+Legacy retains exact-coordinate access, first/last-answer selection, independent diagnostics, and its
+existing discovery and storage rules. See [shared profile definitions](architecture.md#shared-profile-definitions)
+for the boundary between common definitions and profile policies. No registration changes or migrations
+are required.
 
 ## Register alongside the other mappings
 
@@ -120,7 +144,7 @@ silently enable the old title reader. Ordinary new mappings can instead select t
 | Rights holders | Nonempty `/sharing/rights_holder` text Values, preserving order and duplicates. |
 | Description | First `/description`, categorized as `Abstract`. |
 | Keywords | Root `project/research_question/keywords`, retaining nonempty text in order, including whitespace and duplicates. |
-| Language | First `/language` answer; only the old English/German Options, with no text-language inference. |
+| Language | First `/language` answer; all twelve shared European-language Options, with no text-language inference. |
 | Data sources | First `/data_source` text with the first `/data_source_detail` Option. |
 | Funding | Root `project/funder/id` groups; `/name`, `/name_identifier`, `/name_identifier_scheme`, and `/programme/url`, `/number`, `/title`. |
 
@@ -163,6 +187,8 @@ OAuth callbacks use captured destinations without reconstructing the metadata re
 | --- | --- |
 | XML and REST data-source vocabularies disagreed. | REST rules define both formats: trial → `Trial`, organism → `Organism`, tissue → `Tissue`. |
 | XML referenced an undefined `resource_type_options` member. | The historical resource-type vocabulary is configured explicitly. |
+| Related identifiers used the general identifier-type vocabulary. | Use the dedicated RADAR list; unsupported types warn and retain the identifier text without a type. |
+| Vocabulary lists had fewer supported Options. | Adopt the complete shared compatible lists while retaining historical aliases. |
 | The `insi` Option produced invalid `INSI`. | The key stays `name_identifier_scheme/insi`, with canonical value `ISNI`. Other historical keys, including `contact_persion`, remain usable. |
 | Structured given/family names caused the main name field to disappear. | Preserve the required original name answer alongside the structured parts. |
 | XML used uppercase language codes and one subject label had leading whitespace. | Use schema-valid canonical language codes and the REST subject spelling; serializers own wire spelling. |

@@ -13,6 +13,7 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `imports/imports.py` | File checks, existing-project requirement, and RDMO import staging integration. |
 | `factories.py` | Assemble defaults and prepare operation-scoped project data. |
 | `mappings/__init__.py` | Frozen callable profiles and export datasets; no Django dependency. |
+| `mappings/common/` | Shared RADAR vocabulary definitions and project-read preparation; profiles own source selection and context state. |
 | `mappings/project.py` | One conservative project-level record, with optional custom metadata functions. |
 | `mappings/template_framework/` | TF discovery, complete dataset coordinates, import allocation, and result destinations. |
 | `services.py` | Prepare REST payloads, generate XML files, and coordinate parsing with import mapping. |
@@ -299,13 +300,46 @@ merge decisions. Unsupported nested values produce warnings rather than silently
 namespace; it has no TF namespace or dataset-position default. It preserves external IDs and stages unsaved
 native Values. Result storage remains a separate operation after confirmed remote creation.
 
+### Shared profile definitions
+
+`mappings/common/vocabulary.py` defines the RADAR Option crosswalks and canonical constants. These
+include identifier types and schemes, languages, contributor roles, resource types, subjects, data sources,
+software types, rights, description types, and relations. Common tables/sets are read-only; profiles expose
+independent dictionary/set copies through their existing vocabulary names. Compatible supersets are shared
+in full, so newly supported Options also become available to legacy. Importing common vocabulary does not
+load reader code or require Django setup. Language Options derive from the existing canonical language
+codes; text-language normalization remains in `metadata/languages.py`.
+
+The TF `XMLVocabulary`, `APIVocabulary`, and module-level `LANGUAGE_OPTIONS` retain their interfaces;
+XML values come from common definitions and REST values use the existing `to_api_value` conversion.
+Legacy retains the public `RESOURCE_TYPE_OPTIONS` name for the shared general resource-type table.
+Its name-identifier scheme table overrides only `name_identifier_scheme/insi` to `ISNI` and
+`name_identifier_scheme/grid` to `GRID`; common/TF map those entries to `Other`.
+
+Primary, related, person, and funder identifier vocabularies remain distinct. Legacy related identifiers
+use all 24 supported related-identifier types. `Other` and `RADAR` are unmapped in that field: existing
+warnings are recorded and the identifier text is retained without a mapped type. Alternate identifiers
+continue to use the general identifier table, including `RADAR`.
+
+`prepare_project_read(project, snapshot=None)` in `mappings/common/readers.py` loads the selected project
+Values and catalog placements once and returns `(values, placements, prepared)`. Legacy, TF, and project
+reader factories reuse those structures while constructing their own contexts. Selection rules, coordinates,
+project references, diagnostic field names, and per-read diagnostic/provenance state remain profile choices.
+
+First/last-answer selection, normalization, discovery, and import/store policies stay in their existing
+profiles. Legacy language uses the shared controlled Options but retains its first-answer selection and
+does not infer a language from free text. Other field bindings, including funding, remain unchanged.
+Reusable field strategies belong in `metadata.fields`; confirmed-result persistence remains in
+`exports/storage.py`.
+
 ### Template Framework profile
 
-`mappings/template_framework/` owns all TF Attribute paths, Option crosswalks, workbook crosswalks,
+`mappings/template_framework/` owns TF Attribute paths, profile-specific Option and workbook crosswalks,
 owner/creator and contributor/partner priority, role defaults, collection conventions, import allocation,
-conservative merge policies, and RADAR-result destinations. `TF_FIELDS` assembles every supported export
-and import field using the same callback contracts. Its profile-specific `write_metadata()` convenience
-function prepares a TF context and delegates to the generic import composer.
+conservative merge policies, and RADAR-result destinations. Its RADAR vocabulary uses independent copies
+of the common tables. `TF_FIELDS` assembles every supported export and import field using the same callback
+contracts. Its profile-specific `write_metadata()` convenience function prepares a TF context and delegates
+to the generic import composer.
 
 TF keeps the reviewed 27 October 2026 source mapping. Rights-holder export/import uses only
 `project/dataset/ipr/rightsholder`. Language source selection is explicitly bound in `TF_FIELDS`; the
@@ -392,6 +426,10 @@ The Ruff hook follows the sibling RDMO checkout's pinned revision and lint rules
 logging, and gettext checks. Configuration targets Python 3.12, uses 120-character lines and single-quoted
 strings, and keeps separate import groups for RDMO and this plugin. Check the complete package and tests
 with `ruff check rdmo_radar tests examples`; the hook remains `ruff-check`, without a repository-wide formatter hook.
+
+Prefer concise code over exhaustive type annotations. Simple constants and straightforward helpers can
+rely on inference; add annotations where they clarify an interface or data structure. Runtime protections
+such as read-only shared vocabulary tables serve a separate purpose from static typing.
 
 Compatibility checks use released RDMO 2.5.1/2.5.2 and the pinned 2.6 source revision
 `9f48c2fc93e021ff8eef3e087c1368235bef2e56`, with dependency versions reported explicitly.

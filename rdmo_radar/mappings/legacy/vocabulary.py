@@ -1,135 +1,22 @@
-"""Historical Option keys with canonical RDDM spellings; REST rules win disagreements."""
+"""Shared RADAR vocabularies with historical name-identifier interpretations."""
 
-IDENTIFIER_TYPE_OPTIONS = {'identifier_type/doi': 'DOI',
- 'identifier_type/url': 'URL',
- 'identifier_type/handle': 'Handle',
- 'identifier_type/other': 'Other'}
+from ..common import vocabulary as common_options
 
-LANGUAGE_OPTIONS = {'language/en': 'eng', 'language/de': 'deu'}
+IDENTIFIER_TYPE_OPTIONS = dict(common_options.IDENTIFIER_TYPE_OPTIONS)
+RELATED_IDENTIFIER_TYPE_OPTIONS = dict(common_options.RELATED_IDENTIFIER_TYPE_OPTIONS)
+LANGUAGE_OPTIONS = dict(common_options.LANGUAGE_OPTIONS)
+NAME_TYPE_OPTIONS = dict(common_options.NAME_TYPE_OPTIONS)
+CONTRIBUTOR_TYPE_OPTIONS = dict(common_options.CONTRIBUTOR_TYPE_OPTIONS)
+RESOURCE_TYPE_OPTIONS = dict(common_options.RESOURCE_TYPE_GENERAL_OPTIONS)
+CONTROLLED_SUBJECT_AREA_OPTIONS = dict(common_options.CONTROLLED_SUBJECT_AREA_OPTIONS)
+DATA_SOURCE_OPTIONS = dict(common_options.DATA_SOURCE_OPTIONS)
+CONTROLLED_RIGHTS_OPTIONS = dict(common_options.CONTROLLED_RIGHTS_OPTIONS)
+RELATION_TYPE_OPTIONS = dict(common_options.RELATION_TYPE_OPTIONS)
 
-NAME_TYPE_OPTIONS = {'name_type/personal': 'Personal', 'name_type/organizational': 'Organizational'}
 
-NAME_IDENTIFIER_SCHEME_OPTIONS = {'name_identifier_scheme/orcid': 'ORCID',
- 'name_identifier_scheme/insi': 'ISNI',
- 'name_identifier_scheme/ror': 'ROR',
- 'name_identifier_scheme/grid': 'GRID'}
-
-CONTRIBUTOR_TYPE_OPTIONS = {'contributor_type/contact_persion': 'ContactPerson',
- 'contributor_type/data_collector': 'DataCollector',
- 'contributor_type/data_curator': 'DataCurator',
- 'contributor_type/data_manager': 'DataManager',
- 'contributor_type/distributor': 'Distributor',
- 'contributor_type/editor': 'Editor',
- 'contributor_type/hosting_institution': 'HostingInstitution',
- 'contributor_type/producer': 'Producer',
- 'contributor_type/project_leader': 'ProjectLeader',
- 'contributor_type/project_manager': 'ProjectManager',
- 'contributor_type/project_member': 'ProjectMember',
- 'contributor_type/registration_agency': 'RegistrationAgency',
- 'contributor_type/registration_authority': 'RegistrationAuthority',
- 'contributor_type/related_person': 'RelatedPerson',
- 'contributor_type/researcher': 'Researcher',
- 'contributor_type/research_group': 'ResearchGroup',
- 'contributor_type/sponsor': 'Sponsor',
- 'contributor_type/supervisor': 'Supervisor',
- 'contributor_type/work_package_leader': 'WorkPackageLeader',
- 'contributor_type/other': 'Other'}
-
-RESOURCE_TYPE_OPTIONS = {'resource_type_general/audiovisual': 'Audiovisual',
- 'resource_type_general/collection': 'Collection',
- 'resource_type_general/data_paper': 'DataPaper',
- 'resource_type_general/dataset': 'Dataset',
- 'resource_type_general/event': 'Event',
- 'resource_type_general/image': 'Image',
- 'resource_type_general/interactive_resource': 'InteractiveResource',
- 'resource_type_general/model': 'Model',
- 'resource_type_general/physical_object': 'PhysicalObject',
- 'resource_type_general/service': 'Service',
- 'resource_type_general/software': 'Software',
- 'resource_type_general/sound': 'Sound',
- 'resource_type_general/text': 'Text',
- 'resource_type_general/workflow': 'Workflow',
- 'resource_type_general/other': 'Other'}
-
-CONTROLLED_SUBJECT_AREA_OPTIONS = {'radar_controlled_subject_area/agriculture': 'Agriculture',
- 'radar_controlled_subject_area/architecture': 'Architecture',
- 'radar_controlled_subject_area/arts_and_media': 'Arts and Media',
- 'radar_controlled_subject_area/astrophysics_and_astronomy': 'Astrophysics and Astronomy',
- 'radar_controlled_subject_area/biochemistry': 'Biochemistry',
- 'radar_controlled_subject_area/biology': 'Biology',
- 'radar_controlled_subject_area/behavioural_sciences': 'Behavioural Sciences',
- 'radar_controlled_subject_area/chemistry': 'Chemistry',
- 'radar_controlled_subject_area/computer_science': 'Computer Science',
- 'radar_controlled_subject_area/economics': 'Economics',
- 'radar_controlled_subject_area/engineering': 'Engineering',
- 'radar_controlled_subject_area/environmental_science_and_ecology': 'Environmental Science and Ecology',
- 'radar_controlled_subject_area/ethnology': 'Ethnology',
- 'radar_controlled_subject_area/geological_science': 'Geological Science',
- 'radar_controlled_subject_area/geography': 'Geography',
- 'radar_controlled_subject_area/history': 'History',
- 'radar_controlled_subject_area/horticulture': 'Horticulture',
- 'radar_controlled_subject_area/information_technology': 'Information Technology',
- 'radar_controlled_subject_area/life_science': 'Life Science',
- 'radar_controlled_subject_area/linguistics': 'Linguistics',
- 'radar_controlled_subject_area/materials_science': 'Materials Science',
- 'radar_controlled_subject_area/mathematics': 'Mathematics',
- 'radar_controlled_subject_area/medicine': 'Medicine',
- 'radar_controlled_subject_area/philosophy': 'Philosophy',
- 'radar_controlled_subject_area/physics': 'Physics',
- 'radar_controlled_subject_area/psychology': 'Psychology',
- 'radar_controlled_subject_area/social_sciences': 'Social Sciences',
- 'radar_controlled_subject_area/software_technology': 'Software Technology',
- 'radar_controlled_subject_area/sports': 'Sports',
- 'radar_controlled_subject_area/theology': 'Theology',
- 'radar_controlled_subject_area/veterinary_medicine': 'Veterinary Medicine',
- 'radar_controlled_subject_area/other': 'Other'}
-
-DATA_SOURCE_OPTIONS = {'radar_data_source/instrument': 'Instrument',
- 'radar_data_source/media': 'Media',
- 'radar_data_source/observation': 'Observation',
- 'radar_data_source/trial': 'Trial',
- 'radar_data_source/organism': 'Organism',
- 'radar_data_source/tissue': 'Tissue',
- 'radar_data_source/other': 'Other'}
-
-CONTROLLED_RIGHTS_OPTIONS = {'dataset_license_types/71': 'CC BY 4.0 Attribution',
- 'dataset_license_types/74': 'CC BY-ND 4.0 Attribution-NoDerivs',
- 'dataset_license_types/75': 'CC BY-SA 4.0 Attribution-ShareAlike',
- 'dataset_license_types/73': 'CC BY-NC 4.0 Attribution-NonCommercial',
- 'dataset_license_types/cc0': 'CC0 1.0 Universal Public Domain Dedication',
- 'dataset_license_types/233': 'Other'}
-
-RELATION_TYPE_OPTIONS = {'relation_type/is_cited_by': 'IsCitedBy',
- 'relation_type/cites': 'Cites',
- 'relation_type/is_supplement_to': 'IsSupplementTo',
- 'relation_type/is_supplemented_by': 'IsSupplementedBy',
- 'relation_type/is_continued_by': 'IsContinuedBy',
- 'relation_type/continues': 'Continues',
- 'relation_type/describes': 'Describes',
- 'relation_type/is_described_by': 'IsDescribedBy',
- 'relation_type/has_metadata': 'HasMetadata',
- 'relation_type/is_metadata_for': 'IsMetadataFor',
- 'relation_type/has_version': 'HasVersion',
- 'relation_type/is_version_of': 'IsVersionOf',
- 'relation_type/is_new_version_of': 'IsNewVersionOf',
- 'relation_type/is_previous_version_of': 'IsPreviousVersionOf',
- 'relation_type/is_part_of': 'IsPartOf',
- 'relation_type/has_part': 'HasPart',
- 'relation_type/is_published_in': 'IsPublishedIn',
- 'relation_type/is_referenced_by': 'IsReferencedBy',
- 'relation_type/references': 'References',
- 'relation_type/is_documented_by': 'IsDocumentedBy',
- 'relation_type/documents': 'Documents',
- 'relation_type/is_compiled_by': 'IsCompiledBy',
- 'relation_type/Compiles': 'Compiles',
- 'relation_type/is_variant_form_of': 'IsVariantFormOf',
- 'relation_type/is_original_form_of': 'IsOriginalFormOf',
- 'relation_type/is_identical_to': 'IsIdenticalTo',
- 'relation_type/is_reviewed_by': 'IsReviewedBy',
- 'relation_type/reviews': 'Reviews',
- 'relation_type/is_derived_from': 'IsDerivedFrom',
- 'relation_type/is_source_of': 'IsSourceOf',
- 'relation_type/requires': 'Requires',
- 'relation_type/is_required_by': 'IsRequiredBy',
- 'relation_type/obsoletes': 'Obsoletes',
- 'relation_type/is_obsoleted_by': 'IsObsoletedBy'}
+# Keep the historical interpretations for these two Option paths.
+NAME_IDENTIFIER_SCHEME_OPTIONS = {
+    **common_options.NAME_IDENTIFIER_SCHEME_OPTIONS,
+    'name_identifier_scheme/insi': 'ISNI',
+    'name_identifier_scheme/grid': 'GRID',
+}

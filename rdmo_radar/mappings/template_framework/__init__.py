@@ -8,14 +8,13 @@ from ...metadata.importer import write_metadata as compose_import
 from ...metadata.read_context import ProjectReadContext
 from ...metadata.values import (
     coordinates,
-    fetch_catalog_placements,
     fetch_project_values,
     get_scoped_values,
     matches_placement,
-    prepare_read_data,
 )
 from ...metadata.write_context import ProjectWriteContext
 from .. import ExportDataset, RadarMapping
+from ..common.readers import prepare_project_read
 from .fields import TF_FIELDS
 from .rules import (
     ATTRIBUTE_TO_RADAR_FIELDS,
@@ -27,9 +26,7 @@ from .rules import (
 
 
 def build_reader(project, snapshot=None):
-    attribute_values_map = fetch_project_values(project, snapshot)
-    attribute_placements_map = fetch_catalog_placements(project.catalog)
-    prepared = prepare_read_data(attribute_values_map, attribute_placements_map)
+    attribute_values_map, attribute_placements_map, prepared = prepare_project_read(project, snapshot)
 
     def read(dataset):
         if isinstance(dataset, ExportDataset):
