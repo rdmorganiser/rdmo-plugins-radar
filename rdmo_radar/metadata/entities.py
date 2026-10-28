@@ -3,7 +3,7 @@ from .normalization import normalize_answer
 from .types import PersonOrOrganization
 
 
-def normalized_answers(context, path, target, *, scheme=None):
+def normalized_answers(context, path, target, *, scheme=None, normalizer=normalize_answer):
     for value in context.get_values(path):
         if value.option is not None:
             context.warn(target, path, 'An Option or responsibility selection is not an entity name')
@@ -11,7 +11,7 @@ def normalized_answers(context, path, target, *, scheme=None):
             continue
         if not (value.text or value.external_id):
             continue
-        answer = normalize_answer(value.text, value.external_id, scheme=scheme)
+        answer = normalizer(value.text, value.external_id, scheme=scheme)
         for issue in answer.issues:
             context.warn(target, path, issue)
         if answer.label:
@@ -30,10 +30,10 @@ def record_entity(context, person, sources, target):
                                        value=value, reason='Provider identifier')
 
 
-def read_named_values(context, path, *, target, scheme=None):
+def read_named_values(context, path, *, target, scheme=None, normalizer=normalize_answer):
     """Read a list; target is a canonical prefix such as rights_holders."""
     people, seen = [], set()
-    for value, answer in normalized_answers(context, path, target, scheme=scheme):
+    for value, answer in normalized_answers(context, path, target, scheme=scheme, normalizer=normalizer):
         identity = (answer.label, answer.identifier.value if answer.identifier else None,
                     answer.identifier.identifier_type if answer.identifier else None)
         if identity in seen:
@@ -48,9 +48,9 @@ def read_named_values(context, path, *, target, scheme=None):
     return people
 
 
-def read_named_value(context, path, *, target, scheme=None):
+def read_named_value(context, path, *, target, scheme=None, normalizer=normalize_answer):
     """Read one entity without arbitrarily choosing among conflicting answers."""
-    answers = list(normalized_answers(context, path, target, scheme=scheme))
+    answers = list(normalized_answers(context, path, target, scheme=scheme, normalizer=normalizer))
     identities = {(answer.label, answer.identifier.value if answer.identifier else None,
                    answer.identifier.identifier_type if answer.identifier else None) for _, answer in answers}
     if len(identities) > 1:
@@ -77,9 +77,9 @@ def prefer_name_source(context, preferred, legacy, *, target):
     has_names = any(value.text.strip() and value.option is None for value in new_values)
     if has_names or blocked:
         if any(value.text.strip() and value.option is None for value in old_values):
-            context.warn(target, preferred[0], 'Both source families are populated; preferred TF source retained')
+            context.warn(target, preferred[0], 'Both source families are populated; preferred source retained')
         for value in old_values:
-            context.record_mapping(target, sources=(value,), outcome='skipped', reason='Preferred TF source selected')
+            context.record_mapping(target, sources=(value,), outcome='skipped', reason='Preferred source selected')
         return True
     return False
 

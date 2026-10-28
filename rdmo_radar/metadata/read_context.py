@@ -7,7 +7,16 @@ from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
 
 from .types import MappingAttempt, MappingIssue, MappingSource
-from .values import coordinates, is_uri, model_key, prepare_read_data, select_values, selector_key, selector_label
+from .values import (
+    coordinates,
+    is_uri,
+    matches_placement,
+    model_key,
+    prepare_read_data,
+    select_values,
+    selector_key,
+    selector_label,
+)
 
 
 @dataclass
@@ -63,6 +72,31 @@ class ProjectReadContext:
             for value in self.get_values(attribute_reference)
         }
         return [self.group(set_prefix, set_index) for set_prefix, set_index in sorted(set_positions)]
+
+    def descendants(self, group, anchors):
+        """Select descendants of the same native coordinates and catalog placement."""
+        position = coordinates(group)
+        placements = self.prepared[1]
+        ancestors = [placement for path in anchors if (key := self.resolve_attribute(path)) is not None
+                     for placement in placements.get(key, ()) if len(placement) == len(position)]
+
+        def select(context, key):
+            values = (self.value_selector or select_values)(self, key)
+            related = [placement for placement in placements.get(key, ())
+                       if any(placement[:len(position)] == ancestor for ancestor in ancestors)]
+            if ancestors and placements.get(key) and not related:
+                return []
+            return [value for value in values if coordinates(value)[:len(position)] == position
+                    and (not related or any(matches_placement(value, placement) for placement in related))]
+
+        return replace(group, value_selector=select)
+
+    def has_shared_placement(self, path, anchors):
+        key = self.resolve_attribute(path)
+        placements = self.prepared[1]
+        names = [placement for anchor in anchors if (name_key := self.resolve_attribute(anchor)) is not None
+                 for placement in placements.get(name_key, ())]
+        return any(role[:len(name)] == name for role in placements.get(key, ()) for name in names)
 
     def warn(self, target, source, reason, value=None):
         target = selector_label(target)

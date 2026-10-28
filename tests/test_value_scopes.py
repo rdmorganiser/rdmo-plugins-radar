@@ -25,7 +25,7 @@ from rdmo.questions.models import (
 from rdmo.views.utils import ProjectWrapper
 
 from rdmo_radar.factories import build_xml_export_service
-from rdmo_radar.metadata.builder import compute_metadata
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.values import model_key, select_values
 
@@ -141,7 +141,7 @@ def test_multiple_questionset_levels_use_outermost_first_coordinates(scope_proje
         assert [creator.given_name for creator in read_metadata(export, dataset).metadata.creators] == [
             f'Person {dataset}-3', f'Person {dataset}-7',
         ]
-    service = build_xml_export_service(scope_project, collect_mapping=True)
+    service = build_xml_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING, collect_mapping=True)
     datasets = export.get_datasets()
     with django_assert_num_queries(0):
         files = service.compute_files(datasets)
@@ -295,7 +295,7 @@ def test_prepared_attribute_access_distinguishes_namespaces_without_queries(db, 
     answers = [Value.objects.create(project=project, attribute=attribute, text=f'Title {index}')
                for index, attribute in enumerate(attributes)]
     with django_assert_num_queries(1):
-        context = build_xml_export_service(project).reader(0).shared()
+        context = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     with django_assert_num_queries(0):
         assert context.get_values('research/title') == []
         assert context.get_text('research/title') is None
@@ -319,7 +319,7 @@ def test_unrelated_installed_attribute_does_not_make_project_path_ambiguous(db, 
     other = Project.objects.create(title='Other')
     Value.objects.create(project=other, attribute=unrelated, text='Other project')
     answer = Value.objects.create(project=project, attribute=attribute, text='Selected project')
-    context = build_xml_export_service(project).reader(0).shared()
+    context = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     with django_assert_num_queries(0):
         assert context.get_values('research/title') == [answer]
         assert context.issues == []
@@ -333,7 +333,7 @@ def test_catalog_only_attribute_participates_in_path_ambiguity(scope_project, dj
     empty.attribute = other
     empty.save()
     answer = Value.objects.create(project=scope_project, attribute=question.attribute, text='Present')
-    context = build_xml_export_service(scope_project).reader(0).shared()
+    context = build_xml_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     with django_assert_num_queries(0):
         assert context.get_values('research/title') == []
         assert context.get_values_by_uri(question.attribute.uri) == [answer]
@@ -353,7 +353,7 @@ def test_namespace_collisions_do_not_share_catalog_placements(scope_project):
     Value.objects.create(project=scope_project, attribute=first, text='Wrong depth', set_prefix='0')
     deep = Value.objects.create(project=scope_project, attribute=second, text='Deep', set_prefix='0')
     Value.objects.create(project=scope_project, attribute=second, text='Wrong depth')
-    context = build_xml_export_service(scope_project).reader(0).shared()
+    context = build_xml_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     assert context.get_values_by_uri(first.uri) == [shallow]
     assert context.get_values_by_attribute_id(second.pk) == [deep]
     assert context.get_values('research/value') == []
@@ -395,7 +395,7 @@ def test_explicit_option_uris_do_not_collapse_equal_paths(db, django_assert_num_
                for namespace in ('first', 'second')]
     for index, option in enumerate(options):
         Value.objects.create(project=project, attribute=attribute, option=option, collection_index=index)
-    context = build_xml_export_service(project).reader(0).shared()
+    context = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     with django_assert_num_queries(0):
         assert context.get_option('research/type', {'type/example': 'Example'}) is None
         assert any(issue.reason == 'Ambiguous Option path' for issue in context.issues)
@@ -412,7 +412,7 @@ def test_unrelated_installed_options_do_not_make_read_mapping_ambiguous(db):
     options = [Option.objects.create(uri_prefix=f'https://{namespace}.test', uri_path='type/example')
                for namespace in ('first', 'second')]
     Value.objects.create(project=project, attribute=attribute, option=options[0])
-    context = build_xml_export_service(project).reader(0).shared()
+    context = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     assert context.get_option('research/type', {'type/example': 'Example'}) == 'Example'
     assert context.issues == []
 
@@ -447,8 +447,10 @@ def test_explicit_identity_access_honors_snapshots(db, django_assert_num_queries
     snapshot = Snapshot.objects.create(project=project, title='Earlier')
     live = add_answer(project, 'research/title', 'Live')
     saved = add_answer(project, 'research/title', 'Saved', snapshot=snapshot)
-    current = build_xml_export_service(project).reader(0).shared()
-    previous = build_xml_export_service(project, snapshot=snapshot).reader(0).shared()
+    current = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
+    previous = (
+        build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot).reader(0).shared()
+    )
     with django_assert_num_queries(0):
         assert current.get_values_by_attribute_id(live.attribute_id) == [live]
         assert previous.get_values_by_uri(saved.attribute.uri) == [saved]
@@ -470,7 +472,7 @@ def test_exact_uri_dataset_reads_keep_distinct_nested_anchor_identities(scope_pr
                              text=f'Shallow {index}', set_index=index)
         Value.objects.create(project=scope_project, attribute=second_description,
                              text=f'Deep {index}', set_prefix='0', set_index=index)
-    context = build_xml_export_service(scope_project).reader(1)
+    context = build_xml_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(1)
     assert context.get_text(first_description.uri) == 'Shallow 1'
     assert context.get_text(second_description.uri) == 'Deep 1'
     assert context.issues == []
@@ -491,7 +493,7 @@ def test_option_path_ambiguity_is_scoped_to_selected_answers():
 def test_specialized_template_framework_option_mapping_reports_namespace_collisions():
     path = 'project/dataset/creation_methods'
     attribute = Attribute(path=path)
-    from rdmo_radar.metadata.constants import XMLVocabulary
+    from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 
     option_path = next(iter(XMLVocabulary.data_source_options))
     values = [Value(attribute=attribute, option=Option(uri=f'https://{namespace}.test/options/{option_path}',
@@ -508,7 +510,7 @@ def test_model_identity_selection_and_diagnostics_do_not_load_deferred_fields(db
     for index, text in enumerate(('First', 'Second')):
         Value.objects.create(project=project, attribute=attribute, text=text, collection_index=index)
     selector = Attribute.objects.only('pk').get(pk=attribute.pk)
-    context = build_xml_export_service(project).reader(0).shared()
+    context = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING).reader(0).shared()
     with django_assert_num_queries(0):
         assert [value.text for value in context.get_values(selector)] == ['First', 'Second']
         assert context.get_text(selector) is None
@@ -534,7 +536,7 @@ def test_template_framework_datasets_keep_repeated_nested_indices_and_result_coo
         add_answer(scope_project, 'project/dataset/description', f'Resource {parent}', set_prefix=f'{parent}|3')
         add_answer(scope_project, 'project/dataset/radar_url', f'https://radar.test/old-{parent}',
                    set_prefix=f'{parent}|3')
-    service = build_export_service(scope_project)
+    service = build_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING)
     with django_assert_num_queries(0):
         datasets = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(scope_project, service.reader)
         assert [dataset.key for dataset in datasets] == ['dataset:1|3', 'dataset:10|3']
@@ -559,7 +561,7 @@ def test_template_framework_datasets_keep_repeated_nested_indices_and_result_coo
 
 
 def test_source_preview_uses_complete_nested_dataset_scope(scope_project, django_assert_num_queries):
-    from rdmo_radar.exports import RadarExportProvider
+    from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
 
     outer = add_page(scope_project, 'research/record', collection=True)
     dataset = add_questionset(outer, 'project/dataset/id', collection=True)

@@ -10,6 +10,7 @@ import requests
 
 from rdmo_radar.client import RadarClient, dataset_page_url
 from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
+from rdmo_radar.mappings.legacy import LEGACY_MAPPING
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
@@ -167,3 +168,7 @@ class RadarProjectCredentialsExportProvider(RadarCredentialsExportProvider):
 
 class RadarTemplateFrameworkCredentialsExportProvider(RadarCredentialsExportProvider):
     mapping = TEMPLATE_FRAMEWORK_MAPPING
+
+
+class RadarLegacyCredentialsExportProvider(RadarCredentialsExportProvider):
+    mapping = LEGACY_MAPPING

@@ -13,16 +13,21 @@ from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 
 from rdmo_radar.exports import (
-    RadarCredentialsExportProvider,
-    RadarExportProvider,
     RadarProjectCredentialsExportProvider,
     RadarProjectExportProvider,
+)
+from rdmo_radar.exports import (
+    RadarTemplateFrameworkCredentialsExportProvider as RadarCredentialsExportProvider,
+)
+from rdmo_radar.exports import (
+    RadarTemplateFrameworkExportProvider as RadarExportProvider,
 )
 from rdmo_radar.exports.previews import compute_mapping_preview, compute_payload_field_path, compute_source_answers
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.project import PROJECT_MAPPING
-from rdmo_radar.metadata.constants import XMLVocabulary
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 from rdmo_radar.metadata.provenance import json_leaves, validate_payload_provenance, xml_leaves
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
@@ -90,8 +95,15 @@ def test_trace_matches_output_without_extra_value_queries_or_different_metadata(
     traced_project, kind, django_assert_num_queries,
 ):
     factory = build_xml_export_service if kind == 'xml' else build_export_service
-    normal = factory(traced_project, **({'clock': lambda: 100} if kind == 'api' else {}))
-    traced = factory(traced_project, collect_mapping=True, **({'clock': lambda: 100} if kind == 'api' else {}))
+    normal = factory(
+        traced_project, profile=TEMPLATE_FRAMEWORK_MAPPING, **({'clock': lambda: 100} if kind == 'api' else {})
+    )
+    traced = factory(
+        traced_project,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        collect_mapping=True,
+        **({'clock': lambda: 100} if kind == 'api' else {}),
+    )
     dataset = ExportDataset('1', 'Dataset', {'set_prefix': '', 'set_index': 1})
     with django_assert_num_queries(0):
         if kind == 'xml':
@@ -134,7 +146,9 @@ def test_snapshot_trace_references_only_snapshot_values(traced_project):
     live = traced_project.values.get(attribute__path='project/dataset/title', snapshot=None, set_index=1)
     live.text = 'Changed live'
     live.save()
-    service = build_xml_export_service(traced_project, snapshot=snapshot, collect_mapping=True)
+    service = build_xml_export_service(
+        traced_project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot, collect_mapping=True
+    )
     result = service.compute_files([ExportDataset('1', 'Dataset', {'set_prefix': '', 'set_index': 1})])[0]
     assert b'Changed live' not in result.xml_data
     sources = [source.value for row in result.provenance for source in row.sources if isinstance(source.value, Value)]
@@ -174,7 +188,7 @@ def test_all_populated_canonical_fields_have_verified_format_bindings(kind):
     provenance = tuple(MappingAttempt(field, (MappingSource('Fixture', value),), value)
                        for field, value in metadata_leaves(metadata))
     factory = build_xml_export_service if kind == 'xml' else build_export_service
-    service = factory(None, reader=lambda dataset: object(),
+    service = factory(None, profile=TEMPLATE_FRAMEWORK_MAPPING, reader=lambda dataset: object(),
                       mapping=lambda context: MappingResult(metadata, provenance=provenance), collect_mapping=True)
     result = service.compute_files([0])[0] if kind == 'xml' else service.compute_payload(0, 'user@example.test')
     assert result.provenance is not None
@@ -206,8 +220,13 @@ def test_all_populated_canonical_fields_have_verified_format_bindings(kind):
 def test_stale_canonical_trace_is_not_attributed_to_overridden_output():
     metadata = complete_metadata(title='Replacement')
     result = MappingResult(metadata, provenance=(MappingAttempt('title', value='Original'),))
-    service = build_export_service(None, reader=lambda dataset: object(), mapping=lambda context: result,
-                                   collect_mapping=True)
+    service = build_export_service(
+        None,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        reader=lambda dataset: object(),
+        mapping=lambda context: result,
+        collect_mapping=True,
+    )
     payload = service.compute_payload(0, 'user@example.test')
     assert payload.provenance[0].outcome == 'skipped'
     row = next(row for row in payload.provenance if row.output_path == '/descriptiveMetadata/title')
@@ -219,8 +238,14 @@ def test_stale_canonical_trace_is_not_attributed_to_overridden_output():
 def test_custom_serializers_keep_their_existing_signature_and_report_unavailable_provenance(kind):
     serializer = Mock(return_value={})
     factory = build_xml_export_service if kind == 'xml' else build_export_service
-    service = factory(None, reader=lambda selection: object(), serializer=serializer,
-                      mapping=lambda context: MappingResult(complete_metadata(), provenance=()), collect_mapping=True)
+    service = factory(
+        None,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        reader=lambda selection: object(),
+        serializer=serializer,
+        mapping=lambda context: MappingResult(complete_metadata(), provenance=()),
+        collect_mapping=True,
+    )
     result = service.compute_payload(0, 'user@example.test') if kind == 'api' else service.compute_files([0])[0]
     assert result.provenance is None
     assert 'record_output' not in serializer.call_args.kwargs
@@ -340,7 +365,7 @@ def test_license_conflicts_and_title_fallback_have_explicit_attempts(db):
         answer = add_answer(project, 'project/dataset/sharing/conditions', '', collection_index=index)
         answer.option = option
         answer.save()
-    service = build_export_service(project, collect_mapping=True)
+    service = build_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, collect_mapping=True)
     dataset = ExportDataset('0', 'Dataset', {'set_prefix': '', 'set_index': 0})
     result = service.compute_payload(dataset, 'user@example.test')
     title = next(row for row in result.provenance if row.field == 'title' and row.output_path)
@@ -371,7 +396,12 @@ def test_uninstrumented_custom_mapping_reports_unavailable_and_draft_fallback_is
 @pytest.mark.parametrize('failure', ['output_binding', 'projection'])
 def test_provenance_failures_do_not_change_export_output(traced_project, kind, failure, monkeypatch, caplog):
     factory = build_xml_export_service if kind == 'xml' else build_export_service
-    service = factory(traced_project, collect_mapping=True, **({'clock': lambda: 100} if kind == 'api' else {}))
+    service = factory(
+        traced_project,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        collect_mapping=True,
+        **({'clock': lambda: 100} if kind == 'api' else {}),
+    )
     dataset = ExportDataset('1', 'Dataset', {'set_prefix': '', 'set_index': 1})
     compute = (lambda: service.compute_files([dataset])[0]) if kind == 'xml' else (
         lambda: service.compute_payload(dataset, 'user@example.test')
@@ -403,7 +433,7 @@ def test_provenance_failures_do_not_change_export_output(traced_project, kind, f
 
 
 def test_rest_warnings_and_previews_share_one_prepared_mapping(traced_project, settings, django_assert_num_queries):
-    from rdmo_radar.exports import RadarExportProvider
+    from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
 
     settings.RADAR_PREVIEW_MAPPING = True
     provider = export_for(traced_project, RadarExportProvider)

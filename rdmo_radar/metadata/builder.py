@@ -1,25 +1,11 @@
-from collections.abc import Callable
-
-from .dataset import read_dataset_fields
-from .funding import read_funding
-from .people import read_contributors, read_creators
-from .read_context import ProjectReadContext
-from .types import FundingReference, MappingResult, PersonOrOrganization, RadarMetadata
+"""Compose explicitly configured canonical field readers."""
+from .fields.contracts import FieldMapping, ReadContext
+from .types import MappingResult, RadarMetadata
 
 
-def compute_metadata(
-    context: ProjectReadContext,
-    *,
-    dataset: Callable[[ProjectReadContext], RadarMetadata] = read_dataset_fields,
-    creators: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_creators,
-    contributors: Callable[[ProjectReadContext], list[PersonOrOrganization]] = read_contributors,
-    funding: Callable[[ProjectReadContext], list[FundingReference]] = read_funding,
-    publishers: Callable[[ProjectReadContext], list[PersonOrOrganization]] | None = None,
-) -> MappingResult:
-    metadata = dataset(context)
-    metadata.creators = creators(context)
-    metadata.contributors = contributors(context)
-    metadata.funding_references = funding(context)
-    if publishers is not None:
-        metadata.publishers = publishers(context)
-    return MappingResult(metadata, tuple(context.issues))
+def compute_metadata(context: ReadContext, *, fields: FieldMapping) -> MappingResult:
+    metadata = RadarMetadata(**{
+        target: reader(context, target=target) for target, reader in fields.readers.items()
+    })
+    provenance = tuple(context.provenance) if context.provenance is not None else None
+    return MappingResult(metadata, tuple(context.issues), provenance)

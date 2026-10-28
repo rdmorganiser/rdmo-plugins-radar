@@ -1,7 +1,7 @@
 # RADAR 9.3 metadata mapping
 
-The registered class selects a mapping profile. Legacy entries and explicit Template Framework classes
-use the mapping described below. Explicit project classes export one record with `Project.title` and
+The registered class selects a mapping profile. Explicit Template Framework classes
+use the mapping described below; generic adapters require a configured profile. Explicit project classes export one record with `Project.title` and
 leave other fields unset unless an installation supplies custom functions. They neither infer metadata
 from `Project.description` nor write results to Template Framework Attributes. Missing publication fields
 remain visible. See [mapping selection](../README.md#mapping-selection) and the
@@ -11,13 +11,13 @@ The export mapping includes the reviewed 27 October 2026 update to the Template 
 The source is `Mapping_radar-plugin_dmp-tf.xlsx - [neu]Mapping RADAR-RDMO-271026.csv`, reviewed on
 2026-10-28. The original subject crosswalk and regression inputs remain:
 
-- Workbook subject sheet `[neu]Mapping Fachgebiet`, implemented in `metadata/crosswalks.py`.
+- Workbook subject sheet `[neu]Mapping Fachgebiet`, implemented in `mappings/template_framework/crosswalks.py`.
 - [DMP4NFDI 2.0.0 catalog](../tests/xml/dmp4nfdi_v2-0-0.xml)
 - [Prototype project](<../tests/xml/RADAR Plugin Testprojekt.xml>)
 
 The internal `RadarMetadata` model uses RDDM XML spellings, such as `Survey` and `IsCitedBy`.
 Both XML downloads and direct exports use the same readers. REST enum spelling is converted only
-by the API adapter. The reviewed crosswalks are Python code in `metadata/crosswalks.py`; exports do
+by the API adapter. The reviewed crosswalks are Python code in `mappings/template_framework/crosswalks.py`; exports do
 not parse spreadsheets or fetch vocabularies over the network.
 
 ## Answer scope and dataset discovery
@@ -74,6 +74,14 @@ produce the existing storage-failure result page after confirmed creation rather
 | Other established fields | Preserve acronym as additional title, geolocation region, and `project/dataset/method` processing text when available. |
 
 ## Dataset language
+
+`TF_FIELDS` explicitly binds `read_language` to `Source('project/dataset/language')` and the TF
+Option crosswalk. The reusable signature is `read_language(context, *, source, option_map, target,
+normalizer=normalize_language)`; it selects no Attribute or RDMO Options by default.
+Replace its field callback to use a different source or normalizer; see the
+[mapping override example](../README.md#typed-metadata-and-template-framework-overrides).
+Missing or unsupported values at an overridden source do not enable fallback to the TF Attribute.
+Import has its own writer and independently configured destinations/crosswalks.
 
 The dataset language reader accepts this initial European selection from text answers, as well as
 controlled Options with the listed `language/<ISO 639-1>` paths. Existing English/German Options retain
@@ -191,7 +199,8 @@ Import destinations retain known-prefix precedence through RDMO's import APIs. E
 fallback. Ambiguous custom-prefix Attribute or Option resolution reports a mapping issue and stages no
 Value for that destination. Merge checks and collection/index allocation use the selected Attribute's
 answers; another namespace's answers cannot suppress or advance an import. Subject Option deduplication
-also follows identity. These changes do not add a general catalog import mapping or mapping profiles.
+also follows identity. Reusable field strategies and explicit application profiles now support independent catalog mappings;
+TF destination policies remain confined to the TF profile.
 
 Tests import the supplied catalog into an isolated database and load the prototype's values with
 their original coordinates and options. They exercise both providers, XML validation/download,

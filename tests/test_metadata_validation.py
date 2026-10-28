@@ -1,7 +1,7 @@
 import pytest
 
-from rdmo_radar.exports import RadarExportProvider
-from rdmo_radar.exports.exports import RadarExport
+from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
+from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExport
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.types import (
     Identifier,
@@ -39,13 +39,15 @@ def test_canonical_checks_validate_content_not_only_containers(changes, missing)
 
 
 def test_rest_provider_does_not_inherit_xml_exporter():
-    provider = configure_service(RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider'))
+    provider = configure_service(
+        RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider')
+    )
     assert not isinstance(provider, RadarExport)
     assert not hasattr(provider, 'prepare_files')
 
 
 def test_xml_computes_metadata_once_per_dataset(monkeypatch):
-    export = configure_service(RadarExport('radar-xml', 'RADAR', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.get_datasets = lambda: [ExportDataset('0', 'Dataset', {'set_index': 0})]
     calls = []
 
@@ -59,7 +61,9 @@ def test_xml_computes_metadata_once_per_dataset(monkeypatch):
 
 
 def test_rest_warnings_do_not_use_xml_adapter(monkeypatch):
-    provider = configure_service(RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider'))
+    provider = configure_service(
+        RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider')
+    )
     provider.get_datasets = lambda: [ExportDataset('0', 'Dataset', {'set_index': 0})]
     provider.get_service().mapping = lambda context: MappingResult(complete_metadata(resource=Resource('Description')))
     monkeypatch.setattr('rdmo_radar.metadata.xml.to_xml_payload', lambda metadata: pytest.fail('XML called'))

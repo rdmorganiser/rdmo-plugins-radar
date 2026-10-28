@@ -6,9 +6,9 @@ from rdmo.options.models import Option
 from rdmo.projects.imports import Import as ProjectImport
 from rdmo.projects.models import Value
 
-from .template_framework import DEFAULT_URI_PREFIX
+from .fields.contracts import Coordinates
 from .types import MappingIssue
-from .values import get_option_path, is_uri, model_key, normalize, prepare_values
+from .values import get_option_path, is_uri, model_key, normalize, prepare_values, selector_label
 
 
 @dataclass
@@ -16,12 +16,13 @@ class ProjectWriteContext:
     """Merge prepared answers and stage unsaved Values for RDMO's import preview/apply workflow."""
 
     import_plugin: ProjectImport
-    dataset_index: int
     existing_values: dict
+    coordinates: Coordinates
+    namespace: str | None = None
     issues: list[MappingIssue] = field(default_factory=list)
     _values: dict = field(init=False, repr=False)
-    _attributes: dict[str, Attribute | None] = field(default_factory=dict, init=False, repr=False)
-    _options: dict[str, Option | None] = field(default_factory=dict, init=False, repr=False)
+    _attributes: dict[str | int, Attribute | None] = field(default_factory=dict, init=False, repr=False)
+    _options: dict[str | int, Option | None] = field(default_factory=dict, init=False, repr=False)
     _ambiguous_attributes: set[str] = field(default_factory=set, init=False, repr=False)
     _ambiguous_options: set[str] = field(default_factory=set, init=False, repr=False)
 
@@ -67,10 +68,10 @@ class ProjectWriteContext:
         path: str,
         text: object,
         *,
-        set_prefix: str = '',
+        set_prefix: str | None = None,
         set_index: int | None = None,
         collection_index: int | None = None,
-        dataset: bool = True,
+        external_id: str = '',
     ) -> Value | None:
         if text in (None, ''):
             return None
@@ -85,7 +86,7 @@ class ProjectWriteContext:
             set_prefix=set_prefix,
             set_index=set_index,
             collection_index=collection_index,
-            dataset=dataset,
+            external_id=external_id,
         )
 
     def add_option(
@@ -95,10 +96,9 @@ class ProjectWriteContext:
         options: dict[str, str],
         *,
         text: str | None = None,
-        set_prefix: str = '',
+        set_prefix: str | None = None,
         set_index: int | None = None,
         collection_index: int | None = None,
-        dataset: bool = True,
     ) -> Value | None:
         if canonical_value is None:
             return None
@@ -123,19 +123,21 @@ class ProjectWriteContext:
             set_prefix=set_prefix,
             set_index=set_index,
             collection_index=collection_index,
-            dataset=dataset,
         )
 
-    def add_unique_text(self, path: str, text: str) -> Value | None:
+    def add_unique_text(self, path: str, text: str, *, coordinates: Coordinates | None = None) -> Value | None:
         normalized = normalize(text)
         if any(normalize(value.text) == normalized for value in self.get_values(path)):
             return None
-        return self.add(path, text, collection_index=self.compute_next_collection_index(path), dataset=False)
+        position = coordinates if coordinates is not None else self.coordinates
+        return self.add(path, text, collection_index=self.compute_next_collection_index(path),
+                        set_prefix=position.set_prefix, set_index=position.set_index)
 
-    def get_values(self, path: str) -> list[Value]:
-        lookup_position = 3 if is_uri(path) else 2
-        if not any(attribute_key[lookup_position] == path for attribute_key in self._values):
-            return []
+    def get_values(self, path) -> list[Value]:
+        if isinstance(path, str):
+            lookup_position = 3 if is_uri(path) else 2
+            if not any(attribute_key[lookup_position] == path for attribute_key in self._values):
+                return []
         attribute = self.fetch_attribute(path)
         return list(self._values.get(self._attribute_key(attribute), ())) if attribute is not None else []
 
@@ -147,14 +149,21 @@ class ProjectWriteContext:
         attribute_values = self.get_values(path)
         return max((value.collection_index for value in attribute_values), default=-1) + 1
 
-    def fetch_attribute(self, path: str) -> Attribute | None:
+    def fetch_attribute(self, path) -> Attribute | None:
+        if isinstance(path, Attribute):
+            return path
+        if isinstance(path, int):
+            if path not in self._attributes:
+                attribute = Attribute.objects.filter(pk=path).first()
+                self._attributes[path] = self.import_plugin.get_attribute(attribute.uri) if attribute else None
+            return self._attributes[path]
         if path in self._attributes:
             return self._attributes[path]
         if not path:
             self._attributes[path] = None
             return None
-        attribute_uri = path if is_uri(path) else Attribute.build_uri(DEFAULT_URI_PREFIX, path)
-        attribute = self.import_plugin.get_attribute(attribute_uri)
+        attribute_uri = path if is_uri(path) else Attribute.build_uri(self.namespace, path) if self.namespace else None
+        attribute = self.import_plugin.get_attribute(attribute_uri) if attribute_uri else None
         # Preserve installed custom URI prefixes through the public import API.
         if attribute is None and not is_uri(path):
             matching_attributes_map = {}
@@ -175,14 +184,21 @@ class ProjectWriteContext:
         self._attributes[path] = attribute
         return attribute
 
-    def fetch_option(self, path: str) -> Option | None:
+    def fetch_option(self, path) -> Option | None:
+        if isinstance(path, Option):
+            return path
+        if isinstance(path, int):
+            if path not in self._options:
+                option = Option.objects.filter(pk=path).first()
+                self._options[path] = self.import_plugin.get_option(option.uri) if option else None
+            return self._options[path]
         if path in self._options:
             return self._options[path]
         if not path:
             self._options[path] = None
             return None
-        option_uri = path if is_uri(path) else Option.build_uri(DEFAULT_URI_PREFIX, path)
-        option = self.import_plugin.get_option(option_uri)
+        option_uri = path if is_uri(path) else Option.build_uri(self.namespace, path) if self.namespace else None
+        option = self.import_plugin.get_option(option_uri) if option_uri else None
         if option is None and not is_uri(path):
             matching_options_map = {}
             for option_uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
@@ -203,25 +219,25 @@ class ProjectWriteContext:
         text: object,
         *,
         option: Option | None = None,
-        set_prefix: str = '',
+        set_prefix: str | None = None,
         set_index: int | None = None,
         collection_index: int | None = None,
-        dataset: bool = True,
+        external_id: str = '',
     ) -> Value:
         value = Value(
             attribute=attribute,
             option=option,
-            set_prefix=set_prefix,
-            set_index=self.dataset_index if set_index is None and dataset else (set_index or 0),
+            set_prefix=self.coordinates.set_prefix if set_prefix is None else set_prefix,
+            set_index=self.coordinates.set_index if set_index is None else set_index,
             text=text,
+            external_id=external_id,
         )
-        if collection_index is not None:
-            value.collection_index = collection_index
+        value.collection_index = self.coordinates.collection_index if collection_index is None else collection_index
         self.import_plugin.values.append(value)
         self._append_value(value, resolved=True)
         return value
 
     def warn(self, field: str, reason: str, value: str | None = None) -> None:
-        issue = MappingIssue(field, reason, value)
+        issue = MappingIssue(selector_label(field), reason, value)
         if issue not in self.issues:
             self.issues.append(issue)

@@ -1,16 +1,12 @@
 """The established Template Framework export/import mapping and scope conventions."""
+
 from functools import partial
 
-from ..metadata.builder import compute_metadata
-from ..metadata.importer import write_metadata
-from ..metadata.read_context import ProjectReadContext
-from ..metadata.template_framework import (
-    ATTRIBUTE_TO_RADAR_FIELDS,
-    DATASET_ATTRIBUTES,
-    compute_next_dataset_index,
-    select_template_framework_values,
-)
-from ..metadata.values import (
+from ...metadata.builder import compute_metadata as compose_metadata
+from ...metadata.fields import Coordinates
+from ...metadata.importer import write_metadata as compose_import
+from ...metadata.read_context import ProjectReadContext
+from ...metadata.values import (
     coordinates,
     fetch_catalog_placements,
     fetch_project_values,
@@ -18,8 +14,16 @@ from ..metadata.values import (
     matches_placement,
     prepare_read_data,
 )
-from ..metadata.write_context import ProjectWriteContext
-from . import ExportDataset, RadarMapping
+from ...metadata.write_context import ProjectWriteContext
+from .. import ExportDataset, RadarMapping
+from .fields import TF_FIELDS
+from .rules import (
+    ATTRIBUTE_TO_RADAR_FIELDS,
+    DATASET_ATTRIBUTES,
+    DEFAULT_URI_PREFIX,
+    compute_next_dataset_index,
+    select_template_framework_values,
+)
 
 
 def build_reader(project, snapshot=None):
@@ -68,9 +72,7 @@ def get_datasets(project, reader):
                             break
             if (
                 not any(
-                    anchor in dataset_attribute_keys
-                    for placement in attribute_placements
-                    for anchor, _ in placement
+                    anchor in dataset_attribute_keys for placement in attribute_placements for anchor, _ in placement
                 )
                 and not value.set_prefix
             ):
@@ -138,33 +140,47 @@ def result_destinations(context):
 
 def store_result(project, dataset, radar_id, radar_url):
     # Keep registered adapter imports out of mapping construction.
-    from ..exports.storage import store_export_result
+    from ...exports.storage import store_export_result
 
     if isinstance(dataset, ExportDataset):
-        return store_export_result(
-            project,
-            dataset.scope['set_index'],
-            radar_id,
-            radar_url,
-            set_prefix=dataset.scope['set_prefix'],
-            destinations=dataset.scope.get('destinations'),
+        set_index = dataset.scope['set_index']
+        prefix = dataset.scope['set_prefix']
+        destinations = dict(dataset.scope.get('destinations', {}))
+    else:
+        set_index, prefix, destinations = int(dataset), '', {}
+    for name in ('radar_id', 'radar_url'):
+        destinations.setdefault(name, {'path': f'project/dataset/{name}', 'set_prefix': prefix, 'set_index': set_index})
+    return store_export_result(project, set_index, radar_id, radar_url, destinations=destinations)
+
+
+compute_metadata = partial(compose_metadata, fields=TF_FIELDS)
+
+
+def write_metadata(import_plugin, metadata, set_index, *, existing_values=None, context=None, fields=TF_FIELDS):
+    if context is None:
+        if existing_values is None:
+            project = import_plugin.current_project
+            existing_values = fetch_project_values(project) if project is not None else {}
+        context = ProjectWriteContext(
+            import_plugin, existing_values, Coordinates(set_index=set_index), namespace=DEFAULT_URI_PREFIX
         )
-    return store_export_result(project, dataset, radar_id, radar_url)
+    elif context.import_plugin is not import_plugin or context.coordinates.set_index != set_index:
+        raise ValueError('Prepared import context does not match the import operation.')
+    return compose_import(context, metadata, fields=fields)
 
 
 def build_import_writer(import_plugin, *, set_index=None, existing_values, mapping=None):
     if mapping is None:
-        mapping = write_metadata
-    kwargs = {}
-    if mapping is write_metadata:
-        context = ProjectWriteContext(import_plugin, 0 if set_index is None else set_index, existing_values)
+        context = ProjectWriteContext(import_plugin, existing_values, Coordinates(), namespace=DEFAULT_URI_PREFIX)
         if set_index is None:
             set_index = compute_next_dataset_index(existing_values, context=context)
-            context.dataset_index = set_index
-        kwargs['context'] = context
-    elif set_index is None:
+        context.coordinates = Coordinates(set_index=set_index)
+        return partial(
+            write_metadata, import_plugin, set_index=set_index, existing_values=existing_values, context=context
+        )
+    if set_index is None:
         set_index = compute_next_dataset_index(existing_values, import_plugin)
-    return partial(mapping, import_plugin, set_index=set_index, existing_values=existing_values, **kwargs)
+    return partial(mapping, import_plugin, set_index=set_index, existing_values=existing_values)
 
 
 TEMPLATE_FRAMEWORK_MAPPING = RadarMapping(

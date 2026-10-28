@@ -35,20 +35,30 @@ def host(settings, db, tmp_path):
     settings.ROOT_URLCONF = 'tests.urls_host'
     settings.MEDIA_ROOT = str(tmp_path)
     settings.PROJECT_EXPORTS = [
-        ('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'),
-        ('radar-credentials', 'RADAR credentials', 'rdmo_radar.exports.RadarCredentialsExportProvider'),
-        ('radar-oauth', 'RADAR OAuth', 'rdmo_radar.exports.RadarExportProvider'),
+        ('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'),
+        (
+            'radar-credentials',
+            'RADAR credentials',
+            'rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider',
+        ),
+        ('radar-oauth', 'RADAR OAuth', 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider'),
         ('radar-project-xml', 'RADAR project XML', 'rdmo_radar.exports.RadarProjectExport'),
-        ('radar-project-credentials', 'RADAR project credentials',
-         'rdmo_radar.exports.RadarProjectCredentialsExportProvider'),
+        (
+            'radar-project-credentials',
+            'RADAR project credentials',
+            'rdmo_radar.exports.RadarProjectCredentialsExportProvider',
+        ),
         ('radar-project-oauth', 'RADAR project OAuth', 'rdmo_radar.exports.RadarProjectExportProvider'),
         ('radar-custom-xml', 'RADAR custom XML', 'tests.test_mapping_profiles.CustomXmlExport'),
-        ('radar-custom-credentials', 'RADAR custom credentials',
-         'tests.test_mapping_profiles.CustomCredentialsExportProvider'),
+        (
+            'radar-custom-credentials',
+            'RADAR custom credentials',
+            'tests.test_mapping_profiles.CustomCredentialsExportProvider',
+        ),
         ('radar-custom-oauth', 'RADAR custom OAuth', 'tests.test_mapping_profiles.CustomOauthExportProvider'),
     ]
     settings.PROJECT_SNAPSHOT_EXPORTS = [settings.PROJECT_EXPORTS[0]]
-    settings.PROJECT_IMPORTS = [('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')]
+    settings.PROJECT_IMPORTS = [('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')]
     settings.RADAR_PROVIDER = {
         **settings.RADAR_PROVIDER,
         'redirect_uri': 'http://testserver/services/oauth/radar-oauth/callback/',
@@ -349,7 +359,7 @@ def test_native_oauth_callback_cannot_resume_a_request_in_debug_mode(host, setti
     http = Mock(side_effect=AssertionError('Debug callback must not exchange tokens or replay requests'))
     monkeypatch.setattr(requests, 'get', http)
     monkeypatch.setattr(requests, 'post', http)
-    prefix = 'rdmo_radar.exports.RadarExportProvider.'
+    prefix = 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider.'
     pending = [method, 'https://radar.example.test/radar/api/workspaces']
     if method == 'post':
         pending += [{'technicalMetadata': {}, 'descriptiveMetadata': {'title': 'Queued'}}, None, None]
@@ -416,7 +426,10 @@ def test_credentials_export_native_forms_and_scoped_storage(host, monkeypatch):
         assert value.text == text
     assert project.values.get(attribute__path='project/dataset/radar_id', snapshot=None,
                               set_prefix='', set_index=1, collection_index=0).text == 'confirmed'
-    assert not any(key.startswith('rdmo_radar.exports.RadarCredentialsExportProvider.') for key in host.session.keys())
+    assert not any(
+        key.startswith('rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider.')
+        for key in host.session.keys()
+    )
 
 
 @pytest.mark.parametrize('status', [401, 403, 422, 500])
@@ -431,10 +444,13 @@ def test_credentials_native_failure_preserves_form_or_requests_login(host, monke
     assert not project.values.filter(attribute__path='project/dataset/radar_id').exists()
     if status == 401:
         assert b'Log in to RADAR' in result.content
-        assert 'rdmo_radar.exports.RadarCredentialsExportProvider.access_token' not in host.session
+        assert 'rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider.access_token' not in host.session
     else:
         assert result.context['form'].is_bound
-        assert host.session['rdmo_radar.exports.RadarCredentialsExportProvider.access_token'] == 'bearer-token'
+        assert (
+            host.session['rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider.access_token']
+            == 'bearer-token'
+        )
 
 
 @pytest.mark.parametrize('authentication', ['credentials', 'oauth'])
@@ -479,7 +495,7 @@ def test_export_displays_radar_error(host, monkeypatch, authentication, status, 
     if authentication == 'oauth':
         # Exercise failure after core replays the saved creation POST.
         session = host.session
-        del session['rdmo_radar.exports.RadarExportProvider.access_token']
+        del session['rdmo_radar.exports.RadarTemplateFrameworkExportProvider.access_token']
         session.save()
     result = host.post(url, {'export': '1', 'stage': 'export', 'dataset': '0', 'workspace': 'workspace'})
     if authentication == 'oauth':
@@ -681,7 +697,7 @@ def test_oauth_export_with_callback_on_another_deployment_shows_configuration_er
     assert b'RADAR OAuth configuration error' in result.content
     assert b'different RDMO instance' in result.content
     assert 'Location' not in result
-    assert 'rdmo_radar.exports.RadarExportProvider.state' not in host.session
+    assert 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider.state' not in host.session
 
 
 @pytest.mark.parametrize('raw_payload', [False, True])
@@ -725,13 +741,13 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, settings
     assert host.get(url).status_code == 200
     # Reauthorize creation so core stores/replays the POST in a reconstructed provider.
     session = host.session
-    del session['rdmo_radar.exports.RadarExportProvider.access_token']
+    del session['rdmo_radar.exports.RadarTemplateFrameworkExportProvider.access_token']
     session.save()
     authorization = host.post(url, {'export': '1', 'dataset': '0', 'workspace': 'workspace'})
     state = parse_qs(urlsplit(authorization.url).query)['state'][0]
     if raw_payload:
         assert payload_calls == ['0']
-    queued = host.session['rdmo_radar.exports.RadarExportProvider.request'][2]
+    queued = host.session['rdmo_radar.exports.RadarTemplateFrameworkExportProvider.request'][2]
     assert set(queued) == {'technicalMetadata', 'descriptiveMetadata'}
     settings.RADAR_PREVIEW_MAPPING = True
 
@@ -744,14 +760,14 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, settings
     monkeypatch.setattr(RadarExportProvider, 'get_payload_provenance', no_preparation)
     # The saved operation, rather than later form state, identifies the destination.
     session = host.session
-    session['rdmo_radar.exports.RadarExportProvider.project_id'] = 999999
+    session['rdmo_radar.exports.RadarTemplateFrameworkExportProvider.project_id'] = 999999
     if outcome == 'missing_context':
-        del session['rdmo_radar.exports.RadarExportProvider.export_context']
+        del session['rdmo_radar.exports.RadarTemplateFrameworkExportProvider.export_context']
     session.save()
     if outcome == 'canceled':
         assert host.post(url, {'cancel': '1'}).status_code == 302
         for key in ('request', 'state', 'operation', 'export_context'):
-            assert f'rdmo_radar.exports.RadarExportProvider.{key}' not in host.session
+            assert f'rdmo_radar.exports.RadarTemplateFrameworkExportProvider.{key}' not in host.session
     elif outcome == 'context_removed_during_token':
         store = RadarExportProvider.store_in_session
 
@@ -812,7 +828,7 @@ def test_reconstructed_oauth_callback_without_reader(host, monkeypatch, settings
         else:
             assert b'Check RADAR for an existing draft' in result.content
     if outcome not in ('http_error', 'malformed'):
-        assert 'rdmo_radar.exports.RadarExportProvider.export_context' not in host.session
+        assert 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider.export_context' not in host.session
 
 
 def test_credentials_post_requires_csrf_token(host, monkeypatch):
@@ -1135,7 +1151,80 @@ def test_project_and_template_framework_sessions_coexist(host, monkeypatch):
     credentials_login(host, project, monkeypatch)
     credentials_login(host, project, monkeypatch, key='radar-project-credentials')
     session = host.session
-    assert session['rdmo_radar.exports.RadarCredentialsExportProvider.dataset_choices'] == [['0', 'Dataset']]
+    assert session['rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider.dataset_choices'] == [
+        ['0', 'Dataset']
+    ]
     assert session['rdmo_radar.exports.RadarProjectCredentialsExportProvider.dataset_choices'] == [
         ['project', 'Project record'],
     ]
+
+
+@pytest.mark.parametrize('authentication', ['credentials', 'oauth'])
+def test_legacy_native_exports_store_confirmed_results(host, settings, monkeypatch, authentication):
+    from rdmo_radar.exports import RadarLegacyExportProvider
+    from rdmo_radar.mappings.legacy import LEGACY_MAPPING
+
+    key = f'legacy-{authentication}'
+    class_name = ('rdmo_radar.exports.RadarLegacyCredentialsExportProvider' if authentication == 'credentials'
+                  else 'rdmo_radar.exports.RadarLegacyExportProvider')
+    settings.PROJECT_EXPORTS = [*settings.PROJECT_EXPORTS, (key, 'Legacy', class_name)]
+    project = Project.objects.create(title='Legacy project')
+    add_answer(project, 'project/dataset/id', 'Legacy collection', set_index=1)
+    add_answer(project, 'project/dataset/title', 'Legacy title', set_index=1)
+    add_attribute('project/dataset/radar_id')
+    add_attribute('project/dataset/radar_url')
+    if authentication == 'credentials':
+        url, calls = credentials_login(host, project, monkeypatch, key=key)
+        created = host.post(url, {'export': '1', 'stage': 'export', 'dataset': '1', 'workspace': 'workspace'})
+        assert calls[-1][1]['json']['descriptiveMetadata']['title'] == 'Legacy title'
+    else:
+        calls = []
+
+        def post(url, *args, **kwargs):
+            calls.append((url, args, kwargs))
+            return response({'access_token': 'token'} if '/oauth/token' in url else {'id': 'confirmed'})
+
+        monkeypatch.setattr('rdmo.services.providers.requests.post', post)
+        monkeypatch.setattr('rdmo.services.providers.requests.get', lambda *args, **kwargs: response({
+            'data': [{'id': 'workspace', 'descriptiveMetadata': {'title': 'Workspace'}}],
+        }))
+        url = export_url(project, key)
+        authorized = host.get(url)
+        callback = reverse('oauth_callback', args=[key])
+        state = parse_qs(urlsplit(authorized.url).query)['state'][0]
+        assert host.get(callback, {'state': state, 'code': 'workspace-code'}).status_code == 302
+        assert host.get(url).status_code == 200
+        session = host.session
+        del session[f'{class_name}.access_token']
+        session.save()
+        authorized = host.post(url, {'export': '1', 'dataset': '1', 'workspace': 'workspace'})
+        state = parse_qs(urlsplit(authorized.url).query)['state'][0]
+        queued = host.session[f'{class_name}.request'][2]
+        assert queued['descriptiveMetadata']['title'] == 'Legacy title'
+        failure = Mock(side_effect=AssertionError('Callback must not rebuild mapping data'))
+        monkeypatch.setattr(RadarLegacyExportProvider, 'mapping', replace(
+            LEGACY_MAPPING, build_reader=failure, get_datasets=failure, compute_metadata=failure,
+        ))
+        created = host.get(callback, {'state': state, 'code': 'creation-code'})
+        failure.assert_not_called()
+    assert created.status_code == 302
+    assert created.url == 'https://radar.example.test/radar/en/dataset/confirmed'
+    assert project.values.get(attribute__path='project/dataset/radar_id', set_index=1).text == 'confirmed'
+    assert project.values.get(attribute__path='project/dataset/radar_url', set_index=1).text == created.url
+
+
+def test_legacy_xml_view_uses_native_registration(host, settings):
+    settings.PROJECT_EXPORTS = [*settings.PROJECT_EXPORTS, (
+        'radar-legacy-xml', 'Legacy XML', 'rdmo_radar.exports.RadarLegacyExport',
+    )]
+    project = Project.objects.create(title='Legacy project')
+    add_answer(project, 'project/dataset/id', 'Collection', set_index=1)
+    add_answer(project, 'project/dataset/title', 'Legacy title', set_index=1)
+    url = export_url(project, 'radar-legacy-xml')
+    preview = host.get(url)
+    assert preview.status_code == 200
+    assert preview.context['files'][0]['dataset'].key == '1'
+    downloaded = host.get(url, {'download': '1'})
+    with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+        assert archive.namelist() == ['Legacy title.xml']
+        assert b'<re:title>Legacy title</re:title>' in archive.read('Legacy title.xml')

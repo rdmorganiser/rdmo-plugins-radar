@@ -16,10 +16,12 @@ from rdmo.questions.models import Catalog, CatalogSection, Page, PageQuestion, Q
 from rdmo_radar.exceptions import ExportStoreError, UnsupportedImportMapping
 from rdmo_radar.exports import RadarProjectCredentialsExportProvider, RadarProjectExport, RadarProjectExportProvider
 from rdmo_radar.factories import build_export_service, build_import_service, build_xml_export_service
-from rdmo_radar.imports import RadarImport
+from rdmo_radar.imports import RadarTemplateFrameworkImport as RadarImport
 from rdmo_radar.mappings import ExportDataset, validate_datasets
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.rules import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.fields import Coordinates
 from rdmo_radar.metadata.types import Description, MappingResult, RadarMetadata
 from rdmo_radar.metadata.values import coordinates
 from rdmo_radar.metadata.write_context import ProjectWriteContext
@@ -159,7 +161,12 @@ def custom_import_writer(plugin, *, set_index=None, existing_values, mapping=Non
     def stage(metadata):
         if mapping is not None:
             return mapping(plugin, metadata, set_index=set_index, existing_values=existing_values)
-        context = ProjectWriteContext(plugin, 3 if set_index is None else set_index, existing_values)
+        context = ProjectWriteContext(
+            plugin,
+            existing_values,
+            Coordinates(set_index=3 if set_index is None else set_index),
+            namespace=DEFAULT_URI_PREFIX,
+        )
         context.add(CUSTOM_TITLE, metadata.title, set_prefix='7')
         return tuple(context.issues)
     return stage
@@ -368,15 +375,15 @@ def test_custom_scope_keys_work_through_both_serializers_and_persistence(custom_
     )] == [('10', 3, 'https://radar.test/confirmed')]
 
 
-def test_native_registration_loads_legacy_and_explicit_profiles(custom_project, settings):
+def test_native_registration_loads_explicit_profiles(custom_project, settings):
     settings.PROJECT_EXPORTS = [
-        ('legacy', 'Legacy', 'rdmo_radar.exports.RadarExport'),
+        ('tf-copy', 'TF copy', 'rdmo_radar.exports.RadarTemplateFrameworkExport'),
         ('project', 'Project', 'rdmo_radar.exports.RadarProjectExport'),
         ('tf', 'TF', 'rdmo_radar.exports.RadarTemplateFrameworkExport'),
         ('custom', 'Custom', 'tests.test_mapping_profiles.CustomXmlExport'),
     ]
     plugins = get_plugins('PROJECT_EXPORTS')
-    for key, count in (('legacy', 0), ('project', 1), ('tf', 0), ('custom', 2)):
+    for key, count in (('tf-copy', 0), ('project', 1), ('tf', 0), ('custom', 2)):
         plugins[key].project = custom_project
         assert len(plugins[key].get_datasets()) == count
     assert [file['file_name'] for file in plugins['custom'].prepare_files()] == [
@@ -397,7 +404,7 @@ def test_explicit_dependencies_override_profile_defaults(factory):
     mapping.assert_called_once_with('prepared')
 
 
-@pytest.mark.parametrize('profile', [None, PROJECT_MAPPING, TEMPLATE_FRAMEWORK_MAPPING])
+@pytest.mark.parametrize('profile', [PROJECT_MAPPING, TEMPLATE_FRAMEWORK_MAPPING])
 def test_explicit_none_writer_disables_storage_without_project_queries(db, django_assert_num_queries, profile):
     service = build_export_service(None, profile=profile, reader=lambda dataset: None, writer=None)
     with django_assert_num_queries(0):
@@ -448,7 +455,7 @@ def test_profile_import_hook_owns_allocation_and_stages_native_values(custom_pro
 
 
 def test_unsupported_import_is_explicit_and_does_not_prepare_or_stage(custom_project, django_assert_num_queries):
-    plugin = RadarImport('project', 'Project', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('project', 'Project', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = custom_project
     with django_assert_num_queries(0), pytest.raises(UnsupportedImportMapping, match='does not support import'):
         build_import_service(plugin, profile=PROJECT_MAPPING)
@@ -489,8 +496,6 @@ def test_third_party_discovery_reuses_prepared_values(custom_project, django_ass
 
 
 @pytest.mark.parametrize('class_name, profile', [
-    ('RadarExportProvider', TEMPLATE_FRAMEWORK_MAPPING),
-    ('RadarCredentialsExportProvider', TEMPLATE_FRAMEWORK_MAPPING),
     ('RadarTemplateFrameworkExportProvider', TEMPLATE_FRAMEWORK_MAPPING),
     ('RadarTemplateFrameworkCredentialsExportProvider', TEMPLATE_FRAMEWORK_MAPPING),
     ('RadarProjectExportProvider', PROJECT_MAPPING),
@@ -507,7 +512,7 @@ def test_registered_authentication_classes_select_profiles(custom_project, setti
 
 
 def test_missing_import_hook_accepts_explicit_mapping_without_tf_allocation(custom_project):
-    plugin = RadarImport('custom', 'Custom', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('custom', 'Custom', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = custom_project
     mapping = Mock(return_value=())
     service = build_import_service(plugin, profile=PROJECT_MAPPING, mapping=mapping, parser=lambda root: root)
@@ -554,11 +559,11 @@ def test_oauth_rejects_result_context_from_another_provider_without_storage(cust
 def test_oauth_session_stores_dataset_scope_without_reader(custom_project):
     from types import SimpleNamespace
 
-    from rdmo_radar.exports import RadarExportProvider
+    from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
 
     add_attribute('project/dataset/radar_id')
     add_attribute('project/dataset/radar_url')
-    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider')
+    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider')
     request = SimpleNamespace(session={})
     provider.store_in_session(request, 'export_context', {
         'project_id': custom_project.pk, 'provider': provider.class_name, 'persist': True,
@@ -588,7 +593,7 @@ def test_adapter_datasets_are_operation_scoped_and_rebuilt_for_profile_changes(c
 def test_template_framework_dataset_preserves_numeric_xml_fallback_without_inventing_title(db):
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', '', set_index=5)
-    service = build_xml_export_service(project)
+    service = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING)
     dataset = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(project, service.reader)[0]
     assert dataset.label == 'Dataset #6'
     file = service.compute_files([dataset])[0]

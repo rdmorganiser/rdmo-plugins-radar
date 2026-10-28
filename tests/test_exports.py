@@ -18,8 +18,9 @@ import requests
 from rdmo.services.providers import OauthProviderMixin
 
 from rdmo_radar.exceptions import RadarProtocolError
-from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
-from rdmo_radar.exports.exports import RadarExport
+from rdmo_radar.exports import RadarTemplateFrameworkCredentialsExportProvider as RadarCredentialsExportProvider
+from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
+from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExport
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import (
     get_radar_schema,
@@ -27,7 +28,7 @@ from rdmo_radar.exports.validation import (
     validate_radar_xml,
 )
 from rdmo_radar.mappings import ExportDataset
-from rdmo_radar.metadata.constants import APIVocabulary, XMLVocabulary
+from rdmo_radar.mappings.template_framework.vocabulary import APIVocabulary, XMLVocabulary
 from rdmo_radar.metadata.types import MappingResult, RadarMetadata
 
 from .helpers import add_answer, complete_metadata, configure_service, dataset_payload, make_export, read_metadata
@@ -556,7 +557,7 @@ def test_credentials_are_exchanged_without_being_stored(monkeypatch):
     assert provider.submit_credentials_form() == ('project_export', 1, 'radar')
     assert captured == [('radar-user', 'radar-password')]
     assert provider.request.session == {
-        'rdmo_radar.exports.RadarCredentialsExportProvider.access_token': 'bearer-token',
+        'rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider.access_token': 'bearer-token',
     }
     assert 'radar-password' not in repr(provider.request.session)
 
@@ -1029,7 +1030,7 @@ def test_renderer_keeps_publisher_and_rights_holder_override_points():
 
 
 def test_zip_export_is_complete_and_readable():
-    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.project = SimpleNamespace(title='Project')
     export.get_datasets = lambda: [0, 1]
     export.get_service().mapping = lambda context: MappingResult(
@@ -1094,7 +1095,7 @@ def test_renderer_output_validates_against_rddm_9_3_schema():
 
 
 def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
-    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
     export.get_datasets = lambda: [0, 1]
@@ -1123,7 +1124,7 @@ def test_invalid_xml_export_shows_warnings_before_download(monkeypatch):
 
 
 def test_invalid_xml_export_can_be_downloaded_after_confirmation():
-    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
     export.get_datasets = lambda: [0]
@@ -1141,7 +1142,7 @@ def test_invalid_xml_export_can_be_downloaded_after_confirmation():
 
 
 def test_legacy_dataset_id_marker_reports_missing_required_metadata(monkeypatch):
-    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.project = SimpleNamespace(pk=1, title='Project', get_absolute_url=lambda: '/projects/1/')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/')
     export.get_datasets = lambda: [0]
@@ -1177,7 +1178,7 @@ def test_validation_returns_all_unique_schema_errors(monkeypatch):
 
 
 def test_xml_generation_failure_still_blocks_export(caplog):
-    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     export.project = SimpleNamespace(pk=1, title='Project')
     export.request = RequestFactory().get('/projects/1/export/radar-xml/', {'download': '1'})
     export.get_datasets = lambda: [0]

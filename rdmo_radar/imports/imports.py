@@ -10,13 +10,14 @@ from rdmo.projects.imports import Import
 
 from rdmo_radar.exceptions import UnsupportedImportMapping
 from rdmo_radar.factories import build_import_service
+from rdmo_radar.mappings import require_mapping
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
 logger = logging.getLogger(__name__)
 
 
 class RadarImport(Import):
-    mapping = TEMPLATE_FRAMEWORK_MAPPING
+    mapping = None
 
     def check(self):
         file_type, _encoding = mimetypes.guess_type(self.file_name)
@@ -28,6 +29,7 @@ class RadarImport(Import):
         return False
 
     def process(self):
+        require_mapping(self.mapping)
         if self.current_project is None:
             raise ValidationError(_(
                 'RADAR files can only be imported into existing projects. Please create a project first.'

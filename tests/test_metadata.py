@@ -6,10 +6,10 @@ from rdmo.options.models import Option
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import validate_radar_xml
-from rdmo_radar.imports.imports import RadarImport
+from rdmo_radar.imports.imports import RadarTemplateFrameworkImport as RadarImport
+from rdmo_radar.mappings.template_framework import compute_metadata
+from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 from rdmo_radar.metadata.api import to_api_payload
-from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.constants import XMLVocabulary
 from rdmo_radar.metadata.types import (
     Affiliation,
     Description,

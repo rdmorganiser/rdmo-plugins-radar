@@ -7,15 +7,16 @@ from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 from rdmo.projects.models import Project, Value
 
-from rdmo_radar.exports.exports import RadarExport
+from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExport
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
-from rdmo_radar.metadata.read_context import ProjectReadContext
-from rdmo_radar.metadata.template_framework import (
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.rules import (
     ATTRIBUTE_TO_RADAR_FIELDS,
     DEFAULT_URI_PREFIX,
     select_template_framework_values,
 )
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
 
@@ -48,7 +49,7 @@ def add_namespaced_attribute(path, uri_prefix):
 
 
 def make_export(values=None):
-    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarExport')
+    export = RadarExport('radar-xml', 'RADAR XML', 'rdmo_radar.exports.RadarTemplateFrameworkExport')
     export.project = Project.objects.create(title='Project')
     for path, text in (values or {}).items():
         add_answer(export.project, path, text)
@@ -164,8 +165,10 @@ def configure_service(export, reader=None):
         {}, {}, set_index=selection.scope['set_index'] if isinstance(selection, ExportDataset) else selection,
     )
     if isinstance(export, RadarExport):
-        service = build_xml_export_service(None, reader=reader)
+        service = build_xml_export_service(None, profile=TEMPLATE_FRAMEWORK_MAPPING, reader=reader)
     else:
-        service = build_export_service(None, reader=reader, writer=lambda *args: None)
+        service = build_export_service(
+            None, profile=TEMPLATE_FRAMEWORK_MAPPING, reader=reader, writer=lambda *args: None
+        )
     export.get_service = lambda: service
     return export

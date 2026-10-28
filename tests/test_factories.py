@@ -1,4 +1,5 @@
 """Default assembly and independently replaceable service dependencies."""
+from dataclasses import replace
 from functools import partial
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -11,9 +12,9 @@ from rdmo.projects.models import Project, Snapshot
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.factories import build_export_service, build_import_service, build_xml_export_service
-from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.importer import write_metadata
-from rdmo_radar.metadata.template_framework import compute_next_dataset_index
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS
+from rdmo_radar.mappings.template_framework.rules import compute_next_dataset_index
 from rdmo_radar.metadata.types import MappingIssue, MappingResult, PersonOrOrganization, RadarMetadata
 from rdmo_radar.metadata.xml import to_xml_payload
 
@@ -27,7 +28,7 @@ def test_default_reader_prepares_once_and_isolates_contexts(db, django_assert_nu
         add_answer(project, 'project/dataset/title', f'Dataset {index}', set_index=index)
     kwargs = {'writer': Mock()} if factory is build_export_service else {}
     with django_assert_num_queries(1):
-        service = factory(project, **kwargs)
+        service = factory(project, profile=TEMPLATE_FRAMEWORK_MAPPING, **kwargs)
     with django_assert_num_queries(0):
         for index in range(50):
             context = service.reader(index)
@@ -48,15 +49,15 @@ def test_prepared_reader_honors_snapshot_and_rebuild(db):
     live = add_answer(project, 'project/dataset/title', 'Live')
     add_answer(project, 'project/dataset/title', 'Saved', snapshot=snapshot)
     add_answer(other, 'project/dataset/title', 'Other')
-    service = build_xml_export_service(project)
-    saved = build_xml_export_service(project, snapshot=snapshot)
-    separate = build_xml_export_service(other)
+    service = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING)
+    saved = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot)
+    separate = build_xml_export_service(other, profile=TEMPLATE_FRAMEWORK_MAPPING)
     live.text = 'Changed'
     live.save()
     assert service.mapping(service.reader(0)).metadata.title == 'Live'
     assert saved.mapping(saved.reader(0)).metadata.title == 'Saved'
     assert separate.mapping(separate.reader(0)).metadata.title == 'Other'
-    rebuilt = build_xml_export_service(project)
+    rebuilt = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING)
     assert rebuilt.mapping(rebuilt.reader(0)).metadata.title == 'Changed'
 
 
@@ -66,7 +67,7 @@ def test_rest_defaults_prepare_and_store_supplied_url_without_provider_settings(
     add_answer(project, 'project/dataset/title', 'Draft', set_index=2)
     add_attribute('project/dataset/radar_id')
     add_attribute('project/dataset/radar_url')
-    service = build_export_service(project, clock=lambda: 12.345)
+    service = build_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, clock=lambda: 12.345)
     payload = service.compute_payload(2, 'owner@test')
     assert payload.payload['technicalMetadata']['archiveDate'] == 12345
     assert payload.payload['descriptiveMetadata']['title'] == 'Draft'
@@ -81,8 +82,9 @@ def test_rest_defaults_prepare_and_store_supplied_url_without_provider_settings(
 def test_custom_mapping_partial_for_rest_preserves_other_fields(db):
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', 'Dataset')
-    mapping = partial(compute_metadata, creators=lambda context: [PersonOrOrganization('Custom')])
-    service = build_export_service(project, mapping=mapping)
+    mapping = partial(compute_metadata, fields=replace(TF_FIELDS, readers={**TF_FIELDS.readers,
+        'creators': lambda context, *, target: [PersonOrOrganization('Custom')]}))
+    service = build_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, mapping=mapping)
     result = service.compute_payload(0, 'owner@test')
     assert result.payload['descriptiveMetadata']['title'] == 'Dataset'
     assert result.payload['descriptiveMetadata']['creators']['creator'][0]['creatorName'] == 'Custom'
@@ -93,8 +95,9 @@ def test_custom_mapping_partial_and_xml_defaults_without_radar_settings(db, sett
     del settings.RADAR_PROVIDER
     project = Project.objects.create(title='Project')
     add_answer(project, 'project/dataset/title', 'Dataset')
-    mapping = partial(compute_metadata, creators=lambda context: [PersonOrOrganization('Custom')])
-    service = build_xml_export_service(project, mapping=mapping)
+    mapping = partial(compute_metadata, fields=replace(TF_FIELDS, readers={**TF_FIELDS.readers,
+        'creators': lambda context, *, target: [PersonOrOrganization('Custom')]}))
+    service = build_xml_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, mapping=mapping)
     result = service.mapping(service.reader(0))
     assert result.metadata.title == 'Dataset'
     assert result.metadata.creators == [PersonOrOrganization('Custom')]
@@ -107,7 +110,10 @@ def test_custom_mapping_partial_and_xml_defaults_without_radar_settings(db, sett
 def test_xml_default_output_matches_existing_renderer():
     metadata = complete_metadata()
     service = build_xml_export_service(
-        None, reader=lambda index: None, mapping=lambda context: MappingResult(metadata),
+        None,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        reader=lambda index: None,
+        mapping=lambda context: MappingResult(metadata),
     )
     xml_file = service.compute_files([0])[0]
     assert xml_file.xml_data == prettify_xml(RadarExportRenderer().render(to_xml_payload(metadata)))
@@ -124,7 +130,7 @@ def test_import_prepares_current_values_once_and_stages_without_saving(db, djang
     add_answer(plugin.current_project, 'project/dataset/id', 'Marker', set_index=30)
     persisted = list(plugin.current_project.values.values())
     with django_assert_num_queries(1):
-        service = build_import_service(plugin)
+        service = build_import_service(plugin, profile=TEMPLATE_FRAMEWORK_MAPPING)
     with django_assert_num_queries(0):
         issues = service.process(ElementTree.fromstring(
             '<radarDataset xmlns="http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements">'
@@ -141,12 +147,14 @@ def test_import_prepares_current_values_once_and_stages_without_saving(db, djang
 def test_import_accepts_independent_funding_mapping():
     plugin = make_import()
 
-    def funding(context, references):
-        context.add('project/funder/name', 'Custom funding', dataset=False)
+    def funding(context, references, *, target):
+        context.add('project/funder/name', 'Custom funding', set_index=0)
 
-    mapping = partial(write_metadata, funding=funding)
+    mapping = partial(
+        write_metadata, fields=replace(TF_FIELDS, writers={**TF_FIELDS.writers, 'funding_references': funding})
+    )
     service = build_import_service(
-        plugin, existing_values={}, parser=lambda root: root, mapping=mapping,
+        plugin, profile=TEMPLATE_FRAMEWORK_MAPPING, existing_values={}, parser=lambda root: root, mapping=mapping,
     )
     service.process(RadarMetadata(title='Dataset', creators=[PersonOrOrganization('Creator')]))
     assert {(value.attribute.path, value.text) for value in plugin.values} == {
@@ -161,7 +169,12 @@ def test_import_honors_empty_prepared_values_and_explicit_index(index):
     prepared = {}
     mapping = Mock(return_value=())
     service = build_import_service(
-        plugin, set_index=index, existing_values=prepared, parser=lambda root: root, mapping=mapping,
+        plugin,
+        profile=TEMPLATE_FRAMEWORK_MAPPING,
+        set_index=index,
+        existing_values=prepared,
+        parser=lambda root: root,
+        mapping=mapping,
     )
     metadata = RadarMetadata(title='Input')
     assert service.process(metadata) == ()
@@ -171,7 +184,7 @@ def test_import_honors_empty_prepared_values_and_explicit_index(index):
 
 def test_import_default_preparation_requires_existing_project():
     with pytest.raises(ValueError, match='existing project'):
-        build_import_service(make_import())
+        build_import_service(make_import(), profile=TEMPLATE_FRAMEWORK_MAPPING)
 
 
 def test_shared_index_allocation_preserves_title_only_rule():
@@ -199,6 +212,6 @@ class FalseyCallable:
 def test_explicit_overrides_preserve_falsey_objects_and_skip_unused_defaults(settings, factory, names):
     del settings.RADAR_PROVIDER
     overrides = {name: FalseyCallable() for name in names}
-    service = factory(None, **overrides)
+    service = factory(None, profile=TEMPLATE_FRAMEWORK_MAPPING, **overrides)
     for name, dependency in overrides.items():
         assert getattr(service, name) is dependency

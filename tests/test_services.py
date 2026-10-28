@@ -14,8 +14,8 @@ from rdmo.core.exports import prettify_xml
 from rdmo_radar.exceptions import ExportStoreError, XmlExportError
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_validation_errors
+from rdmo_radar.mappings.template_framework import write_metadata
 from rdmo_radar.metadata.api import compute_radar_payload
-from rdmo_radar.metadata.importer import write_metadata
 from rdmo_radar.metadata.types import MappingIssue, MappingResult, RadarMetadata
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 from rdmo_radar.services import (

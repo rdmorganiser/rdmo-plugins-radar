@@ -13,7 +13,15 @@ from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 
-from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider, RadarProjectExportProvider
+from rdmo_radar.exports import (
+    RadarProjectExportProvider,
+)
+from rdmo_radar.exports import (
+    RadarTemplateFrameworkCredentialsExportProvider as RadarCredentialsExportProvider,
+)
+from rdmo_radar.exports import (
+    RadarTemplateFrameworkExportProvider as RadarExportProvider,
+)
 from rdmo_radar.exports.previews import compute_source_answers
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.metadata.types import MappingAttempt, MappingResult, MappingSource, RadarMetadata
@@ -279,7 +287,7 @@ def test_source_values_respect_selected_flat_scope_and_do_not_expand_shared_answ
 def test_source_values_accept_prepared_synthetic_attributes_without_a_shared_none_identity():
     attribute = Attribute(path='project/dataset/title')
     value = Value(attribute=attribute, text='Synthetic answer', set_index=10)
-    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarExportProvider')
+    provider = RadarExportProvider('radar', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider')
     provider.get_context = lambda dataset: template_framework_context({attribute.path: [value]}, set_index=10)
     assert provider.get_source_values(None) == [value]
 

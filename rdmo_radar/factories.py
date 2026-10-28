@@ -3,7 +3,7 @@ from dataclasses import replace
 from functools import partial
 
 from .exceptions import UnsupportedImportMapping
-from .mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from .mappings import require_mapping
 from .metadata.api import compute_radar_payload
 from .metadata.xml import parse_xml, to_xml_payload
 from .services import RadarExportService, RadarImportService, RadarXmlExportService
@@ -34,7 +34,7 @@ def build_export_service(
     project,
     *,
     snapshot=None,
-    profile=None,
+    profile,
     reader=None,
     mapping=None,
     serializer=None,
@@ -42,9 +42,8 @@ def build_export_service(
     clock=None,
     collect_mapping=False,
 ):
-    """Explicit dependencies win; an omitted profile retains legacy TF defaults."""
-    if profile is None:
-        profile = TEMPLATE_FRAMEWORK_MAPPING
+    """Build from an explicit profile; supplied operation dependencies take precedence."""
+    require_mapping(profile)
     if reader is None:
         reader = profile.build_reader(project, snapshot=snapshot)
     if mapping is None:
@@ -64,7 +63,7 @@ def build_xml_export_service(
     project,
     *,
     snapshot=None,
-    profile=None,
+    profile,
     reader=None,
     mapping=None,
     serializer=None,
@@ -72,8 +71,7 @@ def build_xml_export_service(
     validator=None,
     collect_mapping=False,
 ):
-    if profile is None:
-        profile = TEMPLATE_FRAMEWORK_MAPPING
+    require_mapping(profile)
     if reader is None:
         reader = profile.build_reader(project, snapshot=snapshot)
     if mapping is None:
@@ -101,7 +99,7 @@ def build_xml_export_service(
 def build_import_service(
     import_plugin,
     *,
-    profile=None,
+    profile,
     set_index=None,
     existing_values=None,
     parser=None,
@@ -109,8 +107,7 @@ def build_import_service(
     writer=None,
 ):
     """A profile owns destination/allocation rules; an explicit writer skips preparation."""
-    if profile is None:
-        profile = TEMPLATE_FRAMEWORK_MAPPING
+    require_mapping(profile)
     if parser is None:
         parser = parse_xml
     if writer is None:

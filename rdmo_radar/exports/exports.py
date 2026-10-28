@@ -10,7 +10,8 @@ from rdmo.projects.exports import Export
 
 from rdmo_radar.exceptions import XmlExportError
 from rdmo_radar.factories import build_xml_export_service
-from rdmo_radar.mappings import validate_datasets
+from rdmo_radar.mappings import require_mapping, validate_datasets
+from rdmo_radar.mappings.legacy import LEGACY_MAPPING
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
@@ -21,9 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 class RadarExport(Export):
-    mapping = TEMPLATE_FRAMEWORK_MAPPING
+    mapping = None
 
     def get_service(self):
+        require_mapping(self.mapping)
         if self.project is None and self.snapshot is not None:
             self.project = self.snapshot.project
         collect_mapping = (
@@ -136,3 +138,7 @@ class RadarProjectExport(RadarExport):
 
 class RadarTemplateFrameworkExport(RadarExport):
     mapping = TEMPLATE_FRAMEWORK_MAPPING
+
+
+class RadarLegacyExport(RadarExport):
+    mapping = LEGACY_MAPPING

@@ -9,6 +9,7 @@ on:
     paths:
       - '.github/workflows/**'
       - 'rdmo_radar/**'
+      - 'examples/**'
       - 'tests/**'
       - pytest.ini
       - .pre-commit-config.yaml
@@ -62,11 +63,12 @@ jobs:
       - run: python -Ic 'import rdmo_radar; print(rdmo_radar.__version__)'
 
   test:
-    name: Test (${{ matrix.label }})
+    name: Test (${{ matrix.label }}, Python ${{ matrix.python }})
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
+        python: ['3.12', '3.14']
         include:
           - label: RDMO
             rdmo: rdmo
@@ -75,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
       - run: python -m pip install --upgrade pip setuptools wheel
       - run: python -m pip install -e .[dev] '${{ matrix.rdmo }}'

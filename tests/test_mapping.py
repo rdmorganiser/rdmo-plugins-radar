@@ -7,13 +7,14 @@ import pytest
 from rdmo.domain.models import Attribute
 from rdmo.projects.models import Value
 
-from rdmo_radar.exports.exports import RadarExport
+from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExport
+from rdmo_radar.mappings.template_framework import compute_metadata, write_metadata
+from rdmo_radar.mappings.template_framework.dataset_writers import write_title
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS
+from rdmo_radar.mappings.template_framework.people_writers import merge_contributors, merge_funding, write_creators
 from rdmo_radar.metadata.api import to_api_payload
-from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.dataset import write_dataset_fields
-from rdmo_radar.metadata.funding import merge_funding
-from rdmo_radar.metadata.importer import write_metadata
-from rdmo_radar.metadata.people import merge_contributors, write_creators
+from rdmo_radar.metadata.builder import compute_metadata as compose_metadata
+from rdmo_radar.metadata.fields import FieldMapping
 from rdmo_radar.metadata.types import (
     FundingReference,
     MappingIssue,
@@ -35,14 +36,15 @@ from .helpers import (
 
 
 @pytest.mark.parametrize('component, replacement, changes', [
-    ('dataset', RadarMetadata(title='Custom', resource=Resource('Description')), {'title': 'Custom'}),
+    ('title', 'Custom', {'title': 'Custom'}),
     ('creators', [PersonOrOrganization('Custom')], {'creators': [PersonOrOrganization('Custom')]}),
     ('contributors', [PersonOrOrganization('Custom')], {'contributors': [PersonOrOrganization('Custom')]}),
-    ('funding', [FundingReference('Custom')], {'funding_references': [FundingReference('Custom')]}),
+    ('funding_references', [FundingReference('Custom')], {'funding_references': [FundingReference('Custom')]}),
 ])
 def test_reader_can_be_replaced_without_changing_other_fields(component, replacement, changes):
     baseline = compute_metadata(make_read_context())
-    result = compute_metadata(make_read_context(), **{component: lambda context: replacement})
+    fields = replace(TF_FIELDS, readers={**TF_FIELDS.readers, component: lambda context, *, target: replacement})
+    result = compose_metadata(make_read_context(), fields=fields)
 
     assert result.metadata == replace(baseline.metadata, **changes)
     assert result.issues == baseline.issues == ()
@@ -52,25 +54,27 @@ def test_readers_run_in_order_and_snapshot_diagnostics():
     context = make_read_context()
     calls = []
 
-    def dataset(ctx):
+    def dataset(ctx, *, target):
         assert ctx is context
         calls.append('dataset')
         ctx.warn('title', 'project/dataset/title', 'First warning')
-        return RadarMetadata(title='Dataset')
+        return 'Dataset'
 
-    def people(ctx):
+    def people(ctx, *, target):
         assert ctx is context
         calls.append('people')
         ctx.warn('title', 'project/dataset/title', 'First warning')
         return [PersonOrOrganization('Person')]
 
-    def funding(ctx):
+    def funding(ctx, *, target):
         assert ctx is context
         calls.append('funding')
         ctx.warn('funding', 'project/funder/name', 'Second warning')
         return []
 
-    result = compute_metadata(context, dataset=dataset, creators=people, contributors=people, funding=funding)
+    result = compose_metadata(context, fields=FieldMapping(readers={
+        'title': dataset, 'creators': people, 'contributors': people, 'funding_references': funding,
+    }))
     assert calls == ['dataset', 'people', 'people', 'funding']
     assert [issue.reason for issue in result.issues] == ['First warning', 'Second warning']
     context.issues.clear()
@@ -88,7 +92,7 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
     context.values['project/dataset/title'].append(Value(
         attribute=Attribute(path='project/dataset/title'), text='Second dataset', set_index=1,
     ))
-    export = configure_service(RadarExport('radar', 'RADAR', 'rdmo_radar.exports.RadarExport'))
+    export = configure_service(RadarExport('radar', 'RADAR', 'rdmo_radar.exports.RadarTemplateFrameworkExport'))
     configure_service(export, reader=lambda set_index: template_framework_context(context.values, set_index=set_index))
 
     first = read_metadata(export, 0)
@@ -108,10 +112,10 @@ def test_dataset_diagnostics_stay_with_their_results_and_export_files():
 
 
 @pytest.mark.parametrize('component, changed_paths', [
-    ('dataset', {'project/dataset/title'}),
+    ('title', {'project/dataset/title'}),
     ('creators', {'project/dataset/creator/name'}),
     ('contributors', {'project/partner/name'}),
-    ('funding', {'project/funder/id', 'project/funder/name'}),
+    ('funding_references', {'project/funder/id', 'project/funder/name'}),
 ])
 def test_writer_can_be_replaced_without_changing_other_staged_values(component, changed_paths):
     metadata = RadarMetadata(
@@ -123,9 +127,9 @@ def test_writer_can_be_replaced_without_changing_other_staged_values(component, 
     baseline = make_import()
     assert write_metadata(baseline, metadata, 10) == ()
 
-    def custom(context, data):
-        if component == 'dataset':
-            write_dataset_fields(context, replace(data, title='Custom'))
+    def custom(context, data, *, target):
+        if component == 'title':
+            write_title(context, 'Custom', target=target)
         elif component == 'creators':
             write_creators(context, [PersonOrOrganization('Custom')])
         elif component == 'contributors':
@@ -134,7 +138,12 @@ def test_writer_can_be_replaced_without_changing_other_staged_values(component, 
             merge_funding(context, [FundingReference('Custom', award_number='Award')])
 
     plugin = make_import()
-    assert write_metadata(plugin, metadata, 10, **{component: custom}) == ()
+    assert (
+        write_metadata(
+            plugin, metadata, 10, fields=replace(TF_FIELDS, writers={**TF_FIELDS.writers, component: custom})
+        )
+        == ()
+    )
 
     def unchanged(values):
         return [(value.attribute.path, value.text, value.option, value.set_prefix,
@@ -154,7 +163,7 @@ def test_writers_run_in_order_and_return_only_a_diagnostic_snapshot():
     contexts = []
 
     def writer(name, expected):
-        def write(context, data):
+        def write(context, data, *, target):
             assert data is expected
             calls.append(name)
             contexts.append(context)
@@ -163,14 +172,15 @@ def test_writers_run_in_order_and_return_only_a_diagnostic_snapshot():
         return write
 
     issues = write_metadata(
-        make_import(), metadata, 0,
-        dataset=writer('dataset', metadata), creators=writer('creators', metadata.creators),
-        contributors=writer('contributors', metadata.contributors),
-        funding=writer('funding', metadata.funding_references),
+        make_import(), metadata, 0, fields=FieldMapping(writers={
+            'creators': writer('creators', metadata.creators),
+            'contributors': writer('contributors', metadata.contributors),
+            'funding_references': writer('funding', metadata.funding_references),
+        }),
     )
-    assert calls == ['dataset', 'creators', 'contributors', 'funding']
+    assert calls == ['creators', 'contributors', 'funding']
     assert issues == tuple(MappingIssue(name, 'Custom warning') for name in calls)
     assert all(context is contexts[0] for context in contexts)
     contexts[0].issues.clear()
-    assert len(issues) == 4
+    assert len(issues) == 3
     assert not isinstance(issues, MappingResult)

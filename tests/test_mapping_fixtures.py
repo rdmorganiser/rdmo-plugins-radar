@@ -16,10 +16,13 @@ from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 from rdmo.questions.models import Catalog, QuestionSet
 
-from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
+from rdmo_radar.exports import RadarTemplateFrameworkCredentialsExportProvider as RadarCredentialsExportProvider
+from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors
-from rdmo_radar.metadata.crosswalks import SUBJECT_OPTIONS
+from rdmo_radar.mappings.template_framework.crosswalks import SUBJECT_OPTIONS
+from rdmo_radar.mappings.template_framework.rules import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.fields import Coordinates
 from rdmo_radar.metadata.types import (
     FundingReference,
     Identifier,
@@ -456,7 +459,7 @@ def test_unknown_vocabulary_entries_preserve_labels(prototype):
     metadata = result.metadata
     assert metadata.subject_areas == [SubjectArea('Other', 'Unlisted choice: Details')]
     assert metadata.data_sources == [Resource('Unlisted choice: Source details', 'Other')]
-    assert {'subjectAreas', 'dataSources'} <= {issue.field for issue in result.issues}
+    assert {'subject_areas', 'data_sources'} <= {issue.field for issue in result.issues}
 
 
 def test_legacy_flat_layout_and_nested_creators_without_catalog(db):
@@ -498,9 +501,9 @@ def test_import_resolves_installed_uri_aliases_through_public_api(prototype):
             uri_prefix='https://custom.example.test/terms', uri_path='radar_data_source/survey', text_lang1='Survey')
     option.uri_prefix = 'https://custom.example.test/terms'
     option.save()
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = prototype
-    context = ProjectWriteContext(plugin, 2, existing_values={})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=2), namespace=DEFAULT_URI_PREFIX)
     assert context.fetch_attribute('project/dataset/description') == attribute
     assert context.fetch_option('radar_data_source/survey') == option
     assert context.fetch_attribute('project/missing') is None

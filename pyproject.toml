@@ -12,7 +12,7 @@ maintainers = [
 ]
 description = "Plugins to connect RDMO with RADAR"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {file = "LICENSE"}
 classifiers = [
     'Development Status :: 5 - Production/Stable',
@@ -22,8 +22,6 @@ classifiers = [
     'License :: OSI Approved :: Apache Software License',
     'Operating System :: OS Independent',
     "Programming Language :: Python :: 3 :: Only",
-    'Programming Language :: Python :: 3.10',
-    'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
     'Programming Language :: Python :: 3.13',
     'Programming Language :: Python :: 3.14',
@@ -66,7 +64,7 @@ rdmo_radar = [
 version = {attr = "rdmo_radar.__version__"}
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]

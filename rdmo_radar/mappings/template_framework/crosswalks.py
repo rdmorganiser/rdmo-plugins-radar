@@ -59,9 +59,9 @@ SUBJECT_OPTIONS = {f'research_fields/{key}': value for key, value in SUBJECTS.it
 
 CREATION_METHOD_OPTIONS = {
     f'dfg_new_data/dfg-nd_{index:02}': (
-        'Observation' if index == 0 else 'Survey' if index in (1, 2)
-        else 'Trial' if index in (3, 4, 5) else 'Other'
-    ) for index in range(15)
+        'Observation' if index == 0 else 'Survey' if index in (1, 2) else 'Trial' if index in (3, 4, 5) else 'Other'
+    )
+    for index in range(15)
 }
 
 SOFTWARE_REQUIREMENT = 'dmp4nfdi/v2-0-0/ur00'

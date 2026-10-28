@@ -8,11 +8,11 @@ from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot, Value
 
-from rdmo_radar.imports import RadarImport
-from rdmo_radar.metadata.funding import merge_funding
-from rdmo_radar.metadata.importer import write_metadata
-from rdmo_radar.metadata.people import write_creators
-from rdmo_radar.metadata.template_framework import DEFAULT_URI_PREFIX
+from rdmo_radar.imports import RadarTemplateFrameworkImport as RadarImport
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, write_metadata
+from rdmo_radar.mappings.template_framework.people_writers import merge_funding, write_creators
+from rdmo_radar.mappings.template_framework.rules import DEFAULT_URI_PREFIX
+from rdmo_radar.metadata.fields import Coordinates
 from rdmo_radar.metadata.types import FundingReference, Identifier, PersonOrOrganization, RadarMetadata
 from rdmo_radar.metadata.write_context import ProjectWriteContext
 from rdmo_radar.metadata.xml import parse_xml
@@ -42,7 +42,7 @@ def make_context(existing=None, staged=None):
     values = {}
     for value in existing:
         values.setdefault(value.attribute.path, []).append(value)
-    return ProjectWriteContext(plugin, dataset_index=0, existing_values=values)
+    return ProjectWriteContext(plugin, values, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
 
 
 def test_funder_identifier_uses_rddm_type_attribute():
@@ -109,7 +109,7 @@ def test_merge_uses_existing_and_staged_values_without_changing_prepared_data(db
 
 def test_staged_text_and_options_keep_creator_coordinates(db, django_assert_num_queries):
     context = make_context()
-    context.dataset_index = 10
+    context.coordinates = Coordinates(set_index=10)
     option = Option(uri_path='name_type/personal')
     context.import_plugin.get_option = lambda uri: option if uri == Option.build_uri(
         DEFAULT_URI_PREFIX, option.uri_path,
@@ -131,7 +131,7 @@ def test_staged_text_and_options_keep_creator_coordinates(db, django_assert_num_
     with django_assert_num_queries(0):
         value = context.add_option('project/dataset/creator/name_type', 'Personal',
                                    {'name_type/personal': 'Personal'}, text='Details',
-                                   collection_index=3, dataset=False)
+                                   collection_index=3, set_index=0)
     assert (value.text, value.option, value.set_prefix, value.set_index, value.collection_index, value.pk) == (
         'Details', option, '', 0, 3, None,
     )
@@ -155,7 +155,7 @@ def test_import_loads_values_once_and_preserves_project_data(db, django_assert_n
     for path in ('project/partner/family_name', 'project/funder/programme/title', 'project/funder/programme/url'):
         add_attribute(path)
     persisted = list(project.values.values())
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = project
     contributors = ''.join(
         f'<contributor><contributorName>Partner {index}</contributorName></contributor>'
@@ -208,7 +208,7 @@ def test_import_loads_values_once_and_preserves_project_data(db, django_assert_n
 def test_write_metadata_loads_once_for_direct_callers(db, django_assert_num_queries):
     project = Project.objects.create(title='Project')
     add_attribute('project/dataset/title')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = project
 
     with django_assert_num_queries(1):
@@ -225,7 +225,7 @@ def test_write_metadata_loads_once_for_direct_callers(db, django_assert_num_quer
 def test_import_writes_rights_holders_to_tf_ipr_attribute(db, identifier):
     attribute = add_attribute('project/dataset/ipr/rightsholder')
     add_attribute('project/dataset/sharing/rights_holder')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     metadata = RadarMetadata(rights_holders=[
         PersonOrOrganization('Example University', identifiers=[identifier] if identifier else []),
         PersonOrOrganization('Doe, Jane'),
@@ -249,7 +249,7 @@ def test_import_writes_rights_holders_to_tf_ipr_attribute(db, identifier):
 def test_import_reports_missing_rightsholder_without_using_incorrect_attribute(db, incorrect_installed):
     if incorrect_installed:
         add_attribute('project/dataset/sharing/rights_holder')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     metadata = RadarMetadata(rights_holders=[PersonOrOrganization('Example University')])
 
     issues = write_metadata(plugin, metadata, 3, existing_values={})
@@ -278,10 +278,10 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
     options = [Option.objects.create(uri_prefix=prefix, uri_path=option_path)
                for prefix in (DEFAULT_URI_PREFIX, 'https://custom.example.test/terms/')]
     custom_option = Option.objects.create(uri_prefix='https://custom.example.test/terms', uri_path='custom/type')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = ProjectWriteContext(plugin, 0, existing_values={})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
 
     with django_assert_num_queries(0):
         assert context.fetch_attribute(attribute.path) == attribute
@@ -307,8 +307,8 @@ def test_lookup_precedence_and_operation_caches(db, django_assert_num_queries):
     new_attribute = add_attribute('missing')
     new_option = Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path='missing')
     Option.objects.filter(pk=options[0].pk).delete()
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = ProjectWriteContext(plugin, 0, existing_values={})
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     with django_assert_num_queries(1):
         assert context.fetch_option(option_path) == options[1]
         assert context.fetch_attribute('missing') == new_attribute
@@ -321,10 +321,10 @@ def test_short_import_paths_use_model_builders_and_the_official_default(db, sett
     add_namespaced_attribute(attribute.path, settings.DEFAULT_URI_PREFIX)
     option = Option.objects.create(uri_prefix=DEFAULT_URI_PREFIX, uri_path='type/example')
     Option.objects.create(uri_prefix=settings.DEFAULT_URI_PREFIX, uri_path=option.uri_path)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = ProjectWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
 
     with (
         patch.object(Attribute, 'build_uri', wraps=Attribute.build_uri) as build_attribute_uri,
@@ -347,7 +347,7 @@ def test_short_import_paths_use_model_builders_and_the_official_default(db, sett
 @pytest.mark.parametrize('method_name', ['fetch_attribute', 'fetch_option'])
 def test_empty_import_paths_return_none_without_queries_or_uri_construction(db, django_assert_num_queries, method_name):
     plugin = SimpleNamespace(values=[], get_attribute=Mock(), get_option=Mock())
-    context = ProjectWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     with django_assert_num_queries(0):
         assert getattr(context, method_name)('') is None
         assert getattr(context, method_name)('') is None
@@ -377,9 +377,9 @@ def test_ambiguous_custom_attribute_fallback_is_cached_and_stages_nothing(db, dj
     path = 'research/title'
     for namespace in ('first', 'second'):
         add_namespaced_attribute(path, f'https://{namespace}.test')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.get_attribute = Mock(wraps=plugin.get_attribute)
-    context = ProjectWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     with django_assert_num_queries(1):
         assert context.add(path, 'First') is None
     calls = plugin.get_attribute.call_count
@@ -396,9 +396,9 @@ def test_ambiguous_custom_option_fallback_is_cached_and_stages_nothing(db, djang
     add_attribute(path)
     for namespace in ('first', 'second'):
         Option.objects.create(uri_prefix=f'https://{namespace}.test', uri_path='type/example')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.get_option = Mock(wraps=plugin.get_option)
-    context = ProjectWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     with django_assert_num_queries(1):
         assert context.add_option(path, 'Example', {'type/example': 'Example'}) is None
     calls = plugin.get_option.call_count
@@ -415,8 +415,8 @@ def test_exact_import_uris_override_legacy_prefixes_without_fallback(db, django_
     attribute = add_namespaced_attribute(path, 'https://custom.test')
     Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path='type/example')
     option = Option.objects.create(uri_prefix='https://custom.test', uri_path='type/example')
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = ProjectWriteContext(plugin, 10, {})
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=10), namespace=DEFAULT_URI_PREFIX)
     with django_assert_num_queries(0):
         value = context.add_option(attribute.uri, 'Example', {option.uri: 'Example'}, text='Details')
         assert context.get_values(attribute.uri) == [value]
@@ -433,8 +433,10 @@ def test_import_merging_and_allocation_ignore_other_attribute_namespaces(db, dja
     other = add_namespaced_attribute(path, 'https://other.test')
     existing = Value(attribute=canonical, text='Keep', collection_index=2)
     foreign = Value(attribute=other, text='New', collection_index=99)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = ProjectWriteContext(plugin, 0, {path: [existing, foreign]})
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(
+        plugin, {path: [existing, foreign]}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX
+    )
     with django_assert_num_queries(0):
         value = context.add_unique_text(path, 'New')
         assert value is not None
@@ -454,9 +456,9 @@ def test_template_framework_import_allocates_only_after_selected_title_namespace
     add_answer(project, 'project/dataset/title', 'Canonical', set_index=2)
     other = add_namespaced_attribute('project/dataset/title', 'https://other.test')
     Value.objects.create(project=project, attribute=other, text='Foreign', set_index=99)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = project
-    service = build_import_service(plugin, parser=lambda root: root)
+    service = build_import_service(plugin, profile=TEMPLATE_FRAMEWORK_MAPPING, parser=lambda root: root)
     assert service.process(RadarMetadata(title='Imported')) == ()
     assert len(plugin.values) == 1
     assert plugin.values[0].attribute.uri == Attribute.build_uri(DEFAULT_URI_PREFIX, 'project/dataset/title')
@@ -467,8 +469,8 @@ def test_ambiguous_fallback_does_not_merge_existing_foreign_answers(db):
     path = 'research/keywords'
     attributes = [add_namespaced_attribute(path, f'https://{namespace}.test') for namespace in ('first', 'second')]
     values = [Value(attribute=attribute, text='Existing') for attribute in attributes]
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = ProjectWriteContext(plugin, 0, {path: values})
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(plugin, {path: values}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     assert context.add_unique_text(path, 'Existing') is None
     assert plugin.values == []
     assert [issue.reason for issue in context.issues] == ['Ambiguous Attribute import destination']
@@ -480,10 +482,10 @@ def test_default_import_reuses_custom_destination_resolution_for_allocation_and_
     project = Project.objects.create(title='Project')
     attribute = add_namespaced_attribute('project/dataset/title', 'https://custom.test')
     Value.objects.create(project=project, attribute=attribute, text='Existing', set_index=3)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = project
     with django_assert_num_queries(2):
-        service = build_import_service(plugin, parser=lambda root: root)
+        service = build_import_service(plugin, profile=TEMPLATE_FRAMEWORK_MAPPING, parser=lambda root: root)
     with django_assert_num_queries(0):
         assert service.process(RadarMetadata(title='Imported')) == ()
     assert len(plugin.values) == 1
@@ -497,10 +499,10 @@ def test_ambiguous_title_allocation_retains_diagnostics_and_stages_nothing(db, d
     for index, namespace in enumerate(('first', 'second')):
         attribute = add_namespaced_attribute('project/dataset/title', f'https://{namespace}.test')
         Value.objects.create(project=project, attribute=attribute, text='Existing', set_index=index)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
     plugin.current_project = project
     with django_assert_num_queries(2):
-        service = build_import_service(plugin, parser=lambda root: root)
+        service = build_import_service(plugin, profile=TEMPLATE_FRAMEWORK_MAPPING, parser=lambda root: root)
     with django_assert_num_queries(0):
         issues = service.process(RadarMetadata(title='Imported'))
     assert [issue.reason for issue in issues] == ['Ambiguous Attribute import destination']
@@ -512,7 +514,7 @@ def test_distinct_uri_less_staged_attributes_are_not_combined():
     attributes = [Attribute(path=path), Attribute(path=path)]
     staged = [Value(attribute=attribute, text='Existing') for attribute in attributes]
     plugin = SimpleNamespace(values=staged, get_attribute=lambda uri: attributes[0], get_option=lambda uri: None)
-    context = ProjectWriteContext(plugin, 0, {})
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     assert context.get_values(path) == []
     assert context.add(path, 'New') is None
     assert plugin.values == staged
@@ -520,8 +522,8 @@ def test_distinct_uri_less_staged_attributes_are_not_combined():
 
 
 def test_subject_import_does_not_deduplicate_options_from_another_namespace(db):
-    from rdmo_radar.metadata.constants import XMLVocabulary
-    from rdmo_radar.metadata.dataset import write_dataset_fields
+    from rdmo_radar.mappings.template_framework.dataset_writers import write_subject_areas
+    from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
     from rdmo_radar.metadata.types import SubjectArea
 
     attribute = add_attribute('project/research_field/title')
@@ -529,9 +531,11 @@ def test_subject_import_does_not_deduplicate_options_from_another_namespace(db):
     canonical = Option.objects.create(uri_prefix='https://rdmorganiser.github.io/terms', uri_path=path)
     other = Option.objects.create(uri_prefix='https://other.test', uri_path=path)
     existing = Value(attribute=attribute, option=other)
-    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarImport')
-    context = ProjectWriteContext(plugin, 0, {attribute.path: [existing]})
-    write_dataset_fields(context, RadarMetadata(subject_areas=[SubjectArea('Chemistry')]))
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(
+        plugin, {attribute.path: [existing]}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX
+    )
+    write_subject_areas(context, [SubjectArea('Chemistry')], target='subject_areas')
     assert len(plugin.values) == 1
     assert plugin.values[0].option_id == canonical.pk
     assert plugin.values[0].collection_index == 1
@@ -545,7 +549,7 @@ def test_import_merging_uses_primary_key_when_cached_attribute_labels_differ():
     existing = Value(attribute=current, text='Existing', collection_index=2)
     staged = Value(attribute=cached, text='Staged', collection_index=4)
     plugin = SimpleNamespace(values=[staged], get_attribute=lambda uri: cached, get_option=lambda uri: None)
-    context = ProjectWriteContext(plugin, 0, {path: [existing]})
+    context = ProjectWriteContext(plugin, {path: [existing]}, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
     assert context.add_unique_text(path, 'existing') is None
     added = context.add_unique_text(path, 'New')
     assert added.collection_index == 5

@@ -27,6 +27,12 @@ class RadarMapping:
     store_result: Callable | None = None
 
 
+def require_mapping(mapping):
+    if not isinstance(mapping, RadarMapping):
+        raise ValueError('Configure an explicit RADAR mapping or use a named Template Framework/project adapter.')
+    return mapping
+
+
 def validate_datasets(datasets):
     """Reject ambiguous form keys or scopes that cannot survive the session round trip."""
     import json

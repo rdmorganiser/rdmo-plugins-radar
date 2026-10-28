@@ -2,10 +2,10 @@
 
 This repo implements several plugins to connect [RDMO](https://github.com/rdmorganiser/rdmo) with [RADAR](https://www.radar-service.eu/):
 
-* `rdmo_radar.exports.RadarExport`, which lets users download their RDMO datasets as RADAR-XML metadata files,
-* `rdmo_radar.exports.RadarExportProvider`, which pushes RDMO datasets to RADAR using a browser OAuth flow,
-* `rdmo_radar.exports.RadarCredentialsExportProvider`, which pushes them using local RADAR credentials,
-* `rdmo_radar.imports.RadarImport`, which lets users import RADAR-XML metadata files (exported from RADAR) into RDMO.
+* `rdmo_radar.exports.RadarTemplateFrameworkExport`, which lets users download their RDMO datasets as RADAR-XML metadata files,
+* `rdmo_radar.exports.RadarTemplateFrameworkExportProvider`, which pushes RDMO datasets to RADAR using a browser OAuth flow,
+* `rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider`, which pushes them using local RADAR credentials,
+* `rdmo_radar.imports.RadarTemplateFrameworkImport`, which lets users import RADAR-XML metadata files (exported from RADAR) into RDMO.
 
 The direct export can use either an [OAuth 2.0](https://oauth.net/2/) authorization-code flow or RADAR's JSON
 token endpoint, depending on the client registered by RADAR support.
@@ -14,7 +14,7 @@ token endpoint, depending on the client registered by RADAR support.
 Setup
 -----
 
-These instructions use RDMO 2's project export/import interfaces. RDMO 3 frontend integration is deferred.
+Python 3.12 or newer is required. These instructions use RDMO 2's project export/import interfaces. RDMO 3 frontend integration is deferred.
 
 Install the plugin in your RDMO virtual environment using pip (directly from GitHub):
 
@@ -28,11 +28,11 @@ Add the plugin package to `INSTALLED_APPS` so Django can discover its templates:
 INSTALLED_APPS += ['rdmo_radar']
 ```
 
-For the `RadarExport`, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
+For the `RadarTemplateFrameworkExport`, add the plugin to `PROJECT_EXPORTS` in `config/settings/local.py`:
 
 ```python
 PROJECT_EXPORTS += [
-    ('radar-xml', _('as RADAR XML'), 'rdmo_radar.exports.RadarExport')
+    ('radar-xml', _('as RADAR XML'), 'rdmo_radar.exports.RadarTemplateFrameworkExport')
 ]
 ```
 
@@ -145,9 +145,9 @@ to authenticate and fetch actual workspaces.
 
 The authentication modes are:
 
-* `oauth`: use `RadarExportProvider`, the browser authorization-code flow, and `redirect_uri`. This is the default
+* `oauth`: use `RadarTemplateFrameworkExportProvider`, the browser authorization-code flow, and `redirect_uri`. This is the default
   for existing installations without an `authentication_mode` setting.
-* `credentials`: use `RadarCredentialsExportProvider`. Users enter a local RADAR username and password. RDMO sends
+* `credentials`: use `RadarTemplateFrameworkCredentialsExportProvider`. Users enter a local RADAR username and password. RDMO sends
   them directly to the RADAR token endpoint and does not store them. The bearer token stays in the session
   during the export workflow and is removed on success, cancellation, or authentication failure. Metadata,
   permission, and upstream errors preserve the export form and selections. The token request derives
@@ -166,8 +166,8 @@ Select the provider class from the setting when adding it to `PROJECT_EXPORTS`:
 
 ```python
 radar_provider_class = {
-    'oauth': 'rdmo_radar.exports.RadarExportProvider',
-    'credentials': 'rdmo_radar.exports.RadarCredentialsExportProvider',
+    'oauth': 'rdmo_radar.exports.RadarTemplateFrameworkExportProvider',
+    'credentials': 'rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider',
 }[RADAR_PROVIDER.get('authentication_mode', 'oauth')]
 
 PROJECT_EXPORTS += [
@@ -175,19 +175,19 @@ PROJECT_EXPORTS += [
 ]
 ```
 
-For the `RadarImport`, add the plugin to `PROJECT_IMPORTS` in `config/settings/local.py`:
+For the `RadarTemplateFrameworkImport`, add the plugin to `PROJECT_IMPORTS` in `config/settings/local.py`:
 
 ```python
 PROJECT_IMPORTS += [
-    ('radar-xml', _('from RADAR XML'), 'rdmo_radar.imports.RadarImport')
+    ('radar-xml', _('from RADAR XML'), 'rdmo_radar.imports.RadarTemplateFrameworkImport')
 ]
 ```
 
 
 ### Mapping selection
 
-Existing registrations and factories retain the Template Framework mapping. New explicit classes let
-project-level and collection-based mappings coexist in one installation:
+Select a mapping through an explicitly named adapter. Project-level and collection-based mappings can
+coexist in one installation:
 
 ```python
 PROJECT_EXPORTS += [
@@ -208,6 +208,7 @@ For direct exports, select the corresponding registered class:
 | --- | --- | --- |
 | Project | `rdmo_radar.exports.RadarProjectExportProvider` | `rdmo_radar.exports.RadarProjectCredentialsExportProvider` |
 | Template Framework | `rdmo_radar.exports.RadarTemplateFrameworkExportProvider` | `rdmo_radar.exports.RadarTemplateFrameworkCredentialsExportProvider` |
+| Legacy | `rdmo_radar.exports.RadarLegacyExportProvider` | `rdmo_radar.exports.RadarLegacyCredentialsExportProvider` |
 
 For example:
 
@@ -219,10 +220,22 @@ project_provider_class = {
 PROJECT_EXPORTS += [('radar-project', _('directly to RADAR (project)'), project_provider_class)]
 ```
 
-`RADAR_PROVIDER` configures authentication; the registered class selects the mapping. The existing
-`RadarExport`, `RadarExportProvider`, `RadarCredentialsExportProvider`, and `RadarImport` paths remain
-Template Framework entry points. `rdmo_radar.imports.RadarTemplateFrameworkImport` is an explicit equivalent.
-There is no built-in project importer: arbitrary catalogs need an explicit destination mapping.
+`RADAR_PROVIDER` configures authentication; the registered class selects the mapping.
+The generic `RadarExport`, `RadarExportProvider`, `RadarCredentialsExportProvider`, and `RadarImport`
+classes require an explicit `mapping` on a subclass. Service factories require `profile=`. They have no
+implicit TF defaults. Use the named TF classes above for existing TF catalogs, including
+`rdmo_radar.imports.RadarTemplateFrameworkImport` for XML imports. The project profile has no importer.
+
+### Legacy mapping showcase
+
+The packaged `rdmo_radar.mappings.legacy.LEGACY_MAPPING` re-expresses the original plugin's
+export mapping through the current field strategies and shared XML/REST services. It retains
+historical Attribute sources, first/last-answer rules, flat dataset markers, and result destinations.
+Use `RadarLegacyExport`, `RadarLegacyExportProvider`, or `RadarLegacyCredentialsExportProvider`
+to compare it with the Template Framework mapping. It has no importer.
+
+See the [legacy mapping guide](docs/legacy-mapping.md) for side-by-side definitions, registration,
+customization, and the documented corrections to the original implementation.
 
 ### Simple custom mapping
 
@@ -320,7 +333,7 @@ and REST serializer; authentication remains configured through `RADAR_PROVIDER`.
 supplies no local result storage or import mapping.
 
 This preserves the original exporter's straightforward mapping style. It does not restore its specific
-Template Framework field mappings: historical registrations still use that profile. More advanced catalogs
+Template Framework field mappings: the named TF registrations use that profile. More advanced catalogs
 can customize discovery, scoping, imports, and persistence through the existing
 [profile contracts and factory overrides](docs/architecture.md#mapping-profiles-and-datasets).
 
@@ -345,8 +358,12 @@ Free-text keyword strings remain supported. Custom mappings can also supply
 `Affiliation(name, identifier, identifier_scheme, scheme_uri=...)` from `rdmo_radar.metadata.types`.
 Standard ORCID/ROR and GND keyword scheme URIs are supplied when omitted. TS4NFDI integration is deferred.
 
-Use ordinary callable composition to override publishers. This complete example reads an explicitly
-chosen local Attribute and retains the TF readers for all other fields:
+All fields use the same configuration pattern. A `FieldMapping` holds independent reader and writer
+callbacks keyed by canonical `RadarMetadata` field names. A reader receives `(context, *, target)`; a
+writer receives `(context, value, *, target)`. Profiles supply Attributes, scopes, Option crosswalks,
+grouping and import destinations. Reusable getters contain no TF Attribute defaults.
+
+For example, replace publishers and language while retaining the other TF readers:
 
 ```python
 from dataclasses import replace
@@ -354,45 +371,57 @@ from functools import partial
 
 from rdmo_radar.exports import RadarTemplateFrameworkExport
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS
 from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.entities import read_named_values
+from rdmo_radar.metadata.fields import Source, read_language, read_names
 
-
-def read_publishers(context):
-    return read_named_values(
-        context, 'https://example.org/terms/domain/research/publisher', target='publishers',
-    )
+fields = replace(TF_FIELDS, readers={
+    **TF_FIELDS.readers,
+    'publishers': partial(
+        read_names, source=Source('https://example.org/domain/research/publisher'),
+    ),
+    'language': partial(
+        read_language, source=Source('https://example.org/domain/research/language'),
+        option_map={'https://example.org/options/languages/de': 'deu'},
+    ),
+})
 
 
 class LocalRadarExport(RadarTemplateFrameworkExport):
     mapping = replace(
         TEMPLATE_FRAMEWORK_MAPPING,
-        compute_metadata=partial(compute_metadata, publishers=read_publishers),
+        compute_metadata=partial(compute_metadata, fields=fields),
     )
 ```
 
-The optional `publishers` callable overrides the dataset reader's publishers. Omitting it preserves
-publishers supplied by the dataset reader. Registered direct-export subclasses can use the same mapping.
-`read_named_values` accepts an optional explicit scheme such as `scheme='ROR'` for bare provider IDs;
-it excludes responsibility Options and reports missing names or conflicting identities.
+An absent or unsupported answer at the chosen source does not fall back to a TF Attribute.
+`Source(..., scope='project')` explicitly selects shared project answers. For example, an installation
+that deliberately treats coordination organisations as creators can bind `read_names` to
+`Source('project/coordination/organization', scope='project')`. This does not establish affiliations
+between those organisations and individual owners.
 
-Coordination organisations require an explicit installation decision to count as creators. For an
-installation that has made that decision, supply a creator callable instead:
+For grouped people and funding, use `PersonSources`, `AffiliationSources`, `IdentifierSource`,
+`FundingSources`, and `GroupSpec` from `rdmo_radar.metadata.fields`. Selectors can be full Attribute
+URIs, IDs, model instances, or unambiguous paths. Normalization functions are independent of Attribute
+selection; getters accept normalizer callables where interpretation needs customization. A custom
+Python function can replace any reader or writer.
 
-```python
-def read_institutional_creators(context):
-    return read_named_values(context.shared(), 'project/coordination/organization', target='creators')
+Export and import mappings are independent. Changing `fields.readers` does not change import destinations.
+Import writers use explicit `Destination(attribute, Coordinates(...))` objects and their own canonical-to-Option
+crosswalks. The TF profile continues to own its conservative merge and allocation rules. Unconfigured export
+fields retain canonical defaults; populated import fields without writers produce warnings.
 
+The [standalone custom profile](examples/custom_mapping.py) demonstrates discovery, nested groups, export,
+import staging, result storage, and all four adapter registrations without TF configuration. Copy it into
+your own plugin, configure its URIs and crosswalks, and register its classes through `PROJECT_EXPORTS` or
+`PROJECT_IMPORTS`. Its limited example maps title, language, and creators; add callbacks for other fields.
+See the [architecture contracts](docs/architecture.md#service-and-mapping-contracts) for the public interfaces.
 
-institutional_mapping = replace(
-    TEMPLATE_FRAMEWORK_MAPPING,
-    compute_metadata=partial(compute_metadata, creators=read_institutional_creators),
-)
-```
-
-This explicitly replaces the creator reader. It does not establish affiliations between project
-organisations and individual dataset owners. All readers must use prepared answers without network
-requests or persistent changes, because the same mapping runs during previews and export.
+This prototype changes the previous component-hook API: replace `dataset=`, `creators=`, `funding=` and
+`language_path=` overrides with per-field callbacks. Replace generic class registrations with named TF/project
+classes or explicitly configured subclasses. No catalog, database, or answer migration is needed.
+All readers run on prepared answers without network requests or persistent changes because previews and
+exports share them. Import writers stage unsaved Values for RDMO's preview/apply workflow.
 
 ### Custom RADAR request payload
 

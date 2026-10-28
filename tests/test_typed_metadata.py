@@ -1,5 +1,6 @@
 """Typed provider answers and the reviewed 27 October 2026 TF source paths."""
 from copy import deepcopy
+from dataclasses import replace
 from functools import partial
 from unittest.mock import Mock
 from xml.etree import ElementTree
@@ -12,10 +13,10 @@ from rdmo.questions.models import Catalog, CatalogSection, Section
 
 from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.factories import build_export_service, build_xml_export_service
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS
 from rdmo_radar.metadata.api import to_api_payload
-from rdmo_radar.metadata.builder import compute_metadata
-from rdmo_radar.metadata.dataset import write_dataset_fields
-from rdmo_radar.metadata.entities import read_named_values
+from rdmo_radar.metadata.fields import Source, read_names
 from rdmo_radar.metadata.normalization import normalize_answer
 from rdmo_radar.metadata.provenance import json_leaves, xml_leaves
 from rdmo_radar.metadata.types import Affiliation, FundingReference, Identifier, Keyword, PersonOrOrganization
@@ -71,7 +72,7 @@ def project(db):
 
 
 def metadata(project, index=2, **kwargs):
-    service = build_export_service(project, **kwargs)
+    service = build_export_service(project, profile=TEMPLATE_FRAMEWORK_MAPPING, **kwargs)
     return service.mapping(service.reader(index))
 
 
@@ -342,21 +343,23 @@ def test_ambiguous_preferred_attribute_does_not_enable_legacy_fallback(project):
     assert any('Ambiguous Attribute' in issue.reason for issue in result.issues)
 
 
-def test_publisher_callable_preserves_dataset_override_and_can_replace_it(project):
-    def dataset(context):
-        return complete_metadata(publishers=[PersonOrOrganization('Custom dataset publisher')])
-    assert metadata(project, mapping=partial(compute_metadata, dataset=dataset)).metadata.publishers[0].name == (
-        'Custom dataset publisher'
+def test_publisher_callable_can_be_replaced_independently(project):
+    fields = replace(TF_FIELDS, readers={**TF_FIELDS.readers,
+        'publishers': lambda context, *, target: [PersonOrOrganization('Custom publisher')]})
+    assert metadata(project, mapping=partial(compute_metadata, fields=fields)).metadata.publishers[0].name == (
+        'Custom publisher'
     )
     add_answer(project, 'local/publisher', 'Chosen publisher', set_index=2)
-    mapping = partial(compute_metadata, dataset=dataset,
-                      publishers=lambda context: read_named_values(context, 'local/publisher', target='publishers'))
+    fields = replace(fields, readers={**fields.readers,
+        'publishers': partial(read_names, source=Source('local/publisher'))})
+    mapping = partial(compute_metadata, fields=fields)
     assert metadata(project, mapping=mapping).metadata.publishers[0].name == 'Chosen publisher'
 
 
 def test_typed_keyword_import_keeps_labels_and_reports_identity_loss(db):
     context = make_context()
-    write_dataset_fields(context, complete_metadata(keywords=[Keyword('Term', 'GND', value_uri=GND)]))
+    write_metadata(context.import_plugin, complete_metadata(keywords=[Keyword('Term', 'GND', value_uri=GND)]),
+                   context.coordinates.set_index, context=context)
     assert any(value.text == 'Term' for value in context.import_plugin.values)
     assert any(issue.field == 'keywords' and 'labels' in issue.reason for issue in context.issues)
 
@@ -427,7 +430,7 @@ def test_offline_preparation_provenance_snapshot_and_query_contract(
     add_answer(project, 'project/funder/name', ror_display(), external_id='0387prb75')
     snapshot = Snapshot.objects.create(project=project, title='Saved')
     factory = build_export_service if kind == 'api' else build_xml_export_service
-    service = factory(project, snapshot=snapshot, collect_mapping=True)
+    service = factory(project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot, collect_mapping=True)
     project.values.filter(snapshot=None, attribute__path='project/dataset/owner/name').update(text='Changed live')
     before = project.values.count()
     monkeypatch.setattr(requests.sessions.Session, 'request',

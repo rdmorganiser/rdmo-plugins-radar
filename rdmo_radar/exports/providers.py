@@ -21,7 +21,8 @@ from rdmo.services.providers import OauthProviderMixin
 from rdmo_radar.client import dataset_page_url, dataset_url, workspace_choices, workspaces_url
 from rdmo_radar.exceptions import ExportStoreError, RadarProtocolError
 from rdmo_radar.factories import build_export_service
-from rdmo_radar.mappings import ExportDataset, validate_datasets
+from rdmo_radar.mappings import ExportDataset, require_mapping, validate_datasets
+from rdmo_radar.mappings.legacy import LEGACY_MAPPING
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.metadata.provenance import validate_payload_provenance
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class RadarExportProviderBase(Export):
-    mapping = TEMPLATE_FRAMEWORK_MAPPING
+    mapping = None
     show_mapping_warnings = None
 
     @property
@@ -43,6 +44,7 @@ class RadarExportProviderBase(Export):
         return getattr(settings, 'RADAR_DEBUG', False)
 
     def get_service(self):
+        require_mapping(self.mapping)
         if self.project is None and self.snapshot is not None:
             self.project = self.snapshot.project
         collect_mapping = (
@@ -384,6 +386,7 @@ class RadarExportProviderBase(Export):
             radar_url = dataset_page_url(context['radar_url'], radar_id, context['language'])
             dataset = ExportDataset(**context['dataset'])
             if context['persist']:
+                require_mapping(self.mapping)
                 if self.mapping.store_result is None:
                     raise ExportStoreError(dataset.key, radar_id, radar_url)
                 project = Project.objects.get(pk=context['project_id'])
@@ -668,3 +671,7 @@ class RadarProjectExportProvider(RadarExportProvider):
 
 class RadarTemplateFrameworkExportProvider(RadarExportProvider):
     mapping = TEMPLATE_FRAMEWORK_MAPPING
+
+
+class RadarLegacyExportProvider(RadarExportProvider):
+    mapping = LEGACY_MAPPING

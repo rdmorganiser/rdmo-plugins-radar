@@ -4,7 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from rdmo_radar.exports import RadarCredentialsExportProvider, RadarExportProvider
+from rdmo_radar.exports import RadarTemplateFrameworkCredentialsExportProvider as RadarCredentialsExportProvider
+from rdmo_radar.exports import RadarTemplateFrameworkExportProvider as RadarExportProvider
 
 from .test_exports import export_provider, make_provider
 
