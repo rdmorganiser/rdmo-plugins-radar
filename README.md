@@ -332,6 +332,12 @@ paths remain fallbacks. Rights-holder export and import use only `project/datase
 See the [source audit](docs/metadata-mapping.md#27-october-2026-attribute-audit)
 for source priority, optional future Attributes and fields still awaiting semantic decisions.
 
+Dataset language answers can contain names such as `Deutsch`, `English` or `Dänisch`, two-/three-letter
+codes, or supported controlled Options. The initial 12-language selection and aliases are listed in the
+[language mapping](docs/metadata-mapping.md#dataset-language). Exports normalize these inputs to RADAR's
+controlled codes, for example `Deutsch` → XML `deu` / REST `DEU`. Unknown or conflicting answers produce
+a mapping warning rather than choosing a language automatically.
+
 GND keyword and ORCID/ROR entity identities are exported alongside clean labels in both REST and XML.
 Free-text keyword strings remain supported. Custom mappings can also supply
 `Keyword('Term', keyword_scheme='GND', value_uri='https://d-nb.info/gnd/4079154-3')`,

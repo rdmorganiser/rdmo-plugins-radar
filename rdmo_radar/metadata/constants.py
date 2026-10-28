@@ -1,5 +1,7 @@
 import re
 
+from .languages import LANGUAGE_OPTIONS
+
 SCHEME_URIS = {
     'ORCID': 'https://orcid.org/',
     'ROR': 'https://ror.org/',
@@ -67,10 +69,7 @@ class XMLVocabulary:
         'identifier_type/w3id': 'w3id'
     }
 
-    language_options = {
-        'language/en': 'eng',
-        'language/de': 'deu'
-    }
+    language_options = LANGUAGE_OPTIONS
 
     name_type_options = {
         'name_type/personal': 'Personal',

@@ -19,6 +19,7 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
 | `metadata/dataset.py`, `metadata/people.py`, `metadata/funding.py` | Map their respective metadata fields. |
 | `metadata/normalization.py`, `metadata/entities.py`, `metadata/keywords.py` | Normalize supported provider displays without I/O; read names and free-text/GND keywords with native Value provenance. |
+| `metadata/languages.py` | Keep the small static language-name/code crosswalk and its scoped reader; canonical codes also supply the reversible Option vocabulary. |
 | `metadata/values.py` | Prepare native Values/catalog placements, match coordinates, and provide shared answer helpers. |
 | `metadata/read_context.py` | Scoped project Value access and mapping diagnostics through `ProjectReadContext`. |
 | `metadata/write_context.py` | Resolve import destinations, merge answers, and stage unsaved Values through `ProjectWriteContext`. |
@@ -302,6 +303,14 @@ Serialization provenance is recorded beside each emitted field, including explic
 These changes add no runtime dependency
 on spreadsheets, external code checkouts, ROR/GND/ORCID plugins or TS4NFDI. TS4NFDI and ontology enrichment
 remain deferred; metadata preparation and previews remain offline.
+
+The TF language reader accepts supported text names/codes alongside existing identity-mapped Options.
+The language table supplies canonical ISO 639-3 values and `language/<ISO 639-1>` Option keys; raw aliases
+are kept separate from import destinations. Unicode/case normalization applies to text inputs. Unmapped
+Options still produce diagnostics rather than matching translated labels. Equivalent inputs share one
+canonical value and retain their native sources in provenance. Unknown or conflicting scalar answers are
+rejected with a mapping issue; no UI locale or remote vocabulary is consulted. Serializers retain their
+existing lower-case XML / uppercase REST representation. See the [supported selection](metadata-mapping.md#dataset-language).
 
 ## Mapping profiles and datasets
 

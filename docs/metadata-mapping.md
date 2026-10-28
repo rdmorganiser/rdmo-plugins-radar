@@ -70,7 +70,45 @@ produce the existing storage-failure result page after confirmed creation rather
 | Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. No parsing of names/versions or mapping of other usage requirements. Missing version is reported. |
 | Creators | Prefer `project/dataset/owner/name`, `/given_name`, `/family_name`; fall back to established `project/dataset/creator/*`. Read provider identities and creator-linked affiliations. Project coordination organisations require a custom mapping. |
 | Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. Responsibility labels never become names. |
-| Other established fields | Preserve acronym as additional title, recognized language options, geolocation region, and `project/dataset/method` processing text when available. |
+| Language | `project/dataset/language`: recognized controlled Options, or supported language names/codes entered as text. Normalize to schema-valid ISO 639-3 codes; see the selection below. |
+| Other established fields | Preserve acronym as additional title, geolocation region, and `project/dataset/method` processing text when available. |
+
+## Dataset language
+
+The dataset language reader accepts this initial European selection from text answers, as well as
+controlled Options with the listed `language/<ISO 639-1>` paths. Existing English/German Options retain
+their behavior. Option identity is authoritative; arbitrary Option labels are not used as vocabulary keys.
+Additional language names and aliases can be reviewed in the small static table in `metadata/languages.py`.
+
+| German name | English name | ISO 639-1 input / Option suffix | Canonical XML code |
+| --- | --- | --- | --- |
+| Englisch | English | en | eng |
+| Deutsch | German | de | deu |
+| Französisch | French | fr | fra |
+| Dänisch | Danish | da | dan |
+| Niederländisch | Dutch | nl | nld |
+| Schwedisch | Swedish | sv | swe |
+| Finnisch | Finnish | fi | fin |
+| Italienisch | Italian | it | ita |
+| Spanisch | Spanish | es | spa |
+| Portugiesisch | Portuguese | pt | por |
+| Polnisch | Polish | pl | pol |
+| Tschechisch | Czech | cs | ces |
+
+Names and codes are matched after Unicode normalization, trimming and case folding. Common native names
+and German ASCII spellings such as `Daenisch` and `Franzoesisch` are supported too. Canonical three-letter
+codes are valid inputs. Bibliographic aliases `ger`, `fre`, `dut` and `cze` normalize to `deu`, `fra`, `nld`
+and `ces`: the bundled RADAR XSD accepts the latter spellings, despite the `ger`/`fre` examples in the PDF.
+The [Library of Congress code guidelines](https://www.loc.gov/aba/pcc/scs/documents/ISO-639-3-guidelines.pdf)
+also distinguish those ISO 639-2/B aliases from ISO 639-3. REST receives the corresponding uppercase enum,
+for example `Deutsch` → canonical/XML `deu` → REST `DEU`. RADAR owns the displayed language name.
+
+Equivalent answers such as `Deutsch`, `de`, `ger` and a German Option agree on one language. Unsupported
+answers, lists in one text field, or multiple different languages omit the scalar field with a mapping
+warning. Blank or absent answers are omitted without a warning; the export language is not inferred from
+the RDMO interface locale. Selection remains dataset/snapshot scoped and performs no remote lookup.
+Import keeps its Option-based behavior, including the added `language/<ISO 639-1>` entries when installed;
+no catalog Options or answer migrations are created automatically.
 
 ## Incompleteness and deferred decisions
 

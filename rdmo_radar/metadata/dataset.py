@@ -4,6 +4,7 @@ from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .entities import read_named_values
 from .keywords import read_keywords
+from .languages import read_language
 from .read_context import ProjectReadContext
 from .types import GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea, as_keyword
 from .values import answer_label, get_option_path, model_key, normalize
@@ -33,7 +34,7 @@ def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
         additional_titles=[acronym] if acronym else [],
         keywords=read_keywords(context.shared()),
         publishers=read_named_values(context, 'project/dataset/curation/responsible_person/name', target='publishers'),
-        language=context.get_option('project/dataset/language', XMLVocabulary.language_options, target='language'),
+        language=read_language(context),
         subject_areas=_read_subjects(context),
         resource=Resource(resource_value) if resource_value else None,
         geo_locations=[GeoLocation(region=geo_location)] if geo_location else [],
