@@ -63,7 +63,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
 | Rights | `project/dataset/sharing/conditions`: CC-BY, CC-BY-NC, CC-BY-ND, CC-BY-SA, CC0, ODC-By, ODbL, and Other. Preserve additional text. Multiple distinct selections omit rights and report all selections for completion in RADAR. |
-| Rights holders | Prefer `project/dataset/ipr/rightsholder`, falling back to `project/dataset/sharing/rights_holder`. Preserve ORCID/ROR provider identities alongside names. Import destinations remain unchanged. |
+| Rights holders | Use only `project/dataset/ipr/rightsholder` for export and import. Preserve ORCID/ROR provider identities alongside names during export; import writes names and warns about unsupported identity data. |
 | Publishers | `project/dataset/curation/responsible_person/name`: text or provider names, with ORCID/ROR identity when available. Responsibility Options are not publisher names. A custom publisher callable can replace this reader. |
 | Funding | Read name, grant-number, and programme fields grouped by answer coordinates. Split `project/funder/name` provider answers into funder name and identifier. Optional `project/funder/id/type` supplies an explicit identifier scheme; it never creates an identifier. `project/funder/id` remains a set marker. Existing programme-URL support remains available. |
 | Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped; GND entries retain label, scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
@@ -99,7 +99,7 @@ catalog snapshot, not every RDMO installation.
 | Creator identifier | CSV leaves `/orcid` and `/ror` children unspecified | Optional `project/dataset/owner/orcid` and `/ror` are plugin conventions. Provider identities in name answers are supported too. |
 | Creator affiliation | `project/dataset/owner/organization/name` and `/identifier/value`, `/identifier/type`: absent | Read creator-linked names and explicit scheme/value pairs, including nested collections and intervening non-collection levels. |
 | Publisher | `project/dataset/curation/responsible_person/name`: present | Text/provider names only. Existing Horizon Europe responsibility choices do not name entities; they produce a mapping issue. |
-| Rights holder | `project/dataset/ipr/rightsholder`: absent | Preferred optional source. Do not substitute `project/dataset/ipr/owner/name`, which is used for a yes/no question. |
+| Rights holder | `project/dataset/ipr/rightsholder`: absent | Sole export source and import destination. Do not substitute `project/dataset/ipr/owner/name`, which is used for a yes/no question. |
 | GND keyword | `project/research_question/keywords/gnd`: present | Read alongside the established free-text Attribute. The Attribute supplies GND context for bare external IDs. Creatable free text stays free text. |
 | Contributor | `project/contributor/person_or_entity`: present | This is a discriminator, not a name. Read sibling `name`, `given_name`, `family_name`, `orcid`, `organization`, `organization/ror` and SMP autocomplete fields. |
 | Contributor role | CSV: `dmp/contributor/role`, absent; actual domain: `project/contributor/role`, present | Prefer actual domain semantics. Also accept the literal CSV alias when it shares the contributor's prepared catalog group. Match Option identities or exact canonical RADAR role text, never translated labels or task descriptions. |
@@ -108,8 +108,13 @@ catalog snapshot, not every RDMO installation.
 | Other source paths | Title, research field, resource description, licence, language, geolocation, creation methods, method, grant/programme fields | Retain established readers and crosswalks. Language remains optional when supplied by an installation. |
 | Ambiguous interpretations | Format as resource type, datatype as source detail, re-used dataset URI without identifier/relation types | Deferred. Preserve the current incomplete-draft diagnostics instead of inventing required classifications. |
 
-New source families take precedence over legacy families when name-bearing answers are present. Both
-populated families produce a warning; fields are not joined across them. Ambiguous preferred Attribute
+The reviewer's correction confirms that `project/dataset/sharing/rights_holder` in the original-plugin
+column was an incorrect reference, not a supported legacy Attribute. It is neither read nor written.
+If the correct IPR Attribute is not installed, export leaves rights holders unset and import reports
+the missing destination without creating an Attribute or migrating existing answers.
+
+Owner and contributor source families take precedence over legacy families when name-bearing answers
+are present. Both populated families produce a warning; fields are not joined across them. Ambiguous preferred Attribute
 identities do not silently enable fallback. Names and identifiers remain associated through full answer
 coordinates and catalog ancestry; matching numeric indices alone do not establish a relationship.
 
@@ -138,10 +143,11 @@ Export-only crosswalks are not reversed: a RADAR category can correspond to mult
 subjects. Additional ODC license options are shared with the existing license vocabulary.
 
 The XML parser preserves supported keyword and identifier attributes in canonical metadata. RDMO import
-still writes labels/names to its established destinations and warns when GND keyword identity, affiliation
-identity or rights-holder identity has no destination. Funder-ID import remains explicitly unsupported;
+writes rights-holder names to the corrected `project/dataset/ipr/rightsholder` destination, retaining their
+dataset and collection indices. Other label/name destinations remain unchanged. Import warns when GND
+keyword identity, affiliation identity or rights-holder identity has no destination. Funder-ID import remains unsupported;
 it never writes a persistent ID to `project/funder/id`. Publisher import remains unsupported. New export
-paths do not change answer allocation or merge rules, and full identifier-preserving RDMO import is deferred.
+paths retain the existing answer allocation and merge rules. Full identifier-preserving RDMO import is deferred.
 
 Import destinations retain known-prefix precedence through RDMO's import APIs. Explicit full URIs bypass
 fallback. Ambiguous custom-prefix Attribute or Option resolution reports a mapping issue and stages no

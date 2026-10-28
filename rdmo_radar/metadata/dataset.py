@@ -2,12 +2,14 @@ from dataclasses import replace
 
 from .constants import XMLVocabulary
 from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
-from .entities import prefer_name_source, read_named_values
+from .entities import read_named_values
 from .keywords import read_keywords
 from .read_context import ProjectReadContext
 from .types import GeoLocation, Identifier, RadarMetadata, Resource, Rights, Software, SubjectArea, as_keyword
 from .values import answer_label, get_option_path, model_key, normalize
 from .write_context import ProjectWriteContext
+
+RIGHTS_HOLDER_PATH = 'project/dataset/ipr/rightsholder'
 
 
 def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
@@ -39,7 +41,7 @@ def read_dataset_fields(context: ProjectReadContext) -> RadarMetadata:
         software=_read_software(context),
         processing=context.get_texts('project/dataset/method', target='processing'),
         rights=_read_rights(context),
-        rights_holders=_read_rights_holders(context),
+        rights_holders=read_named_values(context, RIGHTS_HOLDER_PATH, target='rights_holders'),
     )
 
 
@@ -74,7 +76,7 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
             text=metadata.rights.additional,
         )
     for collection_index, holder in enumerate(metadata.rights_holders):
-        context.add('project/dataset/sharing/rights_holder', holder.name, collection_index=collection_index)
+        context.add(RIGHTS_HOLDER_PATH, holder.name, collection_index=collection_index)
         if holder.identifiers:
             context.warn('rightsHolders', 'Only rights-holder names have an established RDMO import destination',
                          holder.name)
@@ -93,13 +95,6 @@ def write_dataset_fields(context: ProjectWriteContext, metadata: RadarMetadata) 
         context.add('project/dataset/method', processing, collection_index=collection_index)
     _write_geo_location(context, metadata.geo_locations)
     _warn_unmapped_fields(context, metadata)
-
-
-def _read_rights_holders(context):
-    preferred = 'project/dataset/ipr/rightsholder'
-    legacy = 'project/dataset/sharing/rights_holder'
-    path = preferred if prefer_name_source(context, (preferred,), (legacy,), target='rights_holders') else legacy
-    return read_named_values(context, path, target='rights_holders')
 
 
 def _read_subjects(context: ProjectReadContext) -> list[SubjectArea]:

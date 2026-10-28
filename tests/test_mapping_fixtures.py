@@ -162,7 +162,7 @@ def test_both_providers_export_observed_radar_draft(observed_draft_project, cls)
 
 @pytest.mark.parametrize('cls', [RadarExportProvider, RadarCredentialsExportProvider])
 def test_tf_rights_holders_reach_radar_output_for_the_selected_dataset(prototype, cls):
-    path = 'project/dataset/sharing/rights_holder'
+    path = 'project/dataset/ipr/rightsholder'
     add_value(prototype, path, 'Example University', set_index=0, collection_index=0)
     add_value(prototype, path, 'Doe, Jane', set_index=0, collection_index=1)
     add_value(prototype, path, 'Other Institution', set_index=1)

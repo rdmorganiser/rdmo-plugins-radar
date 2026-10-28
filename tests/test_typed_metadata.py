@@ -118,22 +118,40 @@ def test_owner_preference_nested_affiliation_and_dataset_isolation(project):
     assert any('Both source families' in issue.reason for issue in result.issues)
 
 
-def test_legacy_creator_and_rights_holder_fallbacks(project):
+def test_legacy_creator_fallback(project):
     add_answer(project, 'project/dataset/creator/name', 'Legacy creator', set_prefix='2')
-    add_answer(project, 'project/dataset/sharing/rights_holder', 'Legacy holder', set_index=2)
     result = metadata(project).metadata
     assert [person.name for person in result.creators] == ['Legacy creator']
-    assert [person.name for person in result.rights_holders] == ['Legacy holder']
+
+
+@pytest.mark.parametrize('correct_value', [None, ''])
+def test_incorrect_rights_holder_path_never_supplies_export_or_provenance(project, correct_value):
+    incorrect_path = 'project/dataset/sharing/rights_holder'
+    add_answer(project, incorrect_path, 'Incorrect source', set_index=2)
+    if correct_value is not None:
+        add_answer(project, 'project/dataset/ipr/rightsholder', correct_value, set_index=2)
+
+    result = metadata(project, collect_mapping=True)
+
+    assert result.metadata.rights_holders == []
+    assert 'rightsHolders' not in to_api_payload(result.metadata)
+    assert 'rightsHolders' not in to_xml_payload(result.metadata)
+    assert all(getattr(getattr(source.value, 'attribute', None), 'path', None) != incorrect_path
+               for attempt in result.provenance for source in attempt.sources)
 
 
 def test_publisher_and_rights_holder_provider_identity(project):
     add_answer(project, 'project/dataset/curation/responsible_person/name', orcid_display(),
                external_id=ORCID, set_index=2)
     add_answer(project, 'project/dataset/ipr/rightsholder', ror_display(), external_id='0387prb75', set_index=2)
-    add_answer(project, 'project/dataset/sharing/rights_holder', 'Legacy holder', set_index=2)
-    result = metadata(project)
+    incorrect_path = 'project/dataset/sharing/rights_holder'
+    add_answer(project, incorrect_path, 'Incorrect source', set_index=2)
+    result = metadata(project, collect_mapping=True)
     assert result.metadata.publishers == [PersonOrOrganization('Doe, Jane', identifiers=[Identifier(ORCID, 'ORCID')])]
     assert result.metadata.rights_holders == [PersonOrOrganization('Institute', identifiers=[Identifier(ROR, 'ROR')])]
+    assert all(getattr(getattr(source.value, 'attribute', None), 'path', None) != incorrect_path
+               for attempt in result.provenance for source in attempt.sources)
+    assert not any('Both source families' in issue.reason for issue in result.issues)
 
 
 def test_responsibility_options_and_boolean_rights_are_not_names(project):

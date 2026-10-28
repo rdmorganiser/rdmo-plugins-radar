@@ -295,9 +295,11 @@ callables. Its default `None` retains the dataset reader's publishers, including
 The default TF dataset reader reads named curation-responsible people. The project profile remains
 title-only. No authentication, callback, persistence or dataset-discovery contract changes are needed.
 
-The XML parser preserves supported identity attributes; import writers keep their existing RDMO
-destinations and warn about unsupported identity information. Serialization provenance is recorded beside
-each emitted field, including explicit or derived scheme URIs. These changes add no runtime dependency
+The XML parser preserves supported identity attributes. Rights-holder export and import share the corrected
+`project/dataset/ipr/rightsholder` path in the dataset mapper; the incorrect original-plugin reference has
+no fallback. Other import destinations remain unchanged, with warnings for unsupported identity information.
+Serialization provenance is recorded beside each emitted field, including explicit or derived scheme URIs.
+These changes add no runtime dependency
 on spreadsheets, external code checkouts, ROR/GND/ORCID plugins or TS4NFDI. TS4NFDI and ontology enrichment
 remain deferred; metadata preparation and previews remain offline.
 

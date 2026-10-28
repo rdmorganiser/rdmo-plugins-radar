@@ -328,7 +328,8 @@ can customize discovery, scoping, imports, and persistence through the existing
 
 The TF mapping supports the reviewed 27 October 2026 Attribute paths for dataset owners, their
 affiliations, named publishers, rights holders and structured contributors. Existing creator/partner
-and rights-holder paths remain fallbacks. See the [source audit](docs/metadata-mapping.md#27-october-2026-attribute-audit)
+paths remain fallbacks. Rights-holder export and import use only `project/dataset/ipr/rightsholder`.
+See the [source audit](docs/metadata-mapping.md#27-october-2026-attribute-audit)
 for source priority, optional future Attributes and fields still awaiting semantic decisions.
 
 GND keyword and ORCID/ROR entity identities are exported alongside clean labels in both REST and XML.
