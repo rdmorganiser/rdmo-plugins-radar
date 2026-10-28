@@ -1,3 +1,11 @@
+.btn.radar-back-to-project,
+.btn.radar-back-to-project:visited,
+.btn.radar-back-to-project:hover,
+.btn.radar-back-to-project:focus,
+.btn.radar-back-to-project:active {
+    color: #333;
+}
+
 .radar-attribute-answers {
     font-size: 0.875em;
 }
