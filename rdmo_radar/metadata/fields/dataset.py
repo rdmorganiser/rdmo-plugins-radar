@@ -2,7 +2,7 @@
 
 from ..types import Resource, Rights, Software, SubjectArea
 from ..values import answer_label
-from .contracts import Source
+from .contracts import AttributeSelector, Source
 
 
 def read_subjects(context, *, source: Source, option_map, target, uncertain_options=()):
@@ -144,15 +144,45 @@ def read_rights(context, *, source: Source, option_map, target):
     return rights[0]
 
 
-def read_software(context, *, source: Source, option_map, target, software_type=None):
+def read_software(
+    context, *, source: Source, target, option_map=None, software_type=None,
+    version_source: AttributeSelector | None = None,
+):
+    """Read names directly or from enabled requirement Options, with grouped versions.
+
+    A version belongs to one software name in the same answer group (or its
+    catalog descendants). Several distinct names in that group are ambiguous;
+    preserve the names without assigning a version to any of them.
+    """
     context = source.context(context)
     software = []
     path = source.attribute
     values = context.get_values(path)
-    mapped = context.map_options(path, option_map, values=values)
-    for value, required in zip(values, mapped, strict=True):
-        if required and value.text and value.text.strip():
+    mapped = context.map_options(path, option_map, values=values) if option_map is not None else [True] * len(values)
+    candidates = [
+        value for value, required in zip(values, mapped, strict=True)
+        if required and value.is_true and (option_map is not None or value.option is None)
+        and value.text and value.text.strip()
+    ]
+    candidate_ids = {id(value) for value in candidates}
+    for value in values:
+        if id(value) in candidate_ids:
             index = len(software)
+            version = None
+            if version_source is not None:
+                group = context.descendants(context.group(value.set_prefix, value.set_index), (path,))
+                group_ids = {id(item) for item in group.get_values(path)}
+                names = {
+                    candidate.text.strip() for candidate in candidates if id(candidate) in group_ids
+                }
+                if len(names) > 1:
+                    group.warn(target, path, 'Software version cannot be assigned to multiple software names')
+                    group.record_mapping(
+                        f'{target}[{index}].version', sources=group.get_values(version_source), outcome='rejected',
+                        reason='Multiple software names in the same answer group',
+                    )
+                else:
+                    version = group.get_text(version_source, target=f'{target}[{index}].version')
             context.record_mapping(
                 f'{target}[{index}].name', sources=(value,), value=value.text.strip(), reason='Normalized software name'
             )
@@ -162,8 +192,12 @@ def read_software(context, *, source: Source, option_map, target, software_type=
                 outcome='defaulted',
                 reason='Software requirement category',
             )
-            software.append(Software(value.text.strip(), software_type))
-            context.warn(f'{target}.softwareVersion', path, 'Software version is unavailable; complete it in RADAR')
+            software.append(Software(value.text.strip(), software_type, version))
+            if not version:
+                context.warn(
+                    f'{target}.softwareVersion', version_source if version_source is not None else path,
+                    'Software version is unavailable; complete it in RADAR',
+                )
         else:
             context.record_mapping(
                 target,

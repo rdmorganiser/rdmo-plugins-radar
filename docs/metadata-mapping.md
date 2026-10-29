@@ -58,7 +58,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | RADAR field | Source and behavior |
 | --- | --- |
 | Title | `project/dataset/title`, then the `project/dataset/id` collection label. |
-| Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options. No identifier is invented. |
+| Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options. Only `DOI`, `Handle`, and `RADAR` are accepted as primary types. A populated PID with a missing, conflicting, or unsupported scheme is omitted with diagnostics. No identifier is invented. |
 | Subject areas | `project/research_field/title`; all 48 catalog DFG options mapped using the subject sheet. Every explicitly listed category is emitted, with duplicate entries removed. `Other` retains the original label. The uncertain Materials Engineering entry stays `Other`; workbook “Veterinary” uses the schema spelling `Veterinary Medicine`. The stray Jurisprudence note on the Economics row does not override its explicit Economics mapping. |
 | Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
@@ -67,11 +67,31 @@ produce the existing storage-failure result page after confirmed creation rather
 | Publishers | `project/dataset/curation/responsible_person/name`: text or provider names, with ORCID/ROR identity when available. Responsibility Options are not publisher names. A custom publisher callable can replace this reader. |
 | Funding | Read name, grant-number, and programme fields grouped by answer coordinates. Split `project/funder/name` provider answers into funder name and identifier. Optional `project/funder/id/type` supplies an explicit identifier scheme; it never creates an identifier. `project/funder/id` remains a set marker. Existing programme-URL support remains available. |
 | Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped; GND entries retain label, scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
-| Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. No parsing of names/versions or mapping of other usage requirements. Missing version is reported. |
+| Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. Optional confirmed name/version Attributes can be configured in the TF field mapping. No parsing of versions from names. Missing version is reported. |
 | Creators | Prefer `project/dataset/owner/name`, `/given_name`, `/family_name`; fall back to established `project/dataset/creator/*`. Read provider identities and creator-linked affiliations. Project coordination organisations require a custom mapping. |
 | Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. Responsibility labels never become names. |
 | Language | `project/dataset/language`: recognized controlled Options, or supported language names/codes entered as text. Normalize to schema-valid ISO 639-3 codes; see the selection below. |
 | Other established fields | Preserve acronym as additional title, geolocation region, and `project/dataset/method` processing text when available. |
+
+## Software sources
+
+`mappings/template_framework/fields.py` reserves `SOFTWARE_NAME_PATH` and
+`SOFTWARE_VERSION_PATH`, both initially `None` because no suitable TF Attributes have
+been confirmed. Once available, set these to the correct Attribute paths. Setting only
+the version path attaches explicit versions to the existing usage-requirement names;
+setting a name path selects dedicated free-text names instead of usage requirements.
+The software category remains `Resource Viewing` and can be changed in the field configuration.
+
+The reusable reader accepts `source=Source(name_attribute)`, an optional
+`version_source=version_attribute`, and an optional `option_map`. Without an Option map,
+only plain-text names are accepted; with a map, only enabled requirement answers supply
+names. Versions are read from the software entry's complete answer coordinates and related
+catalog descendants. Use separate collection groups for separate software entries.
+Multiple names in one group make the version association ambiguous; the reader preserves
+the names, omits their versions, and reports the ambiguity. Missing or conflicting versions
+also preserve names with completion warnings. A version-only answer never creates software.
+Both XML and REST receive explicit mapped versions. Drafts without a version retain the
+existing XSD warning because `softwareVersion` is required whenever software is emitted.
 
 ## Dataset language
 

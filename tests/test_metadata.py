@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from xml.etree import ElementTree
 
+import pytest
+
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
 
@@ -89,6 +91,41 @@ def test_creator_name_is_derived_from_structured_parts(db):
     assert metadata.creators[0].name == 'Doe, Jane'
     assert metadata.creators[0].given_name == 'Jane'
     assert metadata.creators[0].family_name == 'Doe'
+
+
+@pytest.mark.parametrize('scheme', ['doi', 'handle', 'radar', 'url', 'other', 'unknown', None])
+def test_tf_primary_identifier_requires_a_supported_scheme(db, scheme):
+    export = make_export({'project/dataset/data_publication_pid': '10.1234/example'})
+    if scheme is not None:
+        option = Option.objects.create(uri_prefix='https://example.test', uri_path=f'identifier_type/{scheme}')
+        add_answer(export.project, 'project/dataset/pids/system', '', option=option)
+
+    result = compute_metadata(export.get_service().reader(0))
+
+    if scheme in ('doi', 'handle', 'radar'):
+        kind = {'doi': 'DOI', 'handle': 'Handle', 'radar': 'RADAR'}[scheme]
+        assert result.metadata.identifier == Identifier('10.1234/example', kind)
+        assert not result.issues
+    else:
+        assert result.metadata.identifier is None
+        assert 'identifier' not in to_xml_payload(result.metadata)
+        assert 'identifier' not in to_api_payload(result.metadata)
+        assert any('Primary identifier requires DOI, Handle or RADAR' in issue.reason for issue in result.issues)
+
+
+def test_tf_conflicting_primary_identifier_schemes_are_omitted(db):
+    export = make_export({'project/dataset/data_publication_pid': '10.1234/example'})
+    for index, scheme in enumerate(('doi', 'url')):
+        option = Option.objects.create(uri_prefix='https://example.test', uri_path=f'identifier_type/{scheme}')
+        add_answer(export.project, 'project/dataset/pids/system', '', option=option, collection_index=index)
+    context = export.get_service().reader(0)
+    context.provenance = []
+
+    result = compute_metadata(context)
+
+    assert result.metadata.identifier is None
+    assert any(attempt.field == 'identifier.value' and attempt.outcome == 'rejected'
+               for attempt in result.provenance)
 
 
 def test_xml_and_api_adapters_share_canonical_model_but_not_wire_values():

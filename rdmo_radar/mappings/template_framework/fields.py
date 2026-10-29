@@ -33,6 +33,10 @@ from .dataset_writers import LANGUAGE_PATH, RIGHTS_HOLDER_PATH
 from .people_writers import merge_contributors, merge_funding, write_creators
 from .vocabulary import XMLVocabulary
 
+# Optional confirmed software Attributes. None retains the usage-requirement reader.
+SOFTWARE_NAME_PATH = None
+SOFTWARE_VERSION_PATH = None
+
 
 def person_sources(base, *, scope='current', **kwargs):
     """TF naming conventions are configured here, never inferred by field getters."""
@@ -145,8 +149,19 @@ def read_title(context, *, target):
 def read_identifier(context, *, target):
     value = context.get_text('project/dataset/data_publication_pid', target=f'{target}.value')
     kind = context.get_option(
-        'project/dataset/pids/system', XMLVocabulary.identifier_type_options, target=f'{target}.identifier_type'
+        'project/dataset/pids/system',
+        {path: kind for path, kind in XMLVocabulary.identifier_type_options.items()
+         if kind in XMLVocabulary.primary_identifier_types},
+        target=f'{target}.identifier_type',
     )
+    if value and kind not in XMLVocabulary.primary_identifier_types:
+        reason = 'Primary identifier requires DOI, Handle or RADAR; identifier omitted'
+        context.warn(target, 'project/dataset/pids/system', reason)
+        context.record_mapping(
+            f'{target}.value', sources=context.get_values('project/dataset/data_publication_pid'),
+            outcome='rejected', reason=reason,
+        )
+        return None
     return Identifier(value, kind) if value else None
 
 
@@ -196,8 +211,9 @@ TF_FIELDS = FieldMapping(
         ),
         'software': partial(
             read_software,
-            source=Source('project/dataset/usage_technology'),
-            option_map={SOFTWARE_REQUIREMENT: True},
+            source=Source(SOFTWARE_NAME_PATH or 'project/dataset/usage_technology'),
+            option_map=None if SOFTWARE_NAME_PATH is not None else {SOFTWARE_REQUIREMENT: True},
+            version_source=SOFTWARE_VERSION_PATH,
             software_type='Resource Viewing',
         ),
         'processing': partial(read_texts, source=Source('project/dataset/method')),
