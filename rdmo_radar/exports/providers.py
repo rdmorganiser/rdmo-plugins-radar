@@ -30,7 +30,7 @@ from rdmo_radar.metadata.validation import missing_required_fields
 from rdmo_radar.services import store_confirmed_result
 
 from .previews import compute_mapping_preview, compute_source_answers
-from .validation import REQUIRED_FIELD_LABELS
+from .validation import required_field_label
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +296,7 @@ class RadarExportProviderBase(Export):
                     'dataset_key': dataset.key,
                     'title': metadata.title or dataset.label,
                     'issues': result.issues,
-                    'missing': [REQUIRED_FIELD_LABELS.get(path, path) for path in missing],
+                    'missing': [required_field_label(path) for path in missing],
                 })
         return warnings
 

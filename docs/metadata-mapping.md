@@ -89,6 +89,12 @@ markup and values incompatible with the XSD are omitted with mapping diagnostics
 The exporter never looks up or infers a scheme, and records normalization against the
 original answer in provenance.
 
+Partially answered funding references retain their award data for draft completion.
+If a reference lacks a usable funder name, the reader records a mapping issue and the
+completeness check lists the missing name with its funding-reference number in both
+XML and REST previews. Such XML remains incomplete under the XSD until the name is supplied;
+these diagnostics do not introduce a new export block or manufacture a funder name.
+
 ## Optional resource classification and data-management contributors
 
 The reusable `read_resource(context, *, source, target, type_source=None, option_map=None)`

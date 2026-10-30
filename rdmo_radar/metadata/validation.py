@@ -18,4 +18,6 @@ def missing_required_fields(metadata: RadarMetadata) -> tuple[str, ...]:
         'rights.controlledRights': metadata.rights.controlled if metadata.rights else None,
         'rightsHolders.rightsHolder': any(value.name for value in metadata.rights_holders),
     }
+    checks.update({f'fundingReferences.fundingReference[{index}].funderName': reference.funder_name
+                   for index, reference in enumerate(metadata.funding_references)})
     return tuple(path for path, value in checks.items() if not value)

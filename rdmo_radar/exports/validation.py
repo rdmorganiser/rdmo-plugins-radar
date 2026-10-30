@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,6 +21,13 @@ REQUIRED_FIELD_LABELS = {
 }
 
 SCHEMA_DIRECTORY = Path(__file__).resolve().parent.parent / 'schemas'
+
+
+def required_field_label(path):
+    funding = re.fullmatch(r'fundingReferences\.fundingReference\[(\d+)\]\.funderName', path)
+    if funding:
+        return _('Funder name (funding reference %(number)s)') % {'number': int(funding[1]) + 1}
+    return REQUIRED_FIELD_LABELS.get(path, path)
 
 
 @lru_cache(maxsize=1)

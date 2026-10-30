@@ -118,6 +118,12 @@ def read_funding(
             else None,
         )
         if any((reference.funder_name, reference.award_number, reference.award_uri, reference.award_title)):
+            if not reference.funder_name:
+                reason = 'Funding reference has no funder name; complete it in RADAR'
+                funder.warn(f'{item_target}.funder_name', sources.name, reason)
+                evidence = [v for path in (sources.name, sources.award_number, sources.award_uri, sources.award_title)
+                            if path is not None for v in funder.get_values(path)]
+                funder.record_mapping(f'{item_target}.funder_name', sources=evidence, outcome='empty', reason=reason)
             references.append(reference)
     if not funders:
         context.record_empty_mapping(target, sources.name)

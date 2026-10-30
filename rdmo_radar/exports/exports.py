@@ -16,7 +16,7 @@ from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 
 from .previews import compute_mapping_preview, compute_source_answers
-from .validation import REQUIRED_FIELD_LABELS
+from .validation import required_field_label
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class RadarExport(Export):
                 'file_name': file.file_name,
                 'xml_data': file.xml_data,
                 'missing_fields': tuple(
-                    {'path': path, 'label': REQUIRED_FIELD_LABELS.get(path, path)} for path in file.missing_fields
+                    {'path': path, 'label': required_field_label(path)} for path in file.missing_fields
                 ),
                 'validation_errors': file.validation_errors if not file.validation_failed else (
                     _('The RDDM schema validation could not be completed.'),
