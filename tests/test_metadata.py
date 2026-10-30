@@ -478,3 +478,32 @@ def test_tf_primary_identifier_payload_and_provenance(raw, expected):
         assert 'identifier' not in to_api_payload(complete_metadata(identifier=identifier))
         assert context.issues
         assert any(a.outcome == 'rejected' and a.sources[0].value is answer for a in context.provenance)
+
+
+@pytest.mark.parametrize('latitude,longitude', [
+    (0.0, 10.0), (10.0, 0.0), (0.0, 0.0), (0, -10), ('0', '10'), ('10', '0'),
+])
+def test_xml_and_rest_preserve_zero_geographic_coordinates(latitude, longitude):
+    metadata = complete_metadata(geo_locations=[GeoLocation('GERMANY', 'Region', latitude, longitude)])
+    point = to_api_payload(metadata)['geoLocations']['geoLocation'][0]['geoLocationPoint']
+    assert point == {'latitude': float(latitude), 'longitude': float(longitude)}
+    xml = RadarExportRenderer().render(to_xml_payload(metadata))
+    root = ElementTree.fromstring(xml)
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.findtext(f'.//{ns}geoLocationPoint/{ns}latitude') == str(latitude)
+    assert root.findtext(f'.//{ns}geoLocationPoint/{ns}longitude') == str(longitude)
+    assert get_radar_validation_errors(xml) == ()
+
+
+@pytest.mark.parametrize('latitude,longitude', [
+    (None, 0.0), (0.0, None), ('', 0.0), (0.0, ''), (None, None), ('', ''),
+])
+def test_xml_and_rest_do_not_emit_incomplete_geographic_points(latitude, longitude):
+    metadata = complete_metadata(geo_locations=[GeoLocation(region='Region', latitude=latitude, longitude=longitude)])
+    location, = to_api_payload(metadata)['geoLocations']['geoLocation']
+    assert location == {'geoLocationRegion': 'Region'}
+    xml = RadarExportRenderer().render(to_xml_payload(metadata))
+    root = ElementTree.fromstring(xml)
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    assert root.find(f'.//{ns}geoLocationPoint') is None
+    assert root.findtext(f'.//{ns}geoLocationRegion') == 'Region'

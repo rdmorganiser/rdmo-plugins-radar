@@ -406,7 +406,7 @@ def _geo_location(location: GeoLocation, *, target='', path='', record_output=No
     data = _present(geoLocationCountry=to_api_value(location.country), geoLocationRegion=location.region)
     record_binding(record_output, f'{target}.country', f'{path}/geoLocationCountry', data.get('geoLocationCountry'))
     record_binding(record_output, f'{target}.region', f'{path}/geoLocationRegion', location.region)
-    if location.latitude is not None and location.longitude is not None:
+    if location.has_coordinate_pair:
         data['geoLocationPoint'] = {'latitude': float(location.latitude), 'longitude': float(location.longitude)}
         for field, value in data['geoLocationPoint'].items():
             record_binding(record_output, f'{target}.{field}', f'{path}/geoLocationPoint/{field}', value)

@@ -434,7 +434,7 @@ def _serialize_geo_location(location: GeoLocation, *, target='', path='', record
             'latitude': location.latitude,
             'longitude': location.longitude,
         }
-        if location.latitude and location.longitude
+        if location.has_coordinate_pair
         else None,
     }
     record_binding(record_output, f'{target}.country', f'{path}/re:geoLocationCountry', location.country)

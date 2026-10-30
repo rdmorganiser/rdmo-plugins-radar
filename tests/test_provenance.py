@@ -248,6 +248,11 @@ def test_all_populated_canonical_fields_have_verified_format_bindings(kind):
     assert result.provenance is not None
     assert not any(row.outcome == 'untraced' for row in result.provenance)
     assert any(row.outcome == 'defaulted' for row in result.provenance)
+    for field, value in (('latitude', 0.0), ('longitude', 10.0)):
+        coordinate, = [row for row in result.provenance if row.field == f'geo_locations[0].{field}']
+        assert coordinate.outcome == 'mapped'
+        assert coordinate.output_path
+        assert coordinate.output_value == (str(value) if kind == 'xml' else value)
     for row in result.provenance:
         if not row.unsuccessful:
             output = xml_leaves(result.xml_data) if kind == 'xml' else dict(json_leaves(result.payload))

@@ -75,8 +75,13 @@ class FundingReference:
 class GeoLocation:
     country: str | None = None
     region: str | None = None
-    latitude: str | None = None
-    longitude: str | None = None
+    latitude: str | float | None = None
+    longitude: str | float | None = None
+
+    @property
+    def has_coordinate_pair(self) -> bool:
+        """Both coordinates are supplied; numeric zero is a present coordinate."""
+        return self.latitude not in (None, '') and self.longitude not in (None, '')
 
 
 @dataclass
