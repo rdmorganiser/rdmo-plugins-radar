@@ -410,10 +410,13 @@ result and warns users to check RADAR for a draft before retrying. Creation is n
 Existing tests cover canonical XML/REST fixtures, dataset boundaries, custom URI prefixes, nested/repeated
 placements, empty markers, snapshots, query reuse, callable replacement, diagnostics, import merging,
 atomic persistence, and real RDMO 2 request/session/CSRF flows. Shared fixtures live in `tests/helpers.py`.
-The known core `filter_set` index-boundary failure is an expected failure; plugin isolation tests pass.
+The TF reader bypasses the core `filter_set` prefix-boundary bug. Strict regression tests
+verify XML and REST isolation for dataset indices 1 and 10, including nested parent
+collections and snapshots, and fail if either export calls the upstream method.
 
-The field-profile refactor passes 728 tests with that one expected upstream failure on Python 3.12.3
-and 3.14.10, using RDMO 2.5.2. Independent profile tests cover two namespaces/nesting layouts, grouped
+At the field-profile refactor checkpoint, 728 tests passed with one expected upstream failure on Python 3.12.3
+and 3.14.10, using RDMO 2.5.2. That upstream-only check has since been replaced by strict plugin regressions.
+Independent profile tests cover two namespaces/nesting layouts, grouped
 people and affiliations, separate funder identifiers, explicit import crosswalks, and confirmed-result
 storage. CI tests Python 3.12 and 3.14, including changes to the executable custom-profile example.
 
@@ -459,7 +462,8 @@ separate follow-ups; the profile interface provides the import boundary without 
 Demonstrated upstream improvements:
 
 - Boundary-safe `ValueQuerySet.filter_set`: prefix matching selects dataset `10` when requesting `1`.
-  The minimized reproduction is retained in `tests/test_value_scopes.py`.
+  The regression tests in `tests/test_value_scopes.py` verify that TF exports isolate
+  those datasets without calling the affected method. The upstream method itself is unchanged.
 - A public catalog placement/scope helper covering repeated placements and empty page/questionset markers.
   The plugin currently performs only the conversion and scope matching described above.
   RDMO 3's `compute_value_maps()` in `projects/utils.py` already groups Values by Attribute IDs and set

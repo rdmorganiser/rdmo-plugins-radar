@@ -1,5 +1,6 @@
 """Catalog-aware behavior contracts, independent of the answer access implementation."""
 from dataclasses import dataclass
+from xml.etree import ElementTree
 
 import pytest
 
@@ -8,7 +9,8 @@ from django.test.utils import CaptureQueriesContext
 
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
-from rdmo.projects.models import Project, Value
+from rdmo.projects.managers import ValueQuerySet
+from rdmo.projects.models import Project, Snapshot, Value
 from rdmo.questions.models import (
     Catalog,
     CatalogSection,
@@ -24,7 +26,7 @@ from rdmo.questions.models import (
 )
 from rdmo.views.utils import ProjectWrapper
 
-from rdmo_radar.factories import build_xml_export_service
+from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.values import model_key, select_values
@@ -179,16 +181,52 @@ def test_catalog_project_with_no_values_has_no_datasets(scope_project):
     assert read_metadata(export, 0).metadata.title is None
 
 
-@pytest.mark.xfail(reason='RDMO filter_set uses an unbounded startswith prefix; upstream scoping gap',
-                   raises=AssertionError, strict=False)
-def test_core_filter_set_respects_dataset_prefix_boundary(scope_project):
-    page = add_page(scope_project, 'project/dataset/id', collection=True)
-    add_question(page, 'project/dataset/description')
-    marker = add_answer(scope_project, 'project/dataset/id', 'Dataset one', set_index=1)
-    for index in (1, 10):
-        add_answer(scope_project, 'project/dataset/description', f'Resource {index}', set_prefix=str(index))
-    values = scope_project.values.all().filter_set(marker).filter(attribute__path='project/dataset/description')
-    assert set(values.values_list('set_prefix', flat=True)) == {'1'}
+@pytest.mark.parametrize('nested', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_tf_exports_respect_dataset_prefix_boundaries_without_core_filter_set(
+    scope_project, monkeypatch, django_assert_num_queries, nested, saved,
+):
+    def core_filter_set_must_not_be_used(*args, **kwargs):
+        pytest.fail('TF exports must use their boundary-safe prepared reader, not RDMO filter_set()')
+
+    monkeypatch.setattr(ValueQuerySet, 'filter_set', core_filter_set_must_not_be_used)
+    if nested:
+        parent = add_page(scope_project, 'custom/parent', collection=True)
+        datasets = add_questionset(parent, 'project/dataset/id', collection=True)
+        prefixes = ('1', '10')
+    else:
+        datasets = add_page(scope_project, 'project/dataset/id', collection=True)
+        prefixes = ('',)
+    details = add_questionset(datasets)
+    add_question(details, 'project/dataset/description')
+    expected = {}
+    for prefix in prefixes:
+        for index in (1, 10):
+            position = '|'.join(filter(None, (prefix, str(index))))
+            label = f'Dataset {position}'
+            expected[(prefix, index)] = f'Resource {position}'
+            add_answer(scope_project, 'project/dataset/id', label, set_prefix=prefix, set_index=index)
+            add_answer(scope_project, 'project/dataset/description', f'Resource {position}', set_prefix=position)
+    snapshot = Snapshot.objects.create(project=scope_project, title='Saved') if saved else None
+    if saved:
+        scope_project.values.filter(snapshot=None, attribute__path='project/dataset/description').update(
+            text='Changed live answer',
+        )
+    rest = build_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot)
+    xml = build_xml_export_service(scope_project, profile=TEMPLATE_FRAMEWORK_MAPPING, snapshot=snapshot)
+    with django_assert_num_queries(0):
+        selections = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(scope_project, rest.reader)
+        assert {(d.scope['set_prefix'], d.scope['set_index']) for d in selections} == set(expected)
+        for dataset in selections:
+            resource = expected[(dataset.scope['set_prefix'], dataset.scope['set_index'])]
+            payload = rest.compute_payload(dataset, 'user@example.test').payload['descriptiveMetadata']
+            assert payload['title'] == dataset.label
+            assert payload['resource']['value'] == resource
+            file = xml.compute_files([dataset])[0]
+            document = ElementTree.fromstring(file.xml_data)
+            namespace = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+            assert document.findtext(namespace + 'title') == dataset.label
+            assert document.findtext(namespace + 'resource') == resource
 
 
 def test_mapping_context_accepts_prepared_values_without_export_or_queries(db, django_assert_num_queries):
