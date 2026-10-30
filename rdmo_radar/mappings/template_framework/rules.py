@@ -77,7 +77,7 @@ def select_template_framework_values(context, key):
             )
         ]
     attribute_values = attribute_values_map.get(key, ())
-    if key[2].startswith(('project/dataset/creator/', 'project/dataset/owner/')):
+    if key.path.startswith(('project/dataset/creator/', 'project/dataset/owner/')):
         set_prefix = (
             f'{context.dataset_prefix}|{context.set_index}' if context.dataset_prefix else str(context.set_index)
         )

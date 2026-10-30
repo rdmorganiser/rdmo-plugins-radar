@@ -1,5 +1,6 @@
 """Prepare native Values, match coordinates, and format answers without catalog-specific paths."""
 from collections import defaultdict
+from typing import NamedTuple
 from urllib.parse import urlsplit
 
 from django.utils.html import strip_tags
@@ -8,15 +9,51 @@ from rdmo.projects.models import Value
 from rdmo.questions.models import Page, QuestionSet
 
 
+class ModelKey(NamedTuple):
+    """Model identity and lookup labels, compatible with existing four-item tuple keys."""
+
+    kind: str
+    value: int | str
+    path: str
+    uri: str | None
+
+    @property
+    def identity(self):
+        return self.kind, self.value
+
+
+class PreparedReadData(NamedTuple):
+    """Operation-local buckets, placements and aliases; retain positional compatibility."""
+
+    values: dict[ModelKey, list[Value]]
+    placements: dict
+    lookup: dict
+
+    @classmethod
+    def from_legacy(cls, prepared):
+        if isinstance(prepared, cls):
+            return prepared
+        values, placements, lookup = prepared
+        return cls(
+            {ModelKey(*key): answers for key, answers in values.items()},
+            {ModelKey(*key): type(positions)(
+                tuple((ModelKey(*anchor) if anchor is not None else None, collection)
+                      for anchor, collection in placement)
+                for placement in positions
+            ) for key, positions in placements.items()},
+            {reference: tuple(ModelKey(*key) for key in keys) for reference, keys in lookup.items()},
+        )
+
+
 def model_key(model, path=None):
     """An identity plus lookup labels; unsaved objects never share a None identity."""
     path = path if path is not None else model.path
     uri = model.uri or None
     if model.pk is not None:
-        return ('id', model.pk, path, uri)
+        return ModelKey('id', model.pk, path, uri)
     if uri:
-        return ('uri', uri, path, uri)
-    return ('object', id(model), path, None)
+        return ModelKey('uri', uri, path, uri)
+    return ModelKey('object', id(model), path, None)
 
 
 def is_uri(selector):
@@ -30,7 +67,7 @@ def selector_key(selector):
         return ('uri' if is_uri(selector) else 'path', selector)
     if selector.pk is not None:
         return ('id', selector.pk)
-    return model_key(selector)[:2]
+    return model_key(selector).identity
 
 
 def selector_label(selector):
@@ -52,7 +89,8 @@ def prepare_values(values):
     attribute_identity_map = {}
     for attribute_reference, attribute_values in values.items():
         if isinstance(attribute_reference, tuple):
-            attribute_key = attribute_identity_map.setdefault(attribute_reference[:2], attribute_reference)
+            key = ModelKey(*attribute_reference)
+            attribute_key = attribute_identity_map.setdefault(key.identity, key)
             attribute_values_map[attribute_key].extend(attribute_values)
             continue
         for value in attribute_values:
@@ -62,11 +100,11 @@ def prepare_values(values):
             attribute_key = (
                 model_key(attribute)
                 if attribute is not None
-                else ('path', attribute_reference, attribute_reference, None)
+                else ModelKey('path', attribute_reference, attribute_reference, None)
             )
-            if attribute_key[0] == 'object' and isinstance(attribute_reference, str):
-                attribute_key = ('path', attribute_reference, attribute_reference, None)
-            attribute_key = attribute_identity_map.setdefault(attribute_key[:2], attribute_key)
+            if attribute_key.kind == 'object' and isinstance(attribute_reference, str):
+                attribute_key = ModelKey('path', attribute_reference, attribute_reference, None)
+            attribute_key = attribute_identity_map.setdefault(attribute_key.identity, attribute_key)
             attribute_values_map[attribute_key].append(value)
     return dict(attribute_values_map)
 
@@ -74,19 +112,22 @@ def prepare_values(values):
 def prepare_read_data(values, placements):
     """Prepare buckets and local aliases once, including attributes with no answers."""
     attribute_values_map = prepare_values(values)
-    attribute_identity_map = {attribute_key[:2]: attribute_key for attribute_key in attribute_values_map}
+    attribute_identity_map = {attribute_key.identity: attribute_key for attribute_key in attribute_values_map}
     attribute_paths_map = defaultdict(set)
     for attribute_key in attribute_values_map:
-        attribute_paths_map[attribute_key[2]].add(attribute_key)
+        attribute_paths_map[attribute_key.path].add(attribute_key)
 
     def placement_key(attribute_reference):
         if not isinstance(attribute_reference, str):
             # Catalog prefetch objects may have stale URI labels. The PK still identifies
             # the same Attribute; prefer labels from freshly prepared Value relations.
-            return attribute_identity_map.setdefault(attribute_reference[:2], attribute_reference)
+            key = ModelKey(*attribute_reference)
+            return attribute_identity_map.setdefault(key.identity, key)
         matches = attribute_paths_map[attribute_reference]
         # Do not assign a path-only placement to one of several identifiable Attributes.
-        return next(iter(matches)) if len(matches) == 1 else ('path', attribute_reference, attribute_reference, None)
+        return next(iter(matches)) if len(matches) == 1 else ModelKey(
+            'path', attribute_reference, attribute_reference, None,
+        )
 
     attribute_placements_map = defaultdict(list)
     for attribute_reference, attribute_placements in placements.items():
@@ -107,11 +148,11 @@ def prepare_read_data(values, placements):
         if anchor is not None
     )
     for attribute_key in attribute_keys:
-        attribute_lookup_map[('path', attribute_key[2])].add(attribute_key)
-        attribute_lookup_map[attribute_key[:2]].add(attribute_key)
-        if attribute_key[3]:
-            attribute_lookup_map[('uri', attribute_key[3])].add(attribute_key)
-    return (
+        attribute_lookup_map[('path', attribute_key.path)].add(attribute_key)
+        attribute_lookup_map[attribute_key.identity].add(attribute_key)
+        if attribute_key.uri:
+            attribute_lookup_map[('uri', attribute_key.uri)].add(attribute_key)
+    return PreparedReadData(
         attribute_values_map,
         dict(attribute_placements_map),
         {
@@ -189,10 +230,9 @@ def get_scoped_values(values, placements, key, *, constraints=None, group=None):
 
 def select_values(context, attribute_key):
     """Select project or group Values using their prepared catalog placements."""
-    attribute_values_map, attribute_placements_map, _ = context.prepared
     return get_scoped_values(
-        attribute_values_map,
-        attribute_placements_map,
+        context.prepared.values,
+        context.prepared.placements,
         attribute_key,
         group=(context.set_prefix, context.set_index) if context.scope == 'group' else None,
     )

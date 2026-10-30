@@ -8,6 +8,7 @@ from rdmo.projects.models import Value
 
 from .types import MappingAttempt, MappingIssue, MappingSource
 from .values import (
+    PreparedReadData,
     coordinates,
     is_uri,
     matches_placement,
@@ -33,7 +34,7 @@ class ProjectReadContext:
     set_index: int = 0
     scope: str = 'project'
     issues: list[MappingIssue] = field(default_factory=list)
-    prepared: tuple | None = field(default=None, repr=False)
+    prepared: PreparedReadData | tuple | None = field(default=None, repr=False)
     dataset_prefix: str | None = None
     project: object | None = field(default=None, repr=False)
     value_selector: Callable | None = field(default=None, repr=False)
@@ -43,6 +44,8 @@ class ProjectReadContext:
     def __post_init__(self):
         if self.prepared is None:
             self.prepared = prepare_read_data(self.values, self.placements)
+        else:
+            self.prepared = PreparedReadData.from_legacy(self.prepared)
 
     def shared(self):
         return replace(self, set_prefix='', set_index=0, scope='project', dataset_prefix=None)
@@ -52,15 +55,14 @@ class ProjectReadContext:
 
     def resolve_attribute(self, selector):
         """Resolve only prepared project/catalog identities; never query installed models."""
-        _, _, attribute_lookup_map = self.prepared
-        attribute_keys = attribute_lookup_map.get(selector_key(selector), ())
+        attribute_keys = self.prepared.lookup.get(selector_key(selector), ())
         if len(attribute_keys) > 1:
             attribute_label = selector_label(selector)
             self.warn(
                 attribute_label,
                 attribute_label,
                 'Ambiguous Attribute',
-                '; '.join(sorted(attribute_key[3] or str(attribute_key[1]) for attribute_key in attribute_keys)),
+                '; '.join(sorted(key.uri or str(key.value) for key in attribute_keys)),
             )
             return None
         return attribute_keys[0] if attribute_keys else None
@@ -76,7 +78,7 @@ class ProjectReadContext:
     def descendants(self, group, anchors):
         """Select descendants of the same native coordinates and catalog placement."""
         position = coordinates(group)
-        placements = self.prepared[1]
+        placements = self.prepared.placements
         ancestors = [placement for path in anchors if (key := self.resolve_attribute(path)) is not None
                      for placement in placements.get(key, ()) if len(placement) == len(position)]
 
@@ -93,7 +95,7 @@ class ProjectReadContext:
 
     def has_shared_placement(self, path, anchors):
         key = self.resolve_attribute(path)
-        placements = self.prepared[1]
+        placements = self.prepared.placements
         names = [placement for anchor in anchors if (name_key := self.resolve_attribute(anchor)) is not None
                  for placement in placements.get(name_key, ())]
         return any(role[:len(name)] == name for role in placements.get(key, ()) for name in names)
@@ -121,10 +123,10 @@ class ProjectReadContext:
     def record_empty_mapping(self, target, path):
         if target is None or self.provenance is None:
             return
-        attribute_keys = self.prepared[2].get(selector_key(path), ())
+        attribute_keys = self.prepared.lookup.get(selector_key(path), ())
         ambiguous = len(attribute_keys) > 1
         sources = (
-            tuple(MappingSource(key[3] or str(key[1])) for key in attribute_keys)
+            tuple(MappingSource(key.uri or str(key.value)) for key in attribute_keys)
             if ambiguous
             else (MappingSource(selector_label(path)),)
         )
@@ -173,7 +175,7 @@ class ProjectReadContext:
     def get_scope_values(self) -> list[Value]:
         """Return prepared native Values in this scope without resolving ambiguous paths."""
         values = []
-        for attribute_key in self.prepared[0]:
+        for attribute_key in self.prepared.values:
             values.extend((self.value_selector or select_values)(self, attribute_key))
         return sorted(
             values,

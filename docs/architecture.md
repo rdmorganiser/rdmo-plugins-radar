@@ -333,6 +333,11 @@ Values and catalog placements once and returns `(values, placements, prepared)`.
 reader factories reuse those structures while constructing their own contexts. Selection rules, coordinates,
 project references, diagnostic field names, and per-read diagnostic/provenance state remain profile choices.
 
+`ModelKey` names the identity kind, value, path and URI; `PreparedReadData` names the values,
+placements and lookup maps. Both remain tuple-compatible, including key equality and hashing.
+Contexts accept legacy prepared tuples and normalize their keys without copying native Values or
+discarding explicit aliases. Shared/grouped contexts reuse the normalized prepared object.
+
 First/last-answer selection, normalization, discovery, and import/store policies stay in their existing
 profiles. Legacy language uses the shared controlled Options but retains its first-answer selection and
 does not infer a language from free text. Other field bindings, including funding, remain unchanged.

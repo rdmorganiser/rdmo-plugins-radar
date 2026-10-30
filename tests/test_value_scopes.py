@@ -29,7 +29,7 @@ from rdmo.views.utils import ProjectWrapper
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata
 from rdmo_radar.metadata.read_context import ProjectReadContext
-from rdmo_radar.metadata.values import model_key, select_values
+from rdmo_radar.metadata.values import ModelKey, PreparedReadData, model_key, prepare_read_data, select_values
 
 from .helpers import (
     add_answer,
@@ -47,6 +47,55 @@ def scope_project(db):
     section = Section.objects.create(uri_prefix='https://example.test', uri_path='scope-section')
     CatalogSection.objects.create(catalog=catalog, section=section, order=0)
     return Project.objects.create(title='Scope project', catalog=catalog)
+
+
+@pytest.mark.parametrize('placement_container', [list, tuple])
+def test_legacy_prepared_tuple_retains_aliases_native_values_and_reuse(
+    db, django_assert_num_queries, placement_container,
+):
+    attribute = Attribute(pk=17, path='research/title', uri='https://example.test/domain/research/title')
+    answer = Value(attribute=attribute, text='Selected')
+    other = Value(attribute=attribute, text='Other coordinate', set_prefix='0')
+    key = ('id', 17, attribute.path, attribute.uri)
+    answers = [answer, other]
+    legacy = (
+        {key: answers},
+        {key: placement_container([((None, False),)])},
+        {('path', 'legacy-alias'): (key,), ('id', 17): (key,), ('uri', attribute.uri): (key,)},
+    )
+    with django_assert_num_queries(0):
+        context = ProjectReadContext({}, {}, prepared=legacy)
+        assert context.get_values('legacy-alias') == [answer]
+        assert context.get_values_by_attribute_id(17) == [answer]
+        assert context.get_values_by_uri(attribute.uri) == [answer]
+        assert context.shared().prepared is context.prepared
+        assert context.group('', 0).prepared is context.prepared
+    assert isinstance(context.prepared, PreparedReadData)
+    assert context.prepared == legacy
+    assert context.prepared.values[key] is answers
+    resolved = context.resolve_attribute('legacy-alias')
+    assert isinstance(resolved, ModelKey)
+    assert resolved.identity == ('id', 17)
+    assert resolved.path == attribute.path
+    assert resolved.uri == attribute.uri
+    assert hash(resolved) == hash(key)
+
+
+def test_legacy_tuple_keys_and_stale_placements_keep_current_attribute_labels():
+    current = Attribute(pk=17, path='research/title', uri='https://current.test/domain/research/title')
+    cached = Attribute(pk=17, path='research/title', uri='https://cached.test/domain/research/title')
+    answer = Value(attribute=current, text='Current')
+    current_key = tuple(model_key(current))
+    cached_key = tuple(model_key(cached))
+    prepared = prepare_read_data({current_key: [answer]}, {cached_key: (((None, False),),)})
+    context = ProjectReadContext({}, {}, prepared=prepared)
+    values, placements, lookup = prepared
+    assert values == {current_key: [answer]}
+    assert placements == {current_key: [((None, False),)]}
+    assert lookup[('uri', current.uri)] == (current_key,)
+    assert context.get_values_by_uri(current.uri) == [answer]
+    assert context.get_values_by_uri(cached.uri) == []
+    assert context.issues == []
 
 
 def add_page(project, path=None, collection=False):

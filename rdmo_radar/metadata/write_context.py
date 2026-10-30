@@ -8,7 +8,7 @@ from rdmo.projects.models import Value
 
 from .fields.contracts import Coordinates
 from .types import MappingIssue
-from .values import get_option_path, is_uri, model_key, normalize, prepare_values, selector_label
+from .values import ModelKey, get_option_path, is_uri, model_key, normalize, prepare_values, selector_label
 
 
 @dataclass
@@ -36,12 +36,12 @@ class ProjectWriteContext:
     def _attribute_key(self, attribute):
         attribute_key = model_key(attribute)
         for existing_attribute_key in self._values:
-            if existing_attribute_key[:2] == attribute_key[:2]:
+            if existing_attribute_key.identity == attribute_key.identity:
                 return existing_attribute_key
-        if attribute_key[0] == 'object':
+        if attribute_key.kind == 'object':
             # A synthetic import API destination can alias one prepared fixture bucket.
             matching_attribute_keys = [
-                attribute_key for attribute_key in self._values if attribute_key[2] == attribute.path
+                attribute_key for attribute_key in self._values if attribute_key.path == attribute.path
             ]
             if len(matching_attribute_keys) == 1:
                 return matching_attribute_keys[0]
@@ -54,12 +54,12 @@ class ProjectWriteContext:
                 (
                     existing_attribute_key
                     for existing_attribute_key in self._values
-                    if existing_attribute_key[:2] == attribute_key[:2]
+                    if existing_attribute_key.identity == attribute_key.identity
                 ),
                 attribute_key,
             )
-        synthetic_attribute_key = ('path', value.attribute.path, value.attribute.path, None)
-        if attribute_key[0] == 'object' and synthetic_attribute_key in self._values:
+        synthetic_attribute_key = ModelKey('path', value.attribute.path, value.attribute.path, None)
+        if attribute_key.kind == 'object' and synthetic_attribute_key in self._values:
             attribute_key = synthetic_attribute_key
         self._values.setdefault(attribute_key, []).append(value)
 
@@ -135,8 +135,7 @@ class ProjectWriteContext:
 
     def get_values(self, path) -> list[Value]:
         if isinstance(path, str):
-            lookup_position = 3 if is_uri(path) else 2
-            if not any(attribute_key[lookup_position] == path for attribute_key in self._values):
+            if not any((key.uri if is_uri(path) else key.path) == path for key in self._values):
                 return []
         attribute = self.fetch_attribute(path)
         return list(self._values.get(self._attribute_key(attribute), ())) if attribute is not None else []
@@ -176,8 +175,8 @@ class ProjectWriteContext:
             elif matching_attributes_map:
                 self._ambiguous_attributes.add(path)
                 self.warn(path, 'Ambiguous Attribute import destination')
-        if attribute is not None and model_key(attribute)[0] == 'object':
-            if sum(attribute_key[2] == attribute.path for attribute_key in self._values) > 1:
+        if attribute is not None and model_key(attribute).kind == 'object':
+            if sum(attribute_key.path == attribute.path for attribute_key in self._values) > 1:
                 self._ambiguous_attributes.add(path)
                 self.warn(path, 'Ambiguous synthetic Attribute import destination')
                 attribute = None

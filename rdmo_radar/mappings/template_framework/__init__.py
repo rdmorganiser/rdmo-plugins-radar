@@ -114,7 +114,7 @@ def result_destinations(context):
         set_positions = set()
         for placement in attribute_placements_map.get(attribute_key, ()):
             for level, (anchor, _) in enumerate(placement):
-                if anchor is not None and anchor[2] in DATASET_ATTRIBUTES:
+                if anchor is not None and anchor.path in DATASET_ATTRIBUTES:
                     set_prefix_parts = context.dataset_prefix.split('|') if context.dataset_prefix else []
                     if level != len(set_prefix_parts) or any(collection for _, collection in placement[level + 1 :]):
                         continue
@@ -131,7 +131,7 @@ def result_destinations(context):
             destinations[name] = None
             continue
         set_prefix, set_index = set_positions.pop()
-        destinations[name] = {'uri': attribute_key[3], 'set_prefix': set_prefix, 'set_index': set_index}
+        destinations[name] = {'uri': attribute_key.uri, 'set_prefix': set_prefix, 'set_index': set_index}
     return destinations
 
 

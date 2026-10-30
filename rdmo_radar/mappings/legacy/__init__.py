@@ -13,7 +13,7 @@ from .fields import LEGACY_FIELDS, first_text, read_set
 
 def select_values(context, attribute_key):
     """Legacy get_set reads one prefix; scalar getters use exact prefix/index pairs."""
-    values = context.prepared[0].get(attribute_key, ())
+    values = context.prepared.values.get(attribute_key, ())
     if context.scope == 'project':
         return list(values)
     return [value for value in values
@@ -47,11 +47,11 @@ def get_datasets(project, reader):
         destinations = {}
         for name in ('radar_id', 'radar_url'):
             path = f'project/dataset/{name}'
-            identities = context.prepared[2].get(('path', path), ())
+            identities = context.prepared.lookup.get(('path', path), ())
             key = context.resolve_attribute(path)
             destinations[name] = (
                 None if identities and key is None else {
-                    **({'uri': key[3]} if key is not None else {'path': path}),
+                    **({'uri': key.uri} if key is not None else {'path': path}),
                     'set_prefix': '', 'set_index': index, 'collection_index': 0,
                 }
             )
