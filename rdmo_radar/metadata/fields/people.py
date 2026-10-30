@@ -7,6 +7,7 @@ from types import MappingProxyType
 
 from ..entities import read_controlled_value, read_named_value, read_named_values
 from ..normalization import normalize_answer, normalize_identifier
+from ..provenance import rebase_attempts
 from ..types import Affiliation, Identifier, PersonOrOrganization
 from .contracts import AttributeSelector, GroupSpec
 
@@ -82,22 +83,12 @@ def read_people(
         )
         if person is not None:
             if repeat_roles and (sources.roles or sources.default_role is not None):
-                base_trace = tuple(parent.provenance[trace_start:]) if parent.provenance is not None else ()
                 related = parent.descendants(group, sources.group.anchors)
-                roles = _read_repeated_roles(related, sources, item_target, parent=parent)
-                for offset, (role, evidence, defaulted) in enumerate(roles):
-                    expanded_target = f'{target}[{start_index + len(people)}]'
-                    if offset and parent.provenance is not None:
-                        parent.provenance.extend(
-                            replace(attempt, field=expanded_target + attempt.field[len(item_target):])
-                            for attempt in base_trace if attempt.field.startswith(item_target)
-                        )
-                    related.record_mapping(
-                        f'{expanded_target}.contributor_type', sources=evidence, value=role,
-                        outcome='defaulted' if defaulted else 'mapped',
-                        reason='Role retained as Other' if defaulted else 'Explicit contributor role',
-                    )
-                    people.append(replace(person, contributor_type=role))
+                evidence = tuple(parent.provenance[trace_start:]) if parent.provenance is not None else ()
+                people.extend(_expand_person_roles(
+                    related, sources, person, target=target, start_index=start_index + len(people),
+                    evidence=evidence, parent=parent,
+                ))
                 continue
             if sources.roles or sources.default_role is not None:
                 related = parent.descendants(group, sources.group.anchors)
@@ -105,6 +96,27 @@ def read_people(
             people.append(person)
     if not groups:
         parent.record_empty_mapping(target, sources.name)
+    return people
+
+
+def _expand_person_roles(context, sources, person, *, target, start_index, evidence, parent):
+    """Expand a constructed person, copying its evidence to each additional role entry."""
+    item_target = f'{target}[{start_index}]'
+    roles = _read_repeated_roles(context, sources, item_target, parent=parent)
+    people = []
+    for offset, (role, role_evidence, defaulted) in enumerate(roles):
+        expanded_target = f'{target}[{start_index + offset}]'
+        if offset and context.provenance is not None:
+            context.provenance.extend(rebase_attempts(
+                (attempt for attempt in evidence if attempt.field.startswith(item_target)),
+                {item_target: expanded_target},
+            ))
+        context.record_mapping(
+            f'{expanded_target}.contributor_type', sources=role_evidence, value=role,
+            outcome='defaulted' if defaulted else 'mapped',
+            reason='Role retained as Other' if defaulted else 'Explicit contributor role',
+        )
+        people.append(replace(person, contributor_type=role))
     return people
 
 

@@ -1,6 +1,6 @@
 """The complete TF field assembly: selectors, crosswalks and policy choices."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 
 from ...metadata.entities import prefer_name_source
@@ -28,7 +28,8 @@ from ...metadata.fields import (
 )
 from ...metadata.fields.people import report_orphan_identities
 from ...metadata.normalization import normalize_primary_identifier
-from ...metadata.types import GeoLocation, Identifier
+from ...metadata.provenance import mark_mapping_default, rebase_mapping
+from ...metadata.types import GeoLocation, Identifier, PersonOrOrganization
 from ...metadata.values import normalize
 from . import dataset_writers as writers
 from .crosswalks import (
@@ -157,29 +158,21 @@ def _preferred_people(context, preferred, legacy, *, target):
     return read_people(context, sources=legacy, target=target)
 
 
-def read_contributors(context, *, target, include_data_management=False):
-    people = _preferred_people(context, CONTRIBUTOR, PARTNER, target=target)
-    shared = context.shared()
-    if not include_data_management:
-        if context.provenance is not None:
-            paths = (DATA_MANAGEMENT.name, 'project/data_management/orcid', 'project/data_management/role')
-            # Trace native answers without resolving or choosing between namespaces
-            # for a source family that is disabled.
-            answers = shared.get_scope_values()
-            for path in paths:
-                values = [v for v in answers if v.attribute.path == path and v.is_true
-                          and (v.text or v.external_id or v.option)]
-                if values:
-                    shared.record_mapping(target, sources=values, outcome='skipped',
-                                          reason='Data-management contributor mapping is disabled')
-        return people
-    trace_start = len(context.provenance) if context.provenance is not None else 0
-    issue_start = len(context.issues)
-    offset = len(people)
-    additional = read_people(context, sources=DATA_MANAGEMENT, target=target, repeat_roles=True, start_index=offset)
-    replacements = {}
+@dataclass(frozen=True)
+class _ContributorMerge:
+    people: list[PersonOrOrganization]
+    destinations: tuple[int, ...]
+    duplicates: frozenset[int]
+    has_conflicts: bool
+
+
+def _merge_contributor_entries(existing, additional):
+    """Select final entries and indices without reading answers or changing diagnostics."""
+    people = list(existing)
+    destinations = []
     duplicates = set()
-    for index, person in enumerate(additional, offset):
+    has_conflicts = False
+    for index, person in enumerate(additional):
         identifiers = {(i.identifier_type, normalize(i.value)) for i in person.identifiers}
         match = next((position for position, existing in enumerate(people)
                       if existing == person or (
@@ -187,39 +180,63 @@ def read_contributors(context, *, target, include_data_management=False):
                               (i.identifier_type, normalize(i.value)) for i in existing.identifiers
                           )
                       )), None)
-        old = f'{target}[{index}]'
         if match is None:
-            replacements[old] = f'{target}[{len(people)}]'
+            destinations.append(len(people))
             people.append(person)
         else:
-            replacements[old] = f'{target}[{match}]'
-            duplicates.add(old)
-            if people[match] != person:
-                context.warn(target, DATA_MANAGEMENT.name,
-                             'Existing contributor identity and role retained; differing details were not merged')
+            destinations.append(match)
+            duplicates.add(index)
+            has_conflicts = has_conflicts or people[match] != person
+    return _ContributorMerge(people, tuple(destinations), frozenset(duplicates), has_conflicts)
 
-    def rebase(field):
-        return next((new + field[len(old):] for old, new in replacements.items() if field.startswith(old)), field)
 
-    if context.provenance is not None:
-        context.provenance[trace_start:] = [
-            replace(attempt, field=rebase(attempt.field), **(
-                {'outcome': 'skipped', 'reason': 'Duplicate contributor identity and role; existing entry retained'}
-                if not attempt.unsuccessful and any(attempt.field.startswith(old) for old in duplicates) else {}
-            )) for attempt in context.provenance[trace_start:]
-        ]
-    context.issues[issue_start:] = [replace(issue, field=rebase(issue.field)) for issue in context.issues[issue_start:]]
-    return people
+def _record_disabled_data_management(context, target):
+    if context.provenance is None:
+        return
+    shared = context.shared()
+    paths = (DATA_MANAGEMENT.name, 'project/data_management/orcid', 'project/data_management/role')
+    # Inspect native answers without resolving ambiguous paths for a disabled source.
+    answers = shared.get_scope_values()
+    for path in paths:
+        values = [v for v in answers if v.attribute.path == path and v.is_true
+                  and (v.text or v.external_id or v.option)]
+        if values:
+            shared.record_mapping(target, sources=values, outcome='skipped',
+                                  reason='Data-management contributor mapping is disabled')
+
+
+def read_contributors(context, *, target, include_data_management=False):
+    people = _preferred_people(context, CONTRIBUTOR, PARTNER, target=target)
+    if not include_data_management:
+        _record_disabled_data_management(context, target)
+        return people
+    trace_start = len(context.provenance) if context.provenance is not None else 0
+    issue_start = len(context.issues)
+    offset = len(people)
+    additional = read_people(context, sources=DATA_MANAGEMENT, target=target, repeat_roles=True, start_index=offset)
+    merged = _merge_contributor_entries(people, additional)
+    if merged.has_conflicts:
+        context.warn(target, DATA_MANAGEMENT.name,
+                     'Existing contributor identity and role retained; differing details were not merged')
+    rebase_mapping(
+        context,
+        {f'{target}[{offset + index}]': f'{target}[{destination}]'
+         for index, destination in enumerate(merged.destinations)},
+        provenance_start=trace_start,
+        issue_start=issue_start,
+        skipped=tuple(f'{target}[{offset + index}]' for index in merged.duplicates),
+        reason='Duplicate contributor identity and role; existing entry retained',
+    )
+    return merged.people
 
 
 def read_title(context, *, target):
     title = read_text(context, source=Source('project/dataset/title'), target=target)
     if not title:
+        trace_start = len(context.provenance) if context.provenance is not None else 0
         title = read_text(context, source=Source('project/dataset/id'), target=target)
-        if title and context.provenance is not None:
-            context.provenance[-1] = replace(
-                context.provenance[-1], outcome='defaulted', reason='Dataset ID title fallback'
-            )
+        if title:
+            mark_mapping_default(context, target, title, since=trace_start, reason='Dataset ID title fallback')
     return title
 
 

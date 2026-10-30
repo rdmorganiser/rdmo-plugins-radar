@@ -29,7 +29,7 @@ from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
-from rdmo_radar.metadata.provenance import json_leaves, validate_payload_provenance, xml_leaves
+from rdmo_radar.metadata.provenance import json_leaves, rebase_mapping, validate_payload_provenance, xml_leaves
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
     Affiliation,
@@ -38,6 +38,7 @@ from rdmo_radar.metadata.types import (
     GeoLocation,
     Identifier,
     MappingAttempt,
+    MappingIssue,
     MappingResult,
     MappingSource,
     PersonOrOrganization,
@@ -387,6 +388,73 @@ def test_license_conflicts_and_title_fallback_have_explicit_attempts(db):
     assert rights.reason == 'Multiple licenses selected'
     assert len(rights.sources) == 2
     assert 'rights' not in result.payload['descriptiveMetadata']
+
+
+def test_title_fallback_labels_its_decision_even_if_the_reader_records_another_field(monkeypatch):
+    from rdmo_radar.mappings.template_framework import fields as tf_fields
+
+    answer = Value(attribute=Attribute(path='project/dataset/id'), text='Fallback title')
+    previous = MappingAttempt('title', value='Fallback title', reason='Earlier decision')
+    context = ProjectReadContext({'project/dataset/id': [answer]}, {}, provenance=[previous])
+    original = tf_fields.read_text
+
+    def read_with_extra_trace(context, **kwargs):
+        value = original(context, **kwargs)
+        context.record_mapping('resource.value', value='Description', reason='Unrelated reader decision')
+        return value
+
+    monkeypatch.setattr(tf_fields, 'read_text', read_with_extra_trace)
+    assert tf_fields.read_title(context, target='title') == 'Fallback title'
+    assert context.provenance[0] is previous
+    titles = [a for a in context.provenance[1:] if a.field == 'title' and not a.unsuccessful]
+    assert len(titles) == 1
+    assert titles[0].outcome == 'defaulted'
+    assert titles[0].reason == 'Dataset ID title fallback'
+    assert titles[0].sources[0].value is answer
+    assert all(a.outcome == 'mapped' for a in context.provenance if a.field == 'resource.value')
+
+
+@pytest.mark.parametrize('trace', [False, True])
+def test_contributor_rebasing_preserves_diagnostics_sources_and_field_boundaries(trace):
+    answer = Value(attribute=Attribute(path='person'), text='Jane Doe')
+    source = MappingSource('person', answer)
+    previous = MappingAttempt('contributors[1].name', (source,), 'Earlier person')
+    previous_issue = MappingIssue('contributors[1].name', 'Earlier issue')
+    attempts = [
+        previous,
+        MappingAttempt('contributors[1].name', (source,), 'Jane Doe'),
+        MappingAttempt('contributors[1].identifiers[0].value', (source,), 'id', 'rejected', 'Invalid identifier'),
+        MappingAttempt('contributors[2].name', (source,), 'Next person'),
+        MappingAttempt('contributors[10].name', (source,), 'Tenth person'),
+    ]
+    issues = [previous_issue, MappingIssue('contributors[2].name', 'Name warning', source='person')]
+    context = ProjectReadContext({}, {}, provenance=attempts if trace else None, issues=issues)
+    rebase_mapping(
+        context,
+        {'contributors[1]': 'contributors[0]', 'contributors[2]': 'contributors[1]'},
+        provenance_start=1,
+        issue_start=1,
+        skipped=('contributors[1]',),
+        reason='Duplicate entry',
+    )
+    assert context.issues == [previous_issue, MappingIssue('contributors[1].name', 'Name warning', source='person')]
+    assert context.issues[0] is previous_issue
+    if not trace:
+        assert context.provenance is None
+        return
+    assert context.provenance[0] is previous
+    duplicate, rejected, following, tenth = context.provenance[1:]
+    assert duplicate.field == 'contributors[0].name'
+    assert duplicate.outcome == 'skipped'
+    assert duplicate.reason == 'Duplicate entry'
+    assert rejected.field == 'contributors[0].identifiers[0].value'
+    assert rejected.outcome == 'rejected'
+    assert rejected.reason == 'Invalid identifier'
+    assert following.field == 'contributors[1].name'
+    assert following.outcome == 'mapped'
+    assert tenth.field == 'contributors[10].name'
+    assert tenth.outcome == 'mapped'
+    assert all(a.sources[0].value is answer for a in context.provenance)
 
 
 def test_uninstrumented_custom_mapping_reports_unavailable_and_draft_fallback_is_labelled(db):

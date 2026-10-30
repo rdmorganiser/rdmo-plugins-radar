@@ -117,6 +117,13 @@ remain supported and report provenance as unavailable. Factories copy prepared c
 Values; collection is disabled unless requested. REST warnings and payload previews reuse a single mapping
 result per dataset within the operation, avoiding duplicate decisions.
 
+Contributor merging computes final entries, destination indices and duplicate decisions before
+updating diagnostics. Shared provenance helpers rebase attempts and issues for the affected read
+together, using canonical field boundaries. Role expansion copies a constructed person's evidence
+to each additional role entry. Fallback labels select the successful field/value decision within
+that read rather than relying on the last recorder entry. These operations retain native answer
+identities and leave earlier diagnostics untouched.
+
 Built-in serializers have an optional `record_output` callback for canonical-field/output-location bindings.
 Each serializer records bindings beside the fields it emits, including in nested serialization helpers;
 there is no separate table repeating the REST and XML field layouts. Bindings contain format names, never

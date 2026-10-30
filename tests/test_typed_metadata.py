@@ -591,6 +591,50 @@ def test_deduplication_retains_existing_details_and_rebases_following_entries(st
     assert second.sources[0].value.set_index == 4
 
 
+@pytest.mark.parametrize('trace', [False, True])
+def test_role_expansion_and_merging_keep_final_indices_in_both_exports(
+    staff_project, django_assert_num_queries, trace,
+):
+    for suffix, text in [('name', 'Preferred name'), ('orcid', ORCID), ('role', 'DataCurator')]:
+        add_answer(staff_project, f'project/contributor/{suffix}', text, set_index=7)
+    add_data_management_role(staff_project, 1)
+    add_data_management_role(staff_project, 5)
+    add_answer(staff_project, 'project/data_management/name', 'Second person', set_prefix='0', set_index=4)
+    add_data_management_role(staff_project, 99, person=4)
+    profile = make_data_management_mapping()
+    rest = build_export_service(staff_project, profile=profile, collect_mapping=trace)
+    xml = build_xml_export_service(staff_project, profile=profile, collect_mapping=trace)
+    with django_assert_num_queries(0):
+        payload = rest.compute_payload(1, 'user@example.test')
+        file, = xml.compute_files([1])
+    people = payload.payload['descriptiveMetadata']['contributors']['contributor']
+    assert [(p['contributorName'], p['contributorType']) for p in people] == [
+        ('Preferred name', 'DATA_CURATOR'), ('Jane Doe', 'PROJECT_MANAGER'), ('Second person', 'OTHER'),
+    ]
+    exported = parse_xml(ElementTree.fromstring(file.xml_data)).contributors
+    assert [(p.name, p.contributor_type) for p in exported] == [
+        ('Preferred name', 'DataCurator'), ('Jane Doe', 'ProjectManager'), ('Second person', 'Other'),
+    ]
+    assert file.issues == payload.issues
+    warning, = [issue for issue in payload.issues if 'Unknown contributor role' in issue.reason]
+    assert warning.field == 'contributors[2]'
+    for result in (payload, file):
+        if not trace:
+            assert result.provenance is None
+            continue
+        name, = [a for a in result.provenance if a.field == 'contributors[2].name' and a.output_path]
+        assert name.sources[0].value.set_index == 4
+        assert name.output_value == 'Second person'
+        rejected, = [a for a in result.provenance if a.field == 'contributors[2].contributor_type'
+                     and a.outcome == 'rejected']
+        assert rejected.sources[0].value.option.uri_path == 'dr99'
+        duplicate, = [a for a in result.provenance if a.field == 'contributors[0].name'
+                      and 'Duplicate contributor' in a.reason]
+        assert duplicate.sources[0].value.set_index == 3
+        assert duplicate.outcome == 'skipped'
+        assert not duplicate.output_path
+
+
 def test_identifier_only_person_is_not_exported_and_snapshots_remain_isolated(staff_project):
     add_data_management_role(staff_project, 1)
     snapshot = Snapshot.objects.create(project=staff_project, title='Saved')

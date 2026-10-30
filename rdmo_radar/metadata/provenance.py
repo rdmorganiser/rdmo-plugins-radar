@@ -14,6 +14,47 @@ OUTCOMES = {'mapped', 'defaulted', 'empty', 'skipped', 'rejected', 'untraced'}
 logger = logging.getLogger(__name__)
 
 
+def _within_field(field, parent):
+    return field == parent or field.startswith((f'{parent}.', f'{parent}['))
+
+
+def _rebase_field(field, replacements):
+    # Prefer the most specific field, and match components rather than arbitrary prefixes.
+    parent = max((name for name in replacements if _within_field(field, name)), key=len, default=None)
+    return replacements[parent] + field[len(parent):] if parent is not None else field
+
+
+def rebase_attempts(attempts, replacements, *, skipped=(), reason=''):
+    """Copy canonical attempts to their final fields, retaining native answer identities."""
+    result = []
+    for attempt in attempts:
+        changes = {'field': _rebase_field(attempt.field, replacements)}
+        if not attempt.unsuccessful and any(_within_field(attempt.field, field) for field in skipped):
+            changes.update(outcome='skipped', reason=reason)
+        result.append(replace(attempt, **changes))
+    return result
+
+
+def rebase_mapping(context, replacements, *, provenance_start, issue_start, skipped=(), reason=''):
+    """Reindex one read's attempts and issues together, leaving earlier records untouched."""
+    if context.provenance is not None:
+        context.provenance[provenance_start:] = rebase_attempts(
+            context.provenance[provenance_start:], replacements, skipped=skipped, reason=reason,
+        )
+    context.issues[issue_start:] = [
+        replace(issue, field=_rebase_field(issue.field, replacements)) for issue in context.issues[issue_start:]
+    ]
+
+
+def mark_mapping_default(context, target, value, *, since, reason):
+    """Label the successful decision for a fallback without relying on recorder order."""
+    if context.provenance is not None:
+        for index in range(since, len(context.provenance)):
+            attempt = context.provenance[index]
+            if attempt.field == target and attempt.value == value and not attempt.unsuccessful:
+                context.provenance[index] = replace(attempt, outcome='defaulted', reason=reason)
+
+
 def metadata_value(metadata, path):
     value = metadata
     try:
