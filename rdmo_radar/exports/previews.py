@@ -36,6 +36,7 @@ def compute_source_answers(values, mapping=None, *, payload=None):
         return ('pk', value.pk) if value.pk is not None else ('object', id(value))
 
     fields = {}
+    notes = {}
     if mapping is not None and mapping['available']:
         for row in mapping['mapped']:
             if row.outcome not in ('mapped', 'defaulted') or not row.output_path:
@@ -46,4 +47,14 @@ def compute_source_answers(values, mapping=None, *, payload=None):
                     destinations = fields.setdefault(value_key(source.value), [])
                     if path not in destinations:
                         destinations.append(path)
-    return [{'value': value, 'radar_fields': fields.get(value_key(value), [])} for value in values]
+        for row in mapping.get('attempts', ()):
+            if row.outcome not in ('empty', 'skipped', 'rejected') or not row.reason:
+                continue
+            for source in row.sources:
+                if isinstance(source.value, Value):
+                    entries = notes.setdefault(value_key(source.value), [])
+                    note = {'outcome': row.outcome, 'reason': row.reason}
+                    if note not in entries:
+                        entries.append(note)
+    return [{'value': value, 'radar_fields': fields.get(value_key(value), []),
+             'mapping_notes': notes.get(value_key(value), [])} for value in values]

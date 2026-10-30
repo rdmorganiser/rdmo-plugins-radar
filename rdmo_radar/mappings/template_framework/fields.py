@@ -159,7 +159,19 @@ def _preferred_people(context, preferred, legacy, *, target):
 
 def read_contributors(context, *, target, include_data_management=False):
     people = _preferred_people(context, CONTRIBUTOR, PARTNER, target=target)
+    shared = context.shared()
     if not include_data_management:
+        if context.provenance is not None:
+            paths = (DATA_MANAGEMENT.name, 'project/data_management/orcid', 'project/data_management/role')
+            # Trace native answers without resolving or choosing between namespaces
+            # for a source family that is disabled.
+            answers = shared.get_scope_values()
+            for path in paths:
+                values = [v for v in answers if v.attribute.path == path and v.is_true
+                          and (v.text or v.external_id or v.option)]
+                if values:
+                    shared.record_mapping(target, sources=values, outcome='skipped',
+                                          reason='Data-management contributor mapping is disabled')
         return people
     trace_start = len(context.provenance) if context.provenance is not None else 0
     issue_start = len(context.issues)

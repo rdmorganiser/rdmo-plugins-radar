@@ -198,12 +198,14 @@ def _read_name(context, sources, target, normalizer):
 
 def _read_person_or_organization(context, sources, target, *, parent, normalizer, identifier_normalizer):
     context = parent.descendants(context, sources.group.anchors)
+    start = len(context.provenance) if context.provenance is not None else 0
     name, given_name, family_name, identifiers = _read_name(context, sources, target, normalizer)
     if not name:
         if context.get_scope_values():
             context.warn(target, sources.name, 'Identifier/type-only entries do not establish an entity name')
         return None
-    identifiers = _read_identifiers(context, sources, target, identifiers, normalizer, identifier_normalizer)
+    identifiers = _read_identifiers(context, sources, target, identifiers, normalizer, identifier_normalizer,
+                                    provenance_start=start)
     name_type = (
         read_controlled_value(context, sources.name_type, sources.name_type_options, target=f'{target}.name_type')
         if sources.name_type
@@ -217,11 +219,29 @@ def _read_person_or_organization(context, sources, target, *, parent, normalizer
             else ('Personal' if given_name or family_name or 'ORCID' in schemes else sources.default_name_type)
         )
         if name_type:
+            evidence_fields = set()
+            reason = 'Established source category default'
+            scheme = 'ROR' if 'ROR' in schemes else 'ORCID' if 'ORCID' in schemes else None
+            if scheme:
+                reason = f'Entity type inferred from {scheme} identifier'
+                evidence_fields = {
+                    f'{target}.identifiers[{index}].value'
+                    for index, identifier in enumerate(identifiers) if identifier.identifier_type == scheme
+                }
+            elif given_name or family_name:
+                reason = 'Person inferred from structured name'
+                evidence_fields = {f'{target}.given_name', f'{target}.family_name'}
+            evidence = {}
+            for attempt in (context.provenance or ())[start:]:
+                if attempt.field in evidence_fields and not attempt.unsuccessful:
+                    for source in attempt.sources:
+                        evidence[id(source.value)] = source
             context.record_mapping(
                 f'{target}.name_type',
+                sources=evidence.values(),
                 value=name_type,
                 outcome='defaulted',
-                reason='Identifier, structured name or established source category',
+                reason=reason,
             )
     elif (name_type == 'Personal' and any(item.identifier_type == 'ROR' for item in identifiers)) or (
         name_type == 'Organizational' and any(item.identifier_type == 'ORCID' for item in identifiers)
@@ -238,7 +258,7 @@ def _read_person_or_organization(context, sources, target, *, parent, normalizer
     )
 
 
-def _read_identifiers(context, sources, target, identifiers, normalizer, identifier_normalizer):
+def _read_identifiers(context, sources, target, identifiers, normalizer, identifier_normalizer, *, provenance_start):
     evidence = []
     conflicting = False
     for path, hint in ((sources.name, None), (sources.autocomplete, 'ORCID')):
@@ -288,6 +308,13 @@ def _read_identifiers(context, sources, target, identifiers, normalizer, identif
         context.warn(target, sources.name, 'Conflicting entity identifiers; identity omitted')
         return []
     result = [next(iter(values.values())) for values in by_scheme.values()]
+    if context.provenance is not None:
+        # Replace preliminary successful reads with the final, reconciled identity.
+        # Keep empty, skipped and rejected attempts as diagnostics.
+        context.provenance[provenance_start:] = [
+            attempt for attempt in context.provenance[provenance_start:]
+            if attempt.unsuccessful or not attempt.field.startswith(f'{target}.identifiers[')
+        ]
     for index, identifier in enumerate(result):
         inputs = {id(value): value for item, values in evidence if item == identifier for value in values}
         sources = list(inputs.values())

@@ -7,19 +7,21 @@ from xml.etree import ElementTree
 
 import pytest
 
+from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
-from rdmo.projects.models import Project, Snapshot
+from rdmo.projects.models import Project, Snapshot, Value
 from rdmo.questions.models import Catalog, CatalogSection, Section
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
-from rdmo_radar.mappings.template_framework.fields import TF_FIELDS
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, read_contributors
 from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.fields import Source, read_names
 from rdmo_radar.metadata.normalization import normalize_answer
 from rdmo_radar.metadata.provenance import json_leaves, xml_leaves
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import Affiliation, FundingReference, Identifier, Keyword, PersonOrOrganization
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
@@ -131,6 +133,47 @@ def test_legacy_creator_fallback(project):
     add_answer(project, 'project/dataset/creator/name', 'Legacy creator', set_prefix='2')
     result = metadata(project).metadata
     assert [person.name for person in result.creators] == ['Legacy creator']
+
+
+@pytest.mark.parametrize('kind', ['ror', 'orcid', 'structured', 'plain'])
+def test_inferred_creator_type_records_evidence_and_only_final_identifier_mappings(project, kind):
+    base = 'project/dataset/owner'
+    if kind == 'structured':
+        add_answer(project, f'{base}/given_name', 'Jane', set_prefix='2')
+        add_answer(project, f'{base}/family_name', 'Doe', set_prefix='2')
+    else:
+        text, external_id = {
+            'ror': (ror_display(), ROR), 'orcid': (orcid_display(), ORCID), 'plain': ('Plain name', ''),
+        }[kind]
+        add_answer(project, f'{base}/name', text, external_id=external_id, set_prefix='2')
+    if kind in ('ror', 'orcid'):
+        # The same identity in a dedicated field must contribute evidence once.
+        add_answer(project, f'{base}/{kind}', ROR if kind == 'ror' else ORCID, set_prefix='2')
+    plain = metadata(project).metadata
+    traced = metadata(project, collect_mapping=True)
+    assert traced.metadata == plain
+    creator = traced.metadata.creators[0]
+    assert creator.name_type == ('Organizational' if kind == 'ror' else 'Personal')
+    row = next(a for a in traced.provenance if a.field == 'creators[0].name_type' and not a.unsuccessful)
+    paths = {s.value.attribute.path for s in row.sources}
+    if kind == 'plain':
+        assert not paths
+        assert row.reason == 'Established source category default'
+    elif kind == 'structured':
+        assert paths == {f'{base}/given_name', f'{base}/family_name'}
+        assert row.reason == 'Person inferred from structured name'
+    else:
+        assert paths == {f'{base}/name', f'{base}/{kind}'}
+        assert kind.upper() in row.reason
+        for suffix in ('value', 'identifier_type'):
+            rows = [a for a in traced.provenance
+                    if a.field == f'creators[0].identifiers[0].{suffix}' and not a.unsuccessful]
+            assert len(rows) == 1
+            assert {s.value.attribute.path for s in rows[0].sources} == paths
+        source = complete_metadata(creators=[creator])
+        from rdmo_radar.exports.renderers import RadarExportRenderer
+        assert get_radar_validation_errors(RadarExportRenderer().render(to_xml_payload(source))) == ()
+        assert to_api_payload(source)['creators']['creator'][0]['nameType'] == creator.name_type
 
 
 @pytest.mark.parametrize('correct_value', [None, ''])
@@ -608,3 +651,19 @@ def test_catalog_group_ancestry_keeps_people_roles_and_orcids_together(staff_pro
         ('Person 3', 'ProjectManager', ORCID),
         ('Person 7', 'DataCurator', '0000-0003-4553-3671'),
     ]
+
+
+@pytest.mark.parametrize('trace', [False, True])
+def test_disabled_contributors_do_not_resolve_ambiguous_unused_attributes(trace):
+    path = 'project/data_management/name'
+    values = {}
+    for namespace in ('one', 'two'):
+        attribute = Attribute(uri=f'https://{namespace}.test/domain/{path}', path=path)
+        values[attribute.uri] = [Value(attribute=attribute, text='Person')]
+    context = ProjectReadContext(values, {}, provenance=[] if trace else None)
+    assert read_contributors(context, target='contributors') == []
+    assert not context.issues
+    if trace:
+        notes = [a for a in context.provenance if 'mapping is disabled' in a.reason]
+        assert {s.value.attribute.uri for a in notes for s in a.sources} == set(values)
+        assert all(a.outcome == 'skipped' for a in notes)

@@ -157,7 +157,7 @@ def test_source_only_preview_keeps_answers_when_payload_preparation_fails(previe
         assert preview['mapping_error']
         assert preview['source_error'] is None
         assert preview['source_values'] == [answer]
-        assert preview['source_answers'] == [{'value': answer, 'radar_fields': []}]
+        assert preview['source_answers'] == [{'value': answer, 'radar_fields': [], 'mapping_notes': []}]
 
 
 def test_mapping_warning_failure_does_not_hide_other_dataset_warnings(preview_provider, caplog):

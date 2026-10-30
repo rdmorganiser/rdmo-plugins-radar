@@ -123,6 +123,14 @@ when no identifiers exist. Existing details are retained; differences produce wa
 not name-based merges. Equivalent name-only entries with differing roles remain separate.
 Import destinations are unchanged.
 
+Source-answer cards now show deduplicated empty/skipped/rejected notes from the exact
+native answers used by the trace. Answers without a destination say “No RADAR output
+recorded for this answer”; a missing trace does not imply a deliberately disabled mapping.
+Disabled data-management mapping records an explicit skipped explanation. These notes
+remain escaped, preview-only, and require no additional database queries.
+Disabled-source notes inspect native prepared answers only when tracing is enabled;
+they never resolve ambiguous unused Attribute paths or introduce mapping warnings.
+
 ## Software sources
 
 `mappings/template_framework/fields.py` reserves `SOFTWARE_NAME_PATH` and
@@ -250,6 +258,13 @@ metadata. XML shows mapping issues, missing required fields, and bundled-XSD val
 before allowing “Download anyway”. Only XML generation failures block download. The existing direct
 export form shows incomplete fields and mapping issues; datasets can still be created as drafts.
 Completing missing metadata in RADAR remains necessary before archival or publication.
+
+Creator/contributor type provenance links ROR and ORCID inferences to their final identifier
+evidence and person inferences from structured names to the corresponding name answers.
+The established source-category default remains explicitly identified as a default without
+answer evidence. Successful identifier traces record the final reconciled value once, with
+all supporting sources; empty, skipped, and rejected reads remain available as diagnostics.
+These tracing changes do not alter XML or REST identity values.
 
 ## Import compatibility and verification
 

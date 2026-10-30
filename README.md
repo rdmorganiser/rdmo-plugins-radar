@@ -97,6 +97,11 @@ collection entries and snapshots, rather than guessing from Attribute paths or m
 `RADAR_PREVIEW_SOURCE_ANSWERS` enables these inline destinations; `RADAR_PREVIEW_MAPPING` controls only the
 separate **RADAR Field mapping** panel.
 
+Source cards also display recorded reasons for skipped, rejected or empty attempts. “No RADAR
+output recorded for this answer” means that the trace supplies no emitted destination; it does
+not by itself establish whether a mapping is unsupported or disabled. When tracing is unavailable,
+the preview continues to say “RADAR field unavailable”.
+
 The same settings apply to `radar-xml`: the payload panel shows the actual generated XML rather than
 JSON. When any preview setting is enabled, the XML page lists every dataset, including valid files,
 with its own warnings and enabled panels. Without preview settings, valid XML exports download directly

@@ -12,9 +12,12 @@
                     {% for field in answer.radar_fields %}
                     <div><code class="text-muted">{{ field }}</code></div>
                     {% empty %}
-                    <span class="text-muted">{% if mapping_available %}{% trans 'No recorded RADAR field' %}{% else %}{% trans 'RADAR field unavailable' %}{% endif %}</span>
+                    <span class="text-muted">{% if mapping_available %}{% trans 'No RADAR output recorded for this answer' %}{% else %}{% trans 'RADAR field unavailable' %}{% endif %}</span>
                     {% endfor %}
                 </div>
+                {% for note in answer.mapping_notes %}
+                <div class="text-muted"><span class="label label-default">{{ note.outcome }}</span> {{ note.reason }}</div>
+                {% endfor %}
             </div>
             {% if debug_mode %}
             <div class="radar-attribute-coordinates">

@@ -22,6 +22,7 @@ from rdmo_radar.exports import (
 from rdmo_radar.exports import (
     RadarTemplateFrameworkExportProvider as RadarExportProvider,
 )
+from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExport
 from rdmo_radar.exports.previews import compute_mapping_preview, compute_payload_field_path, compute_source_answers
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
@@ -44,8 +45,18 @@ from rdmo_radar.metadata.types import (
     Software,
 )
 
-from .helpers import add_answer, add_namespaced_attribute, complete_metadata, export_for
+from .helpers import (
+    add_answer,
+    add_data_management_role,
+    add_namespaced_attribute,
+    complete_metadata,
+    export_for,
+    make_data_management_mapping,
+    make_data_management_project,
+)
 from .test_exports import export_provider
+from .test_typed_metadata import attach_catalog
+from .test_value_scopes import add_page, add_question, add_questionset
 
 
 def test_context_records_actual_normalization_ambiguity_and_missing_answers():
@@ -479,6 +490,7 @@ def test_inline_source_fields_follow_real_payload_indices_without_extra_queries(
     assert set(given_name['radar_fields']) == {
         'descriptiveMetadata.creators.creator[0].creatorName',
         'descriptiveMetadata.creators.creator[0].givenName',
+        'descriptiveMetadata.creators.creator[0].nameType',
     }
     other = next(row for row in tenth['source_answers']
                  if row['value'].attribute.path == 'project/dataset/creator/name')
@@ -527,7 +539,7 @@ def test_payload_field_paths_preserve_json_keys_and_array_positions(pointer, exp
 
 
 @pytest.mark.parametrize('provenance, expected', [
-    (None, 'RADAR field unavailable'), ((), 'No recorded RADAR field'),
+    (None, 'RADAR field unavailable'), ((), 'No RADAR output recorded for this answer'),
 ])
 def test_missing_inline_provenance_does_not_guess_a_destination(provenance, expected):
     value = Value(attribute=Attribute(uri='https://example.test/domain/title'), text='Title')
@@ -539,3 +551,94 @@ def test_missing_inline_provenance_does_not_guess_a_destination(provenance, expe
     })
     assert expected in content
     assert 'descriptiveMetadata.title' not in content
+
+
+@pytest.fixture
+def staff_project(db):
+    return make_data_management_project()
+
+
+def test_default_mapping_explains_disabled_contributors(staff_project):
+    add_data_management_role(staff_project, 1)
+    service = build_export_service(staff_project, profile=TEMPLATE_FRAMEWORK_MAPPING, collect_mapping=True)
+    result = service.compute_payload(1, 'user@example.test')
+    assert 'contributors' not in result.payload['descriptiveMetadata']
+    source = staff_project.values.get(attribute__path='project/data_management/name')
+    rows = compute_source_answers([source], compute_mapping_preview(result.provenance), payload=result.payload)
+    assert rows[0]['radar_fields'] == []
+    assert rows[0]['mapping_notes'] == [
+        {'outcome': 'skipped', 'reason': 'Data-management contributor mapping is disabled'}
+    ]
+
+
+@pytest.mark.parametrize(
+    'provider_class',
+    [
+        RadarCredentialsExportProvider,
+        RadarExportProvider,
+        RadarExport,
+    ],
+)
+@pytest.mark.parametrize('enabled', [False, True])
+def test_source_previews_in_all_exports_explain_optional_sources_without_queries(
+    staff_project,
+    settings,
+    django_assert_num_queries,
+    provider_class,
+    enabled,
+):
+    attach_catalog(staff_project)
+    shared_page = add_page(staff_project)
+    staff = add_questionset(shared_page, 'project/data_management/name', collection=True)
+    add_question(staff, 'project/data_management/orcid')
+    add_question(staff, 'project/data_management/role')
+    add_page(staff_project, 'project/dataset/id', collection=True)
+    add_data_management_role(staff_project, 1)
+    settings.RADAR_PREVIEW_SOURCE_ANSWERS = True
+    provider = export_for(staff_project, provider_class)
+    provider.mapping = make_data_management_mapping() if enabled else TEMPLATE_FRAMEWORK_MAPPING
+    if provider_class is RadarExport:
+        provider.get_service()
+        with django_assert_num_queries(0):
+            previews = provider.prepare_files()
+    else:
+        provider.prepare_export_session()
+        with django_assert_num_queries(0):
+            previews = provider.compute_dataset_previews(provider.get_export_form())
+    assert len(previews) == 2
+    for preview in previews:
+        source = next(
+            a for a in preview['source_answers'] if a['value'].attribute.path == 'project/data_management/name'
+        )
+        if enabled:
+            assert any('contributor' in field for field in source['radar_fields'])
+        else:
+            assert not source['radar_fields']
+            assert any('disabled' in note['reason'] for note in source['mapping_notes'])
+
+
+def test_source_notes_use_native_identity_are_deduplicated_and_escaped():
+    from rdmo_radar.metadata.types import MappingAttempt, MappingSource
+
+    first = Value(attribute=Attribute(path='answer'), text='Same')
+    other = Value(attribute=Attribute(path='answer'), text='Same')
+    attempt = MappingAttempt('contributors', (MappingSource('answer', first),), outcome='skipped', reason='<script>')
+    rows = compute_source_answers([first, other], compute_mapping_preview((attempt, attempt)))
+    assert len(rows[0]['mapping_notes']) == 1
+    assert rows[1]['mapping_notes'] == []
+    html = render_to_string(
+        'plugins/exports_radar_source_answers.html',
+        {
+            'source_answers': rows,
+            'mapping_available': True,
+        },
+    )
+    assert '&lt;script&gt;' in html
+    assert '<script>' not in html
+    assert 'No RADAR output recorded for this answer' in html
+
+
+def test_source_notes_accept_existing_mapping_dictionaries_without_attempts():
+    value = Value(attribute=Attribute(path='answer'), text='Available')
+    rows = compute_source_answers([value], {'available': True, 'mapped': []})
+    assert rows == [{'value': value, 'radar_fields': [], 'mapping_notes': []}]
