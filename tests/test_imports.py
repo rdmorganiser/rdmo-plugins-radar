@@ -356,6 +356,53 @@ def test_empty_import_paths_return_none_without_queries_or_uri_construction(db, 
     assert plugin.values == []
 
 
+def test_numeric_import_selectors_have_separate_caches_and_keep_model_passthrough(db, django_assert_num_queries):
+    attribute = add_attribute('research/type')
+    option = Option.objects.create(pk=attribute.pk, uri_prefix=DEFAULT_URI_PREFIX, uri_path='type/example')
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    plugin.get_attribute = Mock(wraps=plugin.get_attribute)
+    plugin.get_option = Mock(wraps=plugin.get_option)
+    context = ProjectWriteContext(plugin, {}, Coordinates(), namespace=DEFAULT_URI_PREFIX)
+    missing = attribute.pk + 10000
+    with django_assert_num_queries(4):
+        assert context.fetch_attribute(attribute.pk) == attribute
+        assert context.fetch_option(option.pk) == option
+        assert context.fetch_attribute(missing) is None
+        assert context.fetch_option(missing) is None
+    deferred_attribute = Attribute.objects.only('pk').get(pk=attribute.pk)
+    deferred_option = Option.objects.only('pk').get(pk=option.pk)
+    with django_assert_num_queries(0):
+        assert context.fetch_attribute(attribute.pk) == attribute
+        assert context.fetch_option(option.pk) == option
+        assert context.fetch_attribute(missing) is None
+        assert context.fetch_option(missing) is None
+        assert context.fetch_attribute(deferred_attribute) is deferred_attribute
+        assert context.fetch_option(deferred_option) is deferred_option
+    plugin.get_attribute.assert_called_once_with(attribute.uri)
+    plugin.get_option.assert_called_once_with(option.uri)
+    assert 'uri' in deferred_attribute.get_deferred_fields()
+    assert 'uri' in deferred_option.get_deferred_fields()
+
+
+def test_synthetic_attribute_ambiguity_does_not_apply_to_options():
+    path = 'research/type'
+    attributes = [Attribute(path=path), Attribute(path=path)]
+    option = Option(uri_path='type/example')
+    plugin = SimpleNamespace(
+        values=[Value(attribute=attribute, text='Existing') for attribute in attributes],
+        get_attribute=Mock(return_value=attributes[0]), get_option=Mock(return_value=option),
+    )
+    context = ProjectWriteContext(plugin, {}, Coordinates(), namespace=DEFAULT_URI_PREFIX)
+    assert context.fetch_attribute(path) is None
+    assert context.fetch_attribute(path) is None
+    assert context.fetch_option(option.uri_path) is option
+    assert context.fetch_option(option.uri_path) is option
+    assert context.fetch_attribute(attributes[0]) is attributes[0]
+    assert [issue.reason for issue in context.issues] == ['Ambiguous synthetic Attribute import destination']
+    plugin.get_attribute.assert_called_once()
+    plugin.get_option.assert_called_once()
+
+
 def test_unmapped_options_and_missing_fields_warn_without_staging(db, django_assert_num_queries):
     context = make_context()
     with django_assert_num_queries(2):

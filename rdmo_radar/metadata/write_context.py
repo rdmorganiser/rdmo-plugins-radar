@@ -149,68 +149,58 @@ class ProjectWriteContext:
         return max((value.collection_index for value in attribute_values), default=-1) + 1
 
     def fetch_attribute(self, path) -> Attribute | None:
-        if isinstance(path, Attribute):
-            return path
-        if isinstance(path, int):
-            if path not in self._attributes:
-                attribute = Attribute.objects.filter(pk=path).first()
-                self._attributes[path] = self.import_plugin.get_attribute(attribute.uri) if attribute else None
-            return self._attributes[path]
-        if path in self._attributes:
-            return self._attributes[path]
-        if not path:
-            self._attributes[path] = None
-            return None
-        attribute_uri = path if is_uri(path) else Attribute.build_uri(self.namespace, path) if self.namespace else None
-        attribute = self.import_plugin.get_attribute(attribute_uri) if attribute_uri else None
-        # Preserve installed custom URI prefixes through the public import API.
-        if attribute is None and not is_uri(path):
-            matching_attributes_map = {}
-            for attribute_uri in Attribute.objects.filter(path=path).values_list('uri', flat=True):
-                matching_attribute = self.import_plugin.get_attribute(attribute_uri)
-                if matching_attribute is not None:
-                    matching_attributes_map[model_key(matching_attribute)] = matching_attribute
-            if len(matching_attributes_map) == 1:
-                attribute = next(iter(matching_attributes_map.values()))
-            elif matching_attributes_map:
-                self._ambiguous_attributes.add(path)
-                self.warn(path, 'Ambiguous Attribute import destination')
-        if attribute is not None and model_key(attribute).kind == 'object':
-            if sum(attribute_key.path == attribute.path for attribute_key in self._values) > 1:
-                self._ambiguous_attributes.add(path)
-                self.warn(path, 'Ambiguous synthetic Attribute import destination')
-                attribute = None
-        self._attributes[path] = attribute
-        return attribute
+        return self._resolve_destination(
+            path, model=Attribute, path_field='path', lookup=self.import_plugin.get_attribute,
+            cache=self._attributes, ambiguous=self._ambiguous_attributes,
+            validate=self._validate_attribute_destination,
+        )
 
     def fetch_option(self, path) -> Option | None:
-        if isinstance(path, Option):
+        return self._resolve_destination(
+            path, model=Option, path_field='uri_path', lookup=self.import_plugin.get_option,
+            cache=self._options, ambiguous=self._ambiguous_options,
+        )
+
+    def _validate_attribute_destination(self, path, attribute):
+        # Attribute-only safeguard: a synthetic destination must identify one prepared bucket.
+        if model_key(attribute).kind == 'object':
+            if sum(key.path == attribute.path for key in self._values) > 1:
+                self._ambiguous_attributes.add(path)
+                self.warn(path, 'Ambiguous synthetic Attribute import destination')
+                return None
+        return attribute
+
+    def _resolve_destination(self, path, *, model, path_field, lookup, cache, ambiguous, validate=None):
+        """Resolve through the public import API, caching hits, misses and ambiguities per operation."""
+        if isinstance(path, model):
             return path
+        if path in cache:
+            return cache[path]
         if isinstance(path, int):
-            if path not in self._options:
-                option = Option.objects.filter(pk=path).first()
-                self._options[path] = self.import_plugin.get_option(option.uri) if option else None
-            return self._options[path]
-        if path in self._options:
-            return self._options[path]
+            instance = model.objects.filter(pk=path).first()
+            cache[path] = lookup(instance.uri) if instance else None
+            return cache[path]
         if not path:
-            self._options[path] = None
+            cache[path] = None
             return None
-        option_uri = path if is_uri(path) else Option.build_uri(self.namespace, path) if self.namespace else None
-        option = self.import_plugin.get_option(option_uri) if option_uri else None
-        if option is None and not is_uri(path):
-            matching_options_map = {}
-            for option_uri in Option.objects.filter(uri_path=path).values_list('uri', flat=True):
-                matching_option = self.import_plugin.get_option(option_uri)
-                if matching_option is not None:
-                    matching_options_map[model_key(matching_option, matching_option.uri_path)] = matching_option
-            if len(matching_options_map) == 1:
-                option = next(iter(matching_options_map.values()))
-            elif matching_options_map:
-                self._ambiguous_options.add(path)
-                self.warn(path, 'Ambiguous Option import destination')
-        self._options[path] = option
-        return option
+        uri = path if is_uri(path) else model.build_uri(self.namespace, path) if self.namespace else None
+        instance = lookup(uri) if uri else None
+        # Preserve installed custom URI prefixes; full URIs never fall back to short paths.
+        if instance is None and not is_uri(path):
+            matches = {}
+            for uri in model.objects.filter(**{path_field: path}).values_list('uri', flat=True):
+                candidate = lookup(uri)
+                if candidate is not None:
+                    matches[model_key(candidate, getattr(candidate, path_field))] = candidate
+            if len(matches) == 1:
+                instance = next(iter(matches.values()))
+            elif matches:
+                ambiguous.add(path)
+                self.warn(path, f'Ambiguous {model.__name__} import destination')
+        if instance is not None and validate is not None:
+            instance = validate(path, instance)
+        cache[path] = instance
+        return instance
 
     def _add_value(
         self,

@@ -307,6 +307,11 @@ merge decisions. Unsupported nested values produce warnings rather than silently
 namespace; it has no TF namespace or dataset-position default. It preserves external IDs and stages unsaved
 native Values. Result storage remains a separate operation after confirmed remote creation.
 
+Attribute and Option import lookup share operation-local caching and URI/path fallback mechanics.
+The model-specific entry points supply their public import getter, path field and separate ambiguity
+state. Only Attribute lookup applies the additional synthetic-destination ambiguity check. Explicit
+model selectors bypass lookup; primary-key selectors still resolve through the public import API.
+
 ### Shared profile definitions
 
 `mappings/common/vocabulary.py` defines the RADAR Option crosswalks and canonical constants. These
