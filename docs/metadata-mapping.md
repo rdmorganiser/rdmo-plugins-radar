@@ -120,6 +120,8 @@ missing roles retain the person as Other with a warning. Several selected roles 
 entry per distinct mapped role, in crosswalk order with Other last. Each entry retains its
 own name/identity/role provenance and correct output index. Existing contributors retain
 their current single-role conflict policy.
+Role-specific warnings and rejected answers are recorded against the expanded role entry;
+their indices follow that entry through contributor deduplication.
 
 The generic `read_people` adds `repeat_roles=False` and `start_index=0`; these defaults
 preserve its existing interface behavior. `PersonSources.role_warnings` optionally supplies

@@ -5,6 +5,8 @@ from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from types import MappingProxyType
 
+from rdmo.projects.models import Value
+
 from ..entities import read_controlled_value, read_named_value, read_named_values
 from ..normalization import normalize_answer, normalize_identifier
 from ..provenance import rebase_attempts
@@ -99,30 +101,43 @@ def read_people(
     return people
 
 
+@dataclass
+class _RepeatedRole:
+    name: str
+    sources: list[Value] = dataclass_field(default_factory=list)
+    defaulted: bool = False
+    warnings: list[tuple[AttributeSelector, str]] = dataclass_field(default_factory=list)
+    rejections: list[tuple[Value, str]] = dataclass_field(default_factory=list)
+
+
 def _expand_person_roles(context, sources, person, *, target, start_index, evidence, parent):
     """Expand a constructed person, copying its evidence to each additional role entry."""
     item_target = f'{target}[{start_index}]'
     roles = _read_repeated_roles(context, sources, item_target, parent=parent)
     people = []
-    for offset, (role, role_evidence, defaulted) in enumerate(roles):
+    for offset, role in enumerate(roles):
         expanded_target = f'{target}[{start_index + offset}]'
         if offset and context.provenance is not None:
             context.provenance.extend(rebase_attempts(
                 (attempt for attempt in evidence if attempt.field.startswith(item_target)),
                 {item_target: expanded_target},
             ))
+        for value, reason in role.rejections:
+            context.record_mapping(f'{expanded_target}.contributor_type', sources=(value,),
+                                   outcome='rejected', reason=reason)
+        for path, reason in role.warnings:
+            context.warn(expanded_target, path, reason)
         context.record_mapping(
-            f'{expanded_target}.contributor_type', sources=role_evidence, value=role,
-            outcome='defaulted' if defaulted else 'mapped',
-            reason='Role retained as Other' if defaulted else 'Explicit contributor role',
+            f'{expanded_target}.contributor_type', sources=role.sources, value=role.name,
+            outcome='defaulted' if role.defaulted else 'mapped',
+            reason='Role retained as Other' if role.defaulted else 'Explicit contributor role',
         )
-        people.append(replace(person, contributor_type=role))
+        people.append(replace(person, contributor_type=role.name))
     return people
 
 
 def _read_repeated_roles(context, sources, target, *, parent):
-    evidence = {}
-    defaulted = set()
+    roles = {}
     for source in sources.roles:
         path = source.attribute
         if source.require_shared_placement and not context.has_shared_placement(path, sources.group.anchors):
@@ -139,21 +154,24 @@ def _read_repeated_roles(context, sources, target, *, parent):
             if value.option is None:
                 role = value.text.strip() if value.text.strip() in sources.role_options.values() else None
             warning = sources.role_warnings.get(value.option.uri) if value.option else None
-            if role is None:
+            unknown = role is None
+            if unknown:
                 warning = 'Unknown contributor role; retained as Other'
                 role = 'Other'
-                defaulted.add(role)
-                context.record_mapping(f'{target}.contributor_type', sources=(value,), outcome='rejected',
-                                       reason=warning)
+            selection = roles.setdefault(role, _RepeatedRole(role))
+            selection.sources.append(value)
+            if unknown:
+                selection.defaulted = True
+                selection.rejections.append((value, warning))
             if warning:
-                context.warn(target, path, warning)
-            evidence.setdefault(role, []).append(value)
-    if not evidence:
+                selection.warnings.append((path, warning))
+    if not roles:
         context.warn(target, sources.name, 'No contributor role supplied; retained as Other')
-        return [('Other', (), True)]
+        return [_RepeatedRole('Other', defaulted=True)]
     order = list(dict.fromkeys(sources.role_options.values()))
-    return [(role, evidence[role], role in defaulted)
-            for role in sorted(evidence, key=lambda r: (r == 'Other', order.index(r) if r in order else len(order)))]
+    return [roles[role] for role in sorted(
+        roles, key=lambda r: (r == 'Other', order.index(r) if r in order else len(order)),
+    )]
 
 
 def report_orphan_identities(context, sources, target):

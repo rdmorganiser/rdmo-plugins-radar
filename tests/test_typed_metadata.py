@@ -574,6 +574,46 @@ def test_missing_and_unknown_roles_keep_people_as_other(staff_project):
     assert any(a.outcome == 'rejected' for a in result.provenance)
 
 
+@pytest.mark.parametrize('role_number', [3, 99])
+@pytest.mark.parametrize('deduplicate', [False, True])
+@pytest.mark.parametrize('trace', [False, True])
+def test_role_specific_diagnostics_follow_expanded_entries_through_merging(
+    staff_project, django_assert_num_queries, role_number, deduplicate, trace,
+):
+    add_data_management_role(staff_project, 1)
+    answer = add_data_management_role(staff_project, role_number)
+    if deduplicate:
+        for suffix, text in [('name', 'Preferred name'), ('orcid', ORCID), ('role', 'ProjectManager')]:
+            add_answer(staff_project, f'project/contributor/{suffix}', text, set_index=7)
+    profile = make_data_management_mapping()
+    rest = build_export_service(staff_project, profile=profile, collect_mapping=trace)
+    xml = build_xml_export_service(staff_project, profile=profile, collect_mapping=trace)
+    with django_assert_num_queries(0):
+        payload = rest.compute_payload(1, 'user@example.test')
+        file, = xml.compute_files([1])
+    people = payload.payload['descriptiveMetadata']['contributors']['contributor']
+    assert [p['contributorType'] for p in people] == ['PROJECT_MANAGER', 'OTHER']
+    assert [p.contributor_type for p in parse_xml(ElementTree.fromstring(file.xml_data)).contributors] == [
+        'ProjectManager', 'Other',
+    ]
+    reason = 'Data steward' if role_number == 3 else 'Unknown contributor role'
+    assert file.issues == payload.issues
+    for result in (payload, file):
+        warning, = [issue for issue in result.issues if reason in issue.reason]
+        assert warning.field == 'contributors[1]'
+        if not trace:
+            assert result.provenance is None
+            continue
+        other, = [a for a in result.provenance if a.field == 'contributors[1].contributor_type' and a.output_path]
+        assert other.value == 'Other'
+        assert other.sources[0].value.pk == answer.pk
+        rejected = [a for a in result.provenance if a.outcome == 'rejected' and reason in a.reason]
+        assert len(rejected) == (1 if role_number == 99 else 0)
+        for attempt in rejected:
+            assert attempt.field == 'contributors[1].contributor_type'
+            assert attempt.sources[0].value.pk == answer.pk
+
+
 def test_deduplication_retains_existing_details_and_rebases_following_entries(staff_project):
     for suffix, text in [('name', 'Preferred name'), ('orcid', ORCID), ('role', 'DataCurator')]:
         add_answer(staff_project, f'project/contributor/{suffix}', text, set_index=7)
