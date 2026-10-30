@@ -1,7 +1,7 @@
 """RADAR REST serialization, independent of the XML renderer's payload format."""
 
 from .constants import KEYWORD_ATTRIBUTES, SCHEME_URIS, to_api_value
-from .provenance import json_leaves, record_binding
+from .provenance import emit_bound_value, json_leaves, record_binding
 from .types import Affiliation, FundingReference, GeoLocation, PersonOrOrganization, RadarMetadata, Software, as_keyword
 
 
@@ -92,8 +92,9 @@ def to_api_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
                 ]
             }
     if metadata.title:
-        data['title'] = metadata.title
-        record_binding(record_output, 'title', f'{path}/title', data['title'])
+        emit_bound_value(
+            data, 'title', metadata.title, field='title', path=f'{path}/title', record_output=record_output,
+        )
     if metadata.additional_titles:
         items = []
         for index, title in enumerate(metadata.additional_titles):
@@ -162,8 +163,10 @@ def to_api_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
     ):
         value = getattr(metadata, field)
         if value:
-            data[name] = to_api_value(value) if field == 'language' else value
-            record_binding(record_output, field, f'{path}/{name}', data[name])
+            emit_bound_value(
+                data, name, to_api_value(value) if field == 'language' else value,
+                field=field, path=f'{path}/{name}', record_output=record_output,
+            )
     if metadata.subject_areas:
         items = []
         for index, subject in enumerate(metadata.subject_areas):
@@ -291,8 +294,9 @@ def to_api_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             ]
         }
     if metadata.version:
-        data['version'] = metadata.version
-        record_binding(record_output, 'version', f'{path}/version', data['version'])
+        emit_bound_value(
+            data, 'version', metadata.version, field='version', path=f'{path}/version', record_output=record_output,
+        )
     return data
 
 
@@ -410,44 +414,41 @@ def _geo_location(location: GeoLocation, *, target='', path='', record_output=No
 
 
 def _software(software: Software, *, target='', path='', record_output=None) -> dict:
-    data = _present(type=to_api_value(software.software_type))
-    data['softwareName'] = [_present(value=software.name, softwareVersion=software.version)]
-    record_binding(record_output, f'{target}.software_type', f'{path}/type', data.get('type'))
-    record_binding(record_output, f'{target}.name', f'{path}/softwareName/0/value', software.name)
-    record_binding(record_output, f'{target}.version', f'{path}/softwareName/0/softwareVersion', software.version)
+    data = {}
+    emit_bound_value(
+        data, 'type', to_api_value(software.software_type), field=f'{target}.software_type',
+        path=f'{path}/type', record_output=record_output, omit_none=True,
+    )
+    name = {}
+    for field, key in (('name', 'value'), ('version', 'softwareVersion')):
+        emit_bound_value(
+            name, key, getattr(software, field), field=f'{target}.{field}',
+            path=f'{path}/softwareName/0/{key}', record_output=record_output, omit_none=True,
+        )
+    data['softwareName'] = [name]
     if software.alternative_name:
-        data['alternativeSoftwareName'] = [
-            _present(value=software.alternative_name, alternativeSoftwareVersion=software.alternative_version)
-        ]
-        record_binding(
-            record_output,
-            f'{target}.alternative_name',
-            f'{path}/alternativeSoftwareName/0/value',
-            software.alternative_name,
-        )
-        record_binding(
-            record_output,
-            f'{target}.alternative_version',
-            f'{path}/alternativeSoftwareName/0/alternativeSoftwareVersion',
-            software.alternative_version,
-        )
+        alternative = {}
+        for field, key in (('alternative_name', 'value'), ('alternative_version', 'alternativeSoftwareVersion')):
+            emit_bound_value(
+                alternative, key, getattr(software, field), field=f'{target}.{field}',
+                path=f'{path}/alternativeSoftwareName/0/{key}', record_output=record_output, omit_none=True,
+            )
+        data['alternativeSoftwareName'] = [alternative]
     return data
 
 
 def _funding(reference: FundingReference, *, target='', path='', record_output=None) -> dict:
-    data = _present(
-        funderName=reference.funder_name,
-        awardNumber=reference.award_number,
-        awardURI=reference.award_uri,
-        awardTitle=reference.award_title,
-    )
+    data = {}
     for field, name in (
         ('funder_name', 'funderName'),
         ('award_number', 'awardNumber'),
         ('award_uri', 'awardURI'),
         ('award_title', 'awardTitle'),
     ):
-        record_binding(record_output, f'{target}.{field}', f'{path}/{name}', data.get(name))
+        emit_bound_value(
+            data, name, getattr(reference, field), field=f'{target}.{field}', path=f'{path}/{name}',
+            record_output=record_output, omit_none=True,
+        )
     if reference.funder_identifier:
         identifier = reference.funder_identifier
         scheme = to_api_value(identifier.identifier_type)

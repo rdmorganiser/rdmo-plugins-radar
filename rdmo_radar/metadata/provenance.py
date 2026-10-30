@@ -134,6 +134,14 @@ def record_binding(record_output, field, path, value, reason=''):
             pass
 
 
+def emit_bound_value(data, name, value, *, field, path, record_output=None, omit_none=False):
+    """Assign a scalar and record its explicit format binding; callers own conversion and omission."""
+    if value is not None or not omit_none:
+        data[name] = value
+    # Preserve attempted bindings for omitted values; projection checks actual output leaves.
+    record_binding(record_output, field, path, value)
+
+
 def project_provenance(provenance, metadata, events, output, *, xml=False):
     if provenance is None or any(field is None for field, _, _, _ in events):
         return None

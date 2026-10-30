@@ -133,6 +133,10 @@ bytes and JSON pointers against the actual payload. Changed canonical values and
 skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
 Automatic JSON output coverage tracks scalar leaves, including `null`, and omits empty objects and arrays.
 These containers remain visible in the raw payload preview but receive no automatic provenance rows.
+Scalar emission can use `emit_bound_value()` to assign a value and record its binding together.
+Serializers supply the converted value and exact output path; REST callers explicitly select omission
+of `None` while XML retains its renderer input. Attempted bindings for omitted values remain available
+to projection. Container layouts and format-specific filtering stay in the individual serializers.
 Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
 failures affect only the optional sidecar, never the generated export.
 

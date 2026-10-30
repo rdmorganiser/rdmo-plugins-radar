@@ -1,7 +1,7 @@
 from xml.etree.ElementTree import Element
 
 from .constants import KEYWORD_ATTRIBUTES, SCHEME_URIS
-from .provenance import record_binding
+from .provenance import emit_bound_value, record_binding
 from .types import (
     Affiliation,
     Description,
@@ -67,8 +67,9 @@ def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
         data, 'contributors', 'contributor', metadata.contributors, record_output=record_output
     )
     if metadata.title:
-        data['title'] = metadata.title
-        record_binding(record_output, 'title', f'{path}/re:title', data['title'])
+        emit_bound_value(
+            data, 'title', metadata.title, field='title', path=f'{path}/re:title', record_output=record_output,
+        )
     if metadata.additional_titles:
         items = []
         for index, title in enumerate(metadata.additional_titles):
@@ -137,8 +138,7 @@ def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
     ):
         value = getattr(metadata, field)
         if value:
-            data[name] = value
-            record_binding(record_output, field, f'{path}/re:{name}', value)
+            emit_bound_value(data, name, value, field=field, path=f'{path}/re:{name}', record_output=record_output)
     if metadata.subject_areas:
         items = []
         for index, subject in enumerate(metadata.subject_areas):
@@ -266,8 +266,9 @@ def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             ]
         }
     if metadata.version:
-        data['version'] = metadata.version
-        record_binding(record_output, 'version', f'{path}/re:version', data['version'])
+        emit_bound_value(
+            data, 'version', metadata.version, field='version', path=f'{path}/re:version', record_output=record_output,
+        )
     return data
 
 
@@ -445,42 +446,34 @@ def _serialize_geo_location(location: GeoLocation, *, target='', path='', record
 
 
 def _serialize_software(software: Software, *, target='', path='', record_output=None) -> dict:
-    data = {
-        'type': software.software_type,
-        'softwareName': software.name,
-        'softwareVersion': software.version,
-        'alternativeSoftwareName': software.alternative_name,
-        'alternativeSoftwareVersion': software.alternative_version,
-    }
-    record_binding(record_output, f'{target}.software_type', f'{path}/@type', software.software_type)
-    record_binding(record_output, f'{target}.name', f'{path}/re:softwareName', software.name)
-    record_binding(record_output, f'{target}.version', f'{path}/re:softwareName/@softwareVersion', software.version)
-    record_binding(
-        record_output, f'{target}.alternative_name', f'{path}/re:alternativeSoftwareName', software.alternative_name
-    )
-    record_binding(
-        record_output,
-        f'{target}.alternative_version',
-        f'{path}/re:alternativeSoftwareName/@alternativeSoftwareVersion',
-        software.alternative_version,
-    )
+    data = {}
+    for field, name, output_path in (
+        ('software_type', 'type', f'{path}/@type'),
+        ('name', 'softwareName', f'{path}/re:softwareName'),
+        ('version', 'softwareVersion', f'{path}/re:softwareName/@softwareVersion'),
+        ('alternative_name', 'alternativeSoftwareName', f'{path}/re:alternativeSoftwareName'),
+        ('alternative_version', 'alternativeSoftwareVersion',
+         f'{path}/re:alternativeSoftwareName/@alternativeSoftwareVersion'),
+    ):
+        emit_bound_value(
+            data, name, getattr(software, field), field=f'{target}.{field}',
+            path=output_path, record_output=record_output,
+        )
     return data
 
 
 def _serialize_funding(reference: FundingReference, *, target='', path='', record_output=None) -> dict:
-    data = {
-        'funderName': reference.funder_name,
-        'awardNumber': reference.award_number,
-        'awardURI': reference.award_uri,
-        'awardTitle': reference.award_title,
-    }
+    data = {}
     for field, name in (
         ('funder_name', 'funderName'),
         ('award_number', 'awardNumber'),
         ('award_uri', 'awardURI'),
         ('award_title', 'awardTitle'),
     ):
-        record_binding(record_output, f'{target}.{field}', f'{path}/re:{name}', data[name])
+        emit_bound_value(
+            data, name, getattr(reference, field), field=f'{target}.{field}',
+            path=f'{path}/re:{name}', record_output=record_output,
+        )
     if reference.funder_identifier:
         identifier = reference.funder_identifier
         data['funderIdentifier'] = {

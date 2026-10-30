@@ -29,6 +29,7 @@ from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
 from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
+from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.provenance import json_leaves, rebase_mapping, validate_payload_provenance, xml_leaves
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
@@ -42,9 +43,11 @@ from rdmo_radar.metadata.types import (
     MappingResult,
     MappingSource,
     PersonOrOrganization,
+    RadarMetadata,
     Resource,
     Software,
 )
+from rdmo_radar.metadata.xml import to_xml_payload
 
 from .helpers import (
     add_answer,
@@ -177,6 +180,45 @@ def metadata_leaves(value, path=''):
             yield from metadata_leaves(item, f'{path}[{index}]')
     elif value is not None:
         yield path, value
+
+
+@pytest.mark.parametrize('kind', ['xml', 'api'])
+@pytest.mark.parametrize('version', [None, '', '0'])
+def test_bound_scalars_keep_sparse_values_and_format_specific_paths(kind, version):
+    metadata = RadarMetadata(
+        title='Title', version='0', language='deu',
+        software=[Software('Viewer', 'Resource Viewing', version, 'Alternative')],
+        funding_references=[FundingReference(award_number='0', award_title='')],
+    )
+    events = []
+    serializer = to_api_payload if kind == 'api' else to_xml_payload
+    payload = serializer(metadata, record_output=lambda *event: events.append(event))
+    assert payload['title'] == 'Title'
+    assert payload['version'] == '0'
+    funding, = payload['fundingReferences']['fundingReference']
+    if kind == 'api':
+        software, = payload['software']['softwareType']
+        assert software == {
+            'type': 'RESOURCE_VIEWING',
+            'softwareName': [{'value': 'Viewer', **({'softwareVersion': version} if version is not None else {})}],
+            'alternativeSoftwareName': [{'value': 'Alternative'}],
+        }
+        assert funding == {'awardNumber': '0', 'awardTitle': ''}
+        assert payload['language'] == 'DEU'
+        version_path = '/descriptiveMetadata/software/softwareType/0/softwareName/0/softwareVersion'
+        funder_path = '/descriptiveMetadata/fundingReferences/fundingReference/0/funderName'
+    else:
+        software, = payload['software']
+        assert software == {
+            'type': 'Resource Viewing', 'softwareName': 'Viewer', 'softwareVersion': version,
+            'alternativeSoftwareName': 'Alternative', 'alternativeSoftwareVersion': None,
+        }
+        assert funding == {'funderName': None, 'awardNumber': '0', 'awardURI': None, 'awardTitle': ''}
+        assert payload['language'] == 'deu'
+        version_path = '/radar:radarDataset/re:software/re:softwareType[1]/re:softwareName/@softwareVersion'
+        funder_path = '/radar:radarDataset/re:fundingReferences/re:fundingReference[1]/re:funderName'
+    assert ('software[0].version', version_path, version, '') in events
+    assert ('funding_references[0].funder_name', funder_path, None, '') in events
 
 
 @pytest.mark.parametrize('kind', ['xml', 'api'])
