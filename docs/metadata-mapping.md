@@ -288,6 +288,11 @@ keyword identity, affiliation identity or rights-holder identity has no destinat
 it never writes a persistent ID to `project/funder/id`. Publisher import remains unsupported. New export
 paths retain the existing answer allocation and merge rules. Full identifier-preserving RDMO import is deferred.
 
+Label-only import warnings also cover vocabulary details supplied without a keyword scheme and
+affiliation schemes supplied without an identifier. Region-only import reports omitted coordinates
+even when the only supplied coordinate is numeric zero. These presence checks retain partial award
+data for draft completion; a funder identifier alone still does not establish a funding reference.
+
 Import destinations retain known-prefix precedence through RDMO's import APIs. Explicit full URIs bypass
 fallback. Ambiguous custom-prefix Attribute or Option resolution reports a mapping issue and stages no
 Value for that destination. Merge checks and collection/index allocation use the selected Attribute's

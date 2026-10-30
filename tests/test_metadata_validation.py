@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from rdmo.domain.models import Attribute
@@ -11,7 +13,7 @@ from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.template_framework.fields import FUNDING
 from rdmo_radar.metadata.api import to_api_payload
-from rdmo_radar.metadata.fields import read_funding
+from rdmo_radar.metadata.fields import GroupSpec, IdentifierSource, read_funding
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
     FundingReference,
@@ -84,12 +86,17 @@ def test_rest_warnings_do_not_use_xml_adapter(monkeypatch):
     }]
 
 
-def test_partial_funding_is_preserved_with_a_missing_name_diagnostic():
-    path = 'project/funder/grant_nr'
-    answer = Value(attribute=Attribute(path=path), text='AWARD-42', set_index=7)
+@pytest.mark.parametrize('path,value,reference,wire_key', [
+    ('project/funder/grant_nr', '0', FundingReference(award_number='0'), 'awardNumber'),
+    ('project/funder/programme/url', 'https://grant.test/42',
+     FundingReference(award_uri='https://grant.test/42'), 'awardURI'),
+    ('project/funder/programme/title', 'Programme', FundingReference(award_title='Programme'), 'awardTitle'),
+])
+def test_partial_funding_is_preserved_with_a_missing_name_diagnostic(path, value, reference, wire_key):
+    answer = Value(attribute=Attribute(path=path), text=value, set_index=7)
     context = ProjectReadContext({path: [answer]}, {}, provenance=[])
     funding = read_funding(context, sources=FUNDING, target='funding_references')
-    assert funding == [FundingReference(award_number='AWARD-42')]
+    assert funding == [reference]
     assert any('no funder name' in issue.reason for issue in context.issues)
     assert any(
         a.outcome == 'empty' and any(s.value is answer for s in a.sources) and 'no funder name' in a.reason
@@ -97,8 +104,20 @@ def test_partial_funding_is_preserved_with_a_missing_name_diagnostic():
     )
     metadata = complete_metadata(funding_references=funding)
     assert missing_required_fields(metadata) == ('fundingReferences.fundingReference[0].funderName',)
-    assert to_api_payload(metadata)['fundingReferences']['fundingReference'] == [{'awardNumber': 'AWARD-42'}]
+    assert to_api_payload(metadata)['fundingReferences']['fundingReference'] == [{wire_key: value}]
     assert get_radar_validation_errors(RadarExportRenderer().render(to_xml_payload(metadata)))
+
+
+def test_identifier_only_funding_does_not_establish_a_reference():
+    path = 'custom/funder_identifier'
+    answer = Value(attribute=Attribute(path=path), text='https://ror.org/0387prb75', set_index=7)
+    sources = replace(
+        FUNDING, group=GroupSpec((path,), 'project'), identifier=IdentifierSource(path, scheme='ROR'),
+    )
+    context = ProjectReadContext({path: [answer]}, {}, provenance=[])
+    funding = read_funding(context, sources=sources, target='funding_references')
+    assert funding == []
+    assert 'fundingReferences' not in to_api_payload(complete_metadata(funding_references=funding))
 
 
 @pytest.mark.parametrize(

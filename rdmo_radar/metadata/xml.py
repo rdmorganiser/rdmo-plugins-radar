@@ -295,7 +295,8 @@ def parse_xml(root: Element) -> RadarMetadata:
         if element.text:
             attributes = {field: element.get(name) for field, name in KEYWORD_ATTRIBUTES}
             # Untyped XML retains the established public string representation.
-            metadata.keywords.append(Keyword(element.text, **attributes) if any(attributes.values()) else element.text)
+            keyword = Keyword(element.text, **attributes)
+            metadata.keywords.append(keyword if keyword.has_vocabulary_metadata else keyword.value)
     metadata.publishers.extend(_parse_named_values(root, 'publishers', 'publisher'))
     metadata.production_year = _text(root, 'productionYear')
     metadata.publication_year = _text(root, 'publicationYear')

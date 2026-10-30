@@ -16,6 +16,11 @@ class Affiliation:
     identifier_scheme: str | None = None
     scheme_uri: str | None = None
 
+    @property
+    def has_identifier_metadata(self) -> bool:
+        """Any identifier details are supplied, including a scheme on its own."""
+        return any((self.identifier, self.identifier_scheme, self.scheme_uri))
+
 
 @dataclass
 class Keyword:
@@ -24,6 +29,11 @@ class Keyword:
     scheme_uri: str | None = None
     value_uri: str | None = None
     classification_code: str | None = None
+
+    @property
+    def has_vocabulary_metadata(self) -> bool:
+        """The keyword carries vocabulary details beyond its label."""
+        return any((self.keyword_scheme, self.scheme_uri, self.value_uri, self.classification_code))
 
 
 def as_keyword(value: 'Keyword | str') -> Keyword:
@@ -70,6 +80,11 @@ class FundingReference:
     award_uri: str | None = None
     award_title: str | None = None
 
+    @property
+    def has_award_metadata(self) -> bool:
+        """Award details are supplied independently of the funder's name or identifier."""
+        return any((self.award_number, self.award_uri, self.award_title))
+
 
 @dataclass
 class GeoLocation:
@@ -77,6 +92,11 @@ class GeoLocation:
     region: str | None = None
     latitude: str | float | None = None
     longitude: str | float | None = None
+
+    @property
+    def has_any_coordinate(self) -> bool:
+        """At least one coordinate is supplied, including numeric zero."""
+        return any(value not in (None, '') for value in (self.latitude, self.longitude))
 
     @property
     def has_coordinate_pair(self) -> bool:

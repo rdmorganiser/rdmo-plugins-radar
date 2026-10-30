@@ -16,6 +16,7 @@ from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
+from rdmo_radar.mappings.template_framework.dataset_writers import write_keywords
 from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, read_contributors
 from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.fields import Source, read_names
@@ -413,6 +414,31 @@ def test_typed_keyword_import_keeps_labels_and_reports_identity_loss(db):
                    context.coordinates.set_index, context=context)
     assert any(value.text == 'Term' for value in context.import_plugin.values)
     assert any(issue.field == 'keywords' and 'labels' in issue.reason for issue in context.issues)
+
+
+@pytest.mark.parametrize('attributes,expected,loss', [
+    ({}, 'Term', False),
+    ({'keywordScheme': 'GND'}, Keyword('Term', keyword_scheme='GND'), True),
+    ({'schemeURI': 'https://vocab.test/'}, Keyword('Term', scheme_uri='https://vocab.test/'), True),
+    ({'valueURI': 'https://vocab.test/term'}, Keyword('Term', value_uri='https://vocab.test/term'), True),
+    ({'classificationCode': '0'}, Keyword('Term', classification_code='0'), True),
+    ({'keywordScheme': '', 'schemeURI': '', 'valueURI': '', 'classificationCode': ''}, 'Term', False),
+])
+def test_keyword_metadata_survives_xml_parsing_and_warns_on_label_only_import(attributes, expected, loss):
+    ns = '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-elements}'
+    root = ElementTree.Element(f'{ns}radarDataset')
+    keywords = ElementTree.SubElement(root, f'{ns}keywords')
+    ElementTree.SubElement(keywords, f'{ns}keyword', attributes).text = 'Term'
+    parsed = parse_xml(root)
+    assert parsed.keywords == [expected]
+    context = make_context()
+    write_keywords(context, parsed.keywords, target='keywords')
+    assert [(value.attribute.path, value.text) for value in context.import_plugin.values] == [
+        ('project/research_question/keywords', 'Term'),
+    ]
+    assert [(issue.field, issue.reason, issue.value) for issue in context.issues] == (
+        [('keywords', 'Only keyword labels have an established RDMO import destination', 'Term')] if loss else []
+    )
 
 
 def test_typed_xml_validation_roundtrip_and_independent_rest_expectations():

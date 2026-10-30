@@ -32,7 +32,7 @@ def write_keywords(context, value, *, target):
     for keyword in value:
         term = as_keyword(keyword)
         context.add_unique_text('project/research_question/keywords', term.value, coordinates=Coordinates())
-        if any((term.keyword_scheme, term.scheme_uri, term.value_uri, term.classification_code)):
+        if term.has_vocabulary_metadata:
             context.warn('keywords', 'Only keyword labels have an established RDMO import destination', term.value)
 
 
@@ -135,7 +135,7 @@ def _write_geo_location(context: ProjectWriteContext, locations: list[GeoLocatio
         return
     location = locations[0]
     context.add('project/dataset/usage_technology/geo_location', location.region)
-    if location.country or location.latitude or location.longitude:
+    if location.country or location.has_any_coordinate:
         context.warn('geoLocations', 'Only the confirmed region mapping was imported')
     if len(locations) > 1:
         context.warn('geoLocations', 'Only the first geolocation was imported')

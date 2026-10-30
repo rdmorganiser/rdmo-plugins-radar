@@ -55,7 +55,7 @@ def write_creators(context: ProjectWriteContext, creators: list[PersonOrOrganiza
             )
             if len(creator.affiliations) > 1:
                 context.warn('creators.affiliation', 'Only the first creator affiliation was imported')
-            if affiliation.identifier or affiliation.scheme_uri:
+            if affiliation.has_identifier_metadata:
                 context.warn(
                     'creators.affiliation', 'Only affiliation names have an established RDMO import destination'
                 )
@@ -80,7 +80,7 @@ def merge_contributors(
             )
             if len(contributor.affiliations) > 1:
                 context.warn('contributors.affiliation', 'Only the first contributor affiliation was imported')
-            if contributor.affiliations[0].identifier or contributor.affiliations[0].scheme_uri:
+            if contributor.affiliations[0].has_identifier_metadata:
                 context.warn(
                     'contributors.affiliation', 'Only affiliation names have an established RDMO import destination'
                 )

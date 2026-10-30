@@ -10,10 +10,18 @@ from rdmo.projects.models import Project, Snapshot, Value
 
 from rdmo_radar.imports import RadarTemplateFrameworkImport as RadarImport
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, write_metadata
-from rdmo_radar.mappings.template_framework.people_writers import merge_funding, write_creators
+from rdmo_radar.mappings.template_framework.dataset_writers import write_geo_locations
+from rdmo_radar.mappings.template_framework.people_writers import merge_contributors, merge_funding, write_creators
 from rdmo_radar.mappings.template_framework.rules import DEFAULT_URI_PREFIX
 from rdmo_radar.metadata.fields import Coordinates
-from rdmo_radar.metadata.types import FundingReference, Identifier, PersonOrOrganization, RadarMetadata
+from rdmo_radar.metadata.types import (
+    Affiliation,
+    FundingReference,
+    GeoLocation,
+    Identifier,
+    PersonOrOrganization,
+    RadarMetadata,
+)
 from rdmo_radar.metadata.write_context import ProjectWriteContext
 from rdmo_radar.metadata.xml import parse_xml
 
@@ -43,6 +51,58 @@ def make_context(existing=None, staged=None):
     for value in existing:
         values.setdefault(value.attribute.path, []).append(value)
     return ProjectWriteContext(plugin, values, Coordinates(set_index=0), namespace=DEFAULT_URI_PREFIX)
+
+
+@pytest.mark.parametrize('kind', ['creators', 'contributors'])
+@pytest.mark.parametrize('details,loss', [
+    ({}, False),
+    ({'identifier': 'local-42'}, True),
+    ({'identifier_scheme': 'ROR'}, True),
+    ({'scheme_uri': 'https://ror.org/'}, True),
+    ({'identifier': '', 'identifier_scheme': '', 'scheme_uri': ''}, False),
+])
+def test_affiliation_metadata_loss_is_reported_during_name_only_import(
+    db, django_assert_num_queries, kind, details, loss,
+):
+    if kind == 'creators':
+        name_path, affiliation_path = 'project/dataset/creator/name', 'project/dataset/creator/affiliation'
+        writer = write_creators
+    else:
+        name_path, affiliation_path = 'project/partner/name', 'project/partner/organization'
+        writer = merge_contributors
+    for path in (name_path, affiliation_path):
+        add_attribute(path)
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=2), namespace=DEFAULT_URI_PREFIX)
+    person = PersonOrOrganization('Person', affiliations=[Affiliation('Institution', **details)])
+    with django_assert_num_queries(0):
+        writer(context, [person])
+    assert [(value.attribute.path, value.text) for value in plugin.values] == [
+        (name_path, 'Person'), (affiliation_path, 'Institution'),
+    ]
+    assert [(issue.field, issue.reason) for issue in context.issues] == (
+        [(f'{kind}.affiliation', 'Only affiliation names have an established RDMO import destination')] if loss else []
+    )
+
+
+@pytest.mark.parametrize('latitude,longitude,loss', [
+    (None, None, False), ('', '', False), (0.0, None, True), (None, 0.0, True),
+    (0.0, 0.0, True), (0.0, '', True), ('', 0.0, True), ('0', None, True),
+])
+def test_region_only_import_reports_coordinate_loss_including_single_zero(
+    db, django_assert_num_queries, latitude, longitude, loss,
+):
+    path = 'project/dataset/usage_technology/geo_location'
+    add_attribute(path)
+    plugin = RadarImport('radar', 'RADAR', 'rdmo_radar.imports.RadarTemplateFrameworkImport')
+    context = ProjectWriteContext(plugin, {}, Coordinates(set_index=2), namespace=DEFAULT_URI_PREFIX)
+    location = GeoLocation(region='Region', latitude=latitude, longitude=longitude)
+    with django_assert_num_queries(0):
+        write_geo_locations(context, [location], target='geo_locations')
+    assert [(value.attribute.path, value.text) for value in plugin.values] == [(path, 'Region')]
+    assert [(issue.field, issue.reason) for issue in context.issues] == (
+        [('geoLocations', 'Only the confirmed region mapping was imported')] if loss else []
+    )
 
 
 def test_funder_identifier_uses_rddm_type_attribute():
