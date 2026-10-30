@@ -749,3 +749,13 @@ origin check prevents the localhost-to-staging redirect from being started.
 Do not replace this callback with the tenant root URL. The callback view validates the OAuth state, exchanges the
 authorization code, and resumes the pending export. When checking a deployed secret, compare its length and a
 fingerprint rather than writing the secret itself to logs or command output.
+
+## Acknowledgements
+
+This plugin has been further developed during the Integration Phase of the [DMP4NFDI](https://dmp.services.base4nfdi.de/) project as
+an Incubator in collaboration with the Research Data Repository ([RADAR](https://radar.products.fiz-karlsruhe.de/en)) 
+for the RDMO clients of the [NFDI4Culture](https://nfdi4culture.de/) and [NFDI4Chem](https://nfdi4chem.de/) consortia.
+
+DMP4NFDI is a Basic Service of [Base4NFDI](https://base4nfdi.de/), funded by the German Research Foundation (DFG) under project [521453681](https://gepris.dfg.de/gepris/projekt/521453681).
+That project is part of the German National Research Data Infrastructure ([NFDI](https://www.nfdi.de/?lang=en)).
+
