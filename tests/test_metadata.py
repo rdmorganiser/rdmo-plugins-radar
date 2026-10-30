@@ -5,13 +5,17 @@ import pytest
 
 from rdmo.domain.models import Attribute
 from rdmo.options.models import Option
+from rdmo.projects.models import Value
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
-from rdmo_radar.exports.validation import validate_radar_xml
+from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors, validate_radar_xml
 from rdmo_radar.imports.imports import RadarTemplateFrameworkImport as RadarImport
 from rdmo_radar.mappings.template_framework import compute_metadata
+from rdmo_radar.mappings.template_framework.fields import read_identifier
 from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 from rdmo_radar.metadata.api import to_api_payload
+from rdmo_radar.metadata.normalization import normalize_primary_identifier
+from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
     Affiliation,
     Description,
@@ -26,7 +30,11 @@ from rdmo_radar.metadata.types import (
 from rdmo_radar.metadata.validation import missing_required_fields
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
-from .helpers import add_answer, make_export
+from .helpers import (
+    add_answer,
+    complete_metadata,
+    make_export,
+)
 
 
 def make_import(xml):
@@ -113,10 +121,14 @@ def test_tf_primary_identifier_requires_a_supported_scheme(db, scheme):
         assert any('Primary identifier requires DOI, Handle or RADAR' in issue.reason for issue in result.issues)
 
 
-def test_tf_conflicting_primary_identifier_schemes_are_omitted(db):
+@pytest.mark.parametrize('namespace,schemes', [
+    ('https://example.test', ('identifier_type/doi', 'identifier_type/url')),
+    ('https://dmp.service.base4nfdi.de/terms', ('pid03', 'pid06')),
+])
+def test_tf_conflicting_primary_identifier_schemes_are_omitted(db, namespace, schemes):
     export = make_export({'project/dataset/data_publication_pid': '10.1234/example'})
-    for index, scheme in enumerate(('doi', 'url')):
-        option = Option.objects.create(uri_prefix='https://example.test', uri_path=f'identifier_type/{scheme}')
+    for index, scheme in enumerate(schemes):
+        option = Option.objects.create(uri_prefix=namespace, uri_path=scheme)
         add_answer(export.project, 'project/dataset/pids/system', '', option=option, collection_index=index)
     context = export.get_service().reader(0)
     context.provenance = []
@@ -126,6 +138,56 @@ def test_tf_conflicting_primary_identifier_schemes_are_omitted(db):
     assert result.metadata.identifier is None
     assert any(attempt.field == 'identifier.value' and attempt.outcome == 'rejected'
                for attempt in result.provenance)
+
+
+@pytest.mark.parametrize('namespace,path,expected', [
+    *[('https://dmp.service.base4nfdi.de/terms', f'pid{index:02}',
+       'DOI' if index == 3 else 'Handle' if index == 6 else None) for index in range(19)],
+    ('https://unrelated.test', 'pid03', None),
+])
+def test_tf_catalog_pid_aliases_require_exact_option_identity(db, namespace, path, expected):
+    export = make_export({'project/dataset/data_publication_pid': '10.1234/example'})
+    option = Option.objects.create(uri_prefix=namespace, uri_path=path, text_lang1='Misleading display label')
+    add_answer(export.project, 'project/dataset/pids/system', '', option=option)
+    result = compute_metadata(export.get_service().reader(0))
+    if expected:
+        assert result.metadata.identifier == Identifier('10.1234/example', expected)
+        assert to_xml_payload(result.metadata)['identifierType'] == expected
+        assert to_api_payload(result.metadata)['identifier']['identifierType'] == expected.upper()
+        assert not result.issues
+    else:
+        assert result.metadata.identifier is None
+        assert result.issues
+
+
+@pytest.mark.parametrize('path', ['pid03', 'pid01'])
+def test_tf_planned_pid_without_a_publication_identifier_is_skipped(db, path):
+    export = make_export()
+    option = Option.objects.create(uri_prefix='https://dmp.service.base4nfdi.de/terms', uri_path=path)
+    answer = add_answer(export.project, 'project/dataset/pids/system', '', option=option)
+    context = export.get_service().reader(0)
+    context.provenance = []
+    result = compute_metadata(context)
+    assert result.metadata.identifier is None
+    assert not result.issues
+    attempt = next(a for a in result.provenance if a.field == 'identifier.identifier_type')
+    assert attempt.outcome == 'skipped'
+    assert 'Planned PID system' in attempt.reason
+    assert attempt.sources[0].value.pk == answer.pk
+
+
+def test_tf_conflicting_publication_pids_are_not_reported_as_planned_only(db):
+    export = make_export({'project/dataset/data_publication_pid': '10.1234/first'})
+    add_answer(export.project, 'project/dataset/data_publication_pid', '10.1234/second', collection_index=1)
+    option = Option.objects.create(uri_prefix='https://dmp.service.base4nfdi.de/terms', uri_path='pid03')
+    add_answer(export.project, 'project/dataset/pids/system', '', option=option)
+    context = export.get_service().reader(0)
+    context.provenance = []
+    result = compute_metadata(context)
+    assert result.metadata.identifier is None
+    assert result.issues
+    attempt = next(a for a in result.provenance if a.field == 'identifier.identifier_type')
+    assert attempt.reason == 'Publication PID is unusable; identifier scheme not applied'
 
 
 def test_xml_and_api_adapters_share_canonical_model_but_not_wire_values():
@@ -277,3 +339,64 @@ def test_api_vocabulary_is_derived_from_xml_vocabulary():
         'relatedIdentifierType': 'RAID',
         'relationType': 'IS_TRANSLATION_OF',
     }
+
+
+@pytest.mark.parametrize(
+    'scheme,raw,expected',
+    [
+        ('DOI', '10.1234/example', '10.1234/example'),
+        ('DOI', ' https://doi.org/10.1234/example ', '10.1234/example'),
+        ('DOI', 'http://dx.doi.org/10.1234/example', '10.1234/example'),
+        ('DOI', 'https://DOI.ORG:443/10.1234/a%2Bb', '10.1234/a+b'),
+        ('Handle', 'https://hdl.handle.net/1234/example', '1234/example'),
+        ('Handle', '1234/example', '1234/example'),
+        ('RADAR', '12/34', '12/34'),
+        ('DOI', 'not-a-pid', None),
+        ('DOI', '10.1234/a/b', None),
+        ('DOI', '10.1234/with spaces', None),
+        ('DOI', '<b>10.1234/example</b>', None),
+        ('DOI', 'https://example.test/10.1234/example', None),
+        ('DOI', 'https://hdl.handle.net/1234/example', None),
+        ('DOI', 'https://doi.org/10.1234/example?query=x', None),
+        ('DOI', 'https://doi.org/10.1234/example#fragment', None),
+        ('DOI', 'https://user@doi.org/10.1234/example', None),
+        ('DOI', 'https://doi.org:invalid/10.1234/example', None),
+        ('DOI', 'https://doi.org/10.1234/a%2Fb', None),
+        ('DOI', 'https://doi.org/10.1234/a%20b', None),
+        ('DOI', 'https://doi.org/10.1234/%FF', None),
+        ('DOI', 'https://doi.org/10.1234/%00', None),
+        ('DOI', 'https://doi.org/10.1234/ex\nample', None),
+        ('URL', '12/34', None),
+    ],
+)
+def test_primary_identifier_normalization_and_schema_shape(scheme, raw, expected):
+    assert normalize_primary_identifier(raw, scheme) == expected
+    if expected:
+        kind = get_radar_schema().maps.types[
+            '{http://radar-service.eu/schemas/descriptive/radar/v09/radar-types}identifierValue'
+        ]
+        assert kind.is_valid(expected)
+
+
+@pytest.mark.parametrize('raw,expected', [('https://doi.org/10.1234/example', '10.1234/example'), ('not-a-pid', None)])
+def test_tf_primary_identifier_payload_and_provenance(raw, expected):
+    path, scheme_path = 'project/dataset/data_publication_pid', 'project/dataset/pids/system'
+    answer = Value(attribute=Attribute(path=path), text=raw)
+    scheme = Value(
+        attribute=Attribute(path=scheme_path),
+        option=Option(pk=1, uri='https://dmp.service.base4nfdi.de/terms/options/pid03', uri_path='pid03'),
+    )
+    context = ProjectReadContext({path: [answer], scheme_path: [scheme]}, {}, provenance=[])
+    identifier = read_identifier(context, target='identifier')
+    if expected:
+        assert identifier.value == expected
+        assert not context.issues
+        metadata = complete_metadata(identifier=identifier)
+        assert to_api_payload(metadata)['identifier']['value'] == expected
+        assert get_radar_validation_errors(RadarExportRenderer().render(to_xml_payload(metadata))) == ()
+        assert any(a.value == expected and a.sources[0].value is answer for a in context.provenance)
+    else:
+        assert identifier is None
+        assert 'identifier' not in to_api_payload(complete_metadata(identifier=identifier))
+        assert context.issues
+        assert any(a.outcome == 'rejected' and a.sources[0].value is answer for a in context.provenance)

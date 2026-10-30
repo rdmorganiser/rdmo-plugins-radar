@@ -65,3 +65,28 @@ CREATION_METHOD_OPTIONS = {
 }
 
 SOFTWARE_REQUIREMENT = 'dmp4nfdi/v2-0-0/ur00'
+
+# Complete DMP4NFDI planned PID systems in canonical RADAR spelling. The primary
+# reader filters these to its narrower schema vocabulary. None means no specific
+# controlled scheme; this table does not establish a related-identifier mapping.
+PID_SYSTEM_OPTIONS = {
+    'https://dmp.service.base4nfdi.de/terms/options/pid00': 'ARK',
+    'https://dmp.service.base4nfdi.de/terms/options/pid01': 'arXiv',
+    'https://dmp.service.base4nfdi.de/terms/options/pid02': 'bibcode',
+    'https://dmp.service.base4nfdi.de/terms/options/pid03': 'DOI',
+    'https://dmp.service.base4nfdi.de/terms/options/pid04': 'EAN13',
+    'https://dmp.service.base4nfdi.de/terms/options/pid05': 'EISSN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid06': 'Handle',
+    'https://dmp.service.base4nfdi.de/terms/options/pid07': 'IGSN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid08': 'ISBN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid09': 'ISSN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid10': 'ISTC',
+    'https://dmp.service.base4nfdi.de/terms/options/pid11': 'LISSN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid12': 'LSID',
+    'https://dmp.service.base4nfdi.de/terms/options/pid13': 'PMID',
+    'https://dmp.service.base4nfdi.de/terms/options/pid14': 'PURL',
+    'https://dmp.service.base4nfdi.de/terms/options/pid15': 'UPC',
+    'https://dmp.service.base4nfdi.de/terms/options/pid16': 'URL',
+    'https://dmp.service.base4nfdi.de/terms/options/pid17': 'URN',
+    'https://dmp.service.base4nfdi.de/terms/options/pid18': None,
+}

@@ -26,9 +26,10 @@ from ...metadata.fields import (
     read_texts,
 )
 from ...metadata.fields.people import report_orphan_identities
+from ...metadata.normalization import normalize_primary_identifier
 from ...metadata.types import GeoLocation, Identifier, Resource
 from . import dataset_writers as writers
-from .crosswalks import CREATION_METHOD_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
+from .crosswalks import CREATION_METHOD_OPTIONS, PID_SYSTEM_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
 from .dataset_writers import LANGUAGE_PATH, RIGHTS_HOLDER_PATH
 from .people_writers import merge_contributors, merge_funding, write_creators
 from .vocabulary import XMLVocabulary
@@ -148,9 +149,22 @@ def read_title(context, *, target):
 
 def read_identifier(context, *, target):
     value = context.get_text('project/dataset/data_publication_pid', target=f'{target}.value')
+    if not value:
+        planned = context.get_values('project/dataset/pids/system')
+        if planned:
+            supplied = any(answer.text.strip() and answer.option is None
+                           for answer in context.get_values('project/dataset/data_publication_pid'))
+            context.record_mapping(
+                f'{target}.identifier_type', sources=planned, outcome='skipped',
+                reason=('Publication PID is unusable; identifier scheme not applied' if supplied
+                        else 'Planned PID system; no existing publication PID supplied'),
+            )
+        else:
+            context.record_empty_mapping(f'{target}.identifier_type', 'project/dataset/pids/system')
+        return None
     kind = context.get_option(
         'project/dataset/pids/system',
-        {path: kind for path, kind in XMLVocabulary.identifier_type_options.items()
+        {path: kind for path, kind in {**XMLVocabulary.identifier_type_options, **PID_SYSTEM_OPTIONS}.items()
          if kind in XMLVocabulary.primary_identifier_types},
         target=f'{target}.identifier_type',
     )
@@ -162,7 +176,17 @@ def read_identifier(context, *, target):
             outcome='rejected', reason=reason,
         )
         return None
-    return Identifier(value, kind) if value else None
+    normalized = normalize_primary_identifier(value, kind)
+    if normalized is None:
+        reason = 'Primary identifier value is malformed or incompatible with the RADAR schema; identifier omitted'
+        context.warn(target, 'project/dataset/data_publication_pid', reason, value)
+        context.record_mapping(f'{target}.value', sources=context.get_values('project/dataset/data_publication_pid'),
+                               outcome='rejected', reason=reason)
+        return None
+    if normalized != value:
+        context.record_mapping(f'{target}.value', sources=context.get_values('project/dataset/data_publication_pid'),
+                               value=normalized, reason='Normalized primary identifier resolver URL')
+    return Identifier(normalized, kind)
 
 
 def read_additional_titles(context, *, target):

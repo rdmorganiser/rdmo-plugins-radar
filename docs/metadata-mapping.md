@@ -58,7 +58,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | RADAR field | Source and behavior |
 | --- | --- |
 | Title | `project/dataset/title`, then the `project/dataset/id` collection label. |
-| Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options. Only `DOI`, `Handle`, and `RADAR` are accepted as primary types. A populated PID with a missing, conflicting, or unsupported scheme is omitted with diagnostics. No identifier is invented. |
+| Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options, including the exact DMP4NFDI `pid03` (DOI) and `pid06` (Handle) Option URIs. Only `DOI`, `Handle`, and `RADAR` are accepted as primary types. A populated PID with a missing, conflicting, or unsupported scheme is omitted with diagnostics. A planned system without an existing publication PID is recorded as skipped, without a scheme rejection. No identifier is invented. |
 | Subject areas | `project/research_field/title`; all 48 catalog DFG options mapped using the subject sheet. Every explicitly listed category is emitted, with duplicate entries removed. `Other` retains the original label. The uncertain Materials Engineering entry stays `Other`; workbook “Veterinary” uses the schema spelling `Veterinary Medicine`. The stray Jurisprudence note on the Economics row does not override its explicit Economics mapping. |
 | Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
@@ -72,6 +72,22 @@ produce the existing storage-failure result page after confirmed creation rather
 | Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. Responsibility labels never become names. |
 | Language | `project/dataset/language`: recognized controlled Options, or supported language names/codes entered as text. Normalize to schema-valid ISO 639-3 codes; see the selection below. |
 | Other established fields | Preserve acronym as additional title, geolocation region, and `project/dataset/method` processing text when available. |
+
+`crosswalks.PID_SYSTEM_OPTIONS` accounts for all 19 DMP4NFDI planned-PID Options
+using exact URIs: 18 specific schemes in canonical RADAR spelling, plus `None` for
+the unspecific `other` choice. The primary reader filters this table to `DOI` and
+`Handle`; its established vocabulary also supports `RADAR`. Other schemes are valid
+in RADAR's related-identifier vocabulary, but this crosswalk alone does not establish
+a related-identifier source or relation type. They remain invalid as primary types.
+
+Existing primary PID values are checked against the bundled schema's two-component
+`prefix/suffix` shape. Recognized HTTP(S) DOI resolver links (`doi.org`, `dx.doi.org`)
+and Handle resolver links (`hdl.handle.net`) are normalized to bare identifiers for
+their explicitly selected schemes. Encoded path characters are decoded before validation.
+Malformed values, resolver links with queries/fragments, whitespace/control characters,
+markup and values incompatible with the XSD are omitted with mapping diagnostics.
+The exporter never looks up or infers a scheme, and records normalization against the
+original answer in provenance.
 
 ## Software sources
 

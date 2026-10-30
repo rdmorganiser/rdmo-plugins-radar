@@ -2,7 +2,7 @@
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from .types import Identifier
 
@@ -12,6 +12,35 @@ _PATTERNS = {
     'GND': r'(?:[0-9]+-[0-9Xx]|[0-9]{8,9}[0-9Xx])',
 }
 _HOSTS = {'ror.org': 'ROR', 'orcid.org': 'ORCID', 'd-nb.info': 'GND'}
+
+
+def normalize_primary_identifier(value, scheme):
+    """Normalize known resolver links and enforce the bundled identifierValue shape.
+
+    No lookup or scheme inference is performed. The XSD requires two nonempty
+    components separated by one slash; identifiers also cannot contain whitespace,
+    control characters or display markup. Resolver queries/fragments are rejected.
+    """
+    value = (value or '').strip()
+    if scheme not in ('DOI', 'Handle', 'RADAR'):
+        return None
+    # urlsplit removes embedded tabs/newlines; reject them before parsing too.
+    if any(char.isspace() or ord(char) < 32 or 127 <= ord(char) <= 159 for char in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme:
+            hosts = {'DOI': {'doi.org', 'dx.doi.org'}, 'Handle': {'hdl.handle.net'}}
+            if (parsed.scheme.lower() not in ('http', 'https') or parsed.hostname not in hosts.get(scheme, ())
+                    or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment
+                    or parsed.port not in (None, 443 if parsed.scheme.lower() == 'https' else 80)):
+                return None
+            value = unquote(parsed.path[1:], errors='strict')
+    except (ValueError, UnicodeError):
+        return None
+    if any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in value):
+        return None
+    return value if re.fullmatch(r'[^/\s<>]+/[^/\s<>]+', value) else None
 
 
 @dataclass(frozen=True)

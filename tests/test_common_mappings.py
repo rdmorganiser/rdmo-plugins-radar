@@ -14,9 +14,36 @@ from rdmo_radar.mappings.legacy import LEGACY_MAPPING
 from rdmo_radar.mappings.legacy import vocabulary as legacy_options
 from rdmo_radar.mappings.project import PROJECT_MAPPING
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.crosswalks import PID_SYSTEM_OPTIONS
 from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 
 from .helpers import add_answer
+
+
+def test_tf_pid_crosswalk_covers_catalog_options_with_schema_valid_scheme_spellings():
+    root_dir = Path(__file__).parents[1]
+    catalog = ElementTree.parse(root_dir / 'tests/xml/dmp4nfdi_v2-0-0.xml').getroot()
+    uri = '{http://purl.org/dc/elements/1.1/}uri'
+    prefix = 'https://dmp.service.base4nfdi.de/terms/options/'
+    option_set = next(e for e in catalog.findall('optionset') if e.get(uri) == prefix + 'pid_system')
+    assert set(PID_SYSTEM_OPTIONS) == {e.get(uri) for e in option_set.findall('options/option')}
+    assert len(PID_SYSTEM_OPTIONS) == 19
+    schema = ElementTree.parse(root_dir / 'rdmo_radar/schemas/RadarTypes.xsd').getroot()
+    ns = '{http://www.w3.org/2001/XMLSchema}'
+    allowed = {e.get('value') for e in schema.findall(
+        f"{ns}simpleType[@name='relatedIdentifierType']/{ns}restriction/{ns}enumeration"
+    )}
+    for option in catalog.findall('option'):
+        key = option.get(uri)
+        if key not in PID_SYSTEM_OPTIONS:
+            continue
+        scheme = PID_SYSTEM_OPTIONS[key]
+        label = option.findtext("text[@lang='en']")
+        if scheme is None:
+            assert label == 'other'
+        else:
+            assert scheme in allowed
+            assert scheme.casefold() == label.split()[0].casefold()
 
 
 @pytest.mark.parametrize('common_name,legacy_name,tf_name', [
