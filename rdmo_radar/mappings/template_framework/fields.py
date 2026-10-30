@@ -19,6 +19,7 @@ from ...metadata.fields import (
     read_language,
     read_names,
     read_people,
+    read_resource,
     read_rights,
     read_software,
     read_subjects,
@@ -27,9 +28,17 @@ from ...metadata.fields import (
 )
 from ...metadata.fields.people import report_orphan_identities
 from ...metadata.normalization import normalize_primary_identifier
-from ...metadata.types import GeoLocation, Identifier, Resource
+from ...metadata.types import GeoLocation, Identifier
+from ...metadata.values import normalize
 from . import dataset_writers as writers
-from .crosswalks import CREATION_METHOD_OPTIONS, PID_SYSTEM_OPTIONS, SOFTWARE_REQUIREMENT, SUBJECT_OPTIONS
+from .crosswalks import (
+    CREATION_METHOD_OPTIONS,
+    DATA_MANAGEMENT_ROLE_OPTIONS,
+    DATA_MANAGEMENT_ROLE_WARNINGS,
+    PID_SYSTEM_OPTIONS,
+    SOFTWARE_REQUIREMENT,
+    SUBJECT_OPTIONS,
+)
 from .dataset_writers import LANGUAGE_PATH, RIGHTS_HOLDER_PATH
 from .people_writers import merge_contributors, merge_funding, write_creators
 from .vocabulary import XMLVocabulary
@@ -37,6 +46,7 @@ from .vocabulary import XMLVocabulary
 # Optional confirmed software Attributes. None retains the usage-requirement reader.
 SOFTWARE_NAME_PATH = None
 SOFTWARE_VERSION_PATH = None
+RESOURCE_TYPE_PATH = None
 
 
 def person_sources(base, *, scope='current', **kwargs):
@@ -127,6 +137,17 @@ FUNDING = FundingSources(
     award_title='project/funder/programme/title',
 )
 
+DATA_MANAGEMENT = PersonSources(
+    group=GroupSpec(('project/data_management/name',), 'project'),
+    name='project/data_management/name',
+    identifiers=(IdentifierSource('project/data_management/orcid', scheme='ORCID'),),
+    roles=(RoleSource('project/data_management/role'),),
+    role_options=DATA_MANAGEMENT_ROLE_OPTIONS,
+    role_warnings=DATA_MANAGEMENT_ROLE_WARNINGS,
+    default_name_type='Personal',
+    default_role='Other',
+)
+
 
 def _preferred_people(context, preferred, legacy, *, target):
     selected = preferred.group.context(context)
@@ -134,6 +155,49 @@ def _preferred_people(context, preferred, legacy, *, target):
         return read_people(context, sources=preferred, target=target)
     report_orphan_identities(selected, preferred, target)
     return read_people(context, sources=legacy, target=target)
+
+
+def read_contributors(context, *, target, include_data_management=False):
+    people = _preferred_people(context, CONTRIBUTOR, PARTNER, target=target)
+    if not include_data_management:
+        return people
+    trace_start = len(context.provenance) if context.provenance is not None else 0
+    issue_start = len(context.issues)
+    offset = len(people)
+    additional = read_people(context, sources=DATA_MANAGEMENT, target=target, repeat_roles=True, start_index=offset)
+    replacements = {}
+    duplicates = set()
+    for index, person in enumerate(additional, offset):
+        identifiers = {(i.identifier_type, normalize(i.value)) for i in person.identifiers}
+        match = next((position for position, existing in enumerate(people)
+                      if existing == person or (
+                          existing.contributor_type == person.contributor_type and identifiers.intersection(
+                              (i.identifier_type, normalize(i.value)) for i in existing.identifiers
+                          )
+                      )), None)
+        old = f'{target}[{index}]'
+        if match is None:
+            replacements[old] = f'{target}[{len(people)}]'
+            people.append(person)
+        else:
+            replacements[old] = f'{target}[{match}]'
+            duplicates.add(old)
+            if people[match] != person:
+                context.warn(target, DATA_MANAGEMENT.name,
+                             'Existing contributor identity and role retained; differing details were not merged')
+
+    def rebase(field):
+        return next((new + field[len(old):] for old, new in replacements.items() if field.startswith(old)), field)
+
+    if context.provenance is not None:
+        context.provenance[trace_start:] = [
+            replace(attempt, field=rebase(attempt.field), **(
+                {'outcome': 'skipped', 'reason': 'Duplicate contributor identity and role; existing entry retained'}
+                if not attempt.unsuccessful and any(attempt.field.startswith(old) for old in duplicates) else {}
+            )) for attempt in context.provenance[trace_start:]
+        ]
+    context.issues[issue_start:] = [replace(issue, field=rebase(issue.field)) for issue in context.issues[issue_start:]]
+    return people
 
 
 def read_title(context, *, target):
@@ -194,11 +258,6 @@ def read_additional_titles(context, *, target):
     return [acronym] if acronym else []
 
 
-def read_resource(context, *, target):
-    value = read_text(context, source=Source('project/dataset/description'), target=f'{target}.value')
-    return Resource(value) if value else None
-
-
 def read_geo_locations(context, *, target):
     region = read_text(
         context, source=Source('project/dataset/usage_technology/geo_location'), target=f'{target}[0].region'
@@ -226,7 +285,11 @@ TF_FIELDS = FieldMapping(
             option_map={**XMLVocabulary.controlled_subject_area_options, **SUBJECT_OPTIONS},
             uncertain_options=('research_fields/211',),
         ),
-        'resource': read_resource,
+        'resource': partial(
+            read_resource, source=Source('project/dataset/description'),
+            type_source=Source(RESOURCE_TYPE_PATH) if RESOURCE_TYPE_PATH is not None else None,
+            option_map=XMLVocabulary.resource_type_general_options,
+        ),
         'geo_locations': read_geo_locations,
         'data_sources': partial(
             read_data_sources,
@@ -248,7 +311,7 @@ TF_FIELDS = FieldMapping(
         ),
         'rights_holders': partial(read_names, source=Source(RIGHTS_HOLDER_PATH)),
         'creators': partial(_preferred_people, preferred=OWNER, legacy=CREATOR),
-        'contributors': partial(_preferred_people, preferred=CONTRIBUTOR, legacy=PARTNER),
+        'contributors': read_contributors,
         'funding_references': partial(read_funding, sources=FUNDING),
     },
     writers={

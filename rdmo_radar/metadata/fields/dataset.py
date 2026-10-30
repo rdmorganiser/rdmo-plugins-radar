@@ -1,8 +1,29 @@
 """Reusable vocabulary-backed dataset fields; profiles supply catalog crosswalks."""
 
+from ..entities import read_controlled_value
 from ..types import Resource, Rights, Software, SubjectArea
 from ..values import answer_label
 from .contracts import AttributeSelector, Source
+from .scalars import read_text
+
+
+def read_resource(context, *, source: Source, target, type_source: Source | None = None, option_map=None):
+    """Read a description and an explicitly configured resource classification."""
+    value = read_text(context, source=source, target=f'{target}.value')
+    kind = None
+    if type_source is not None:
+        selected = type_source.context(context)
+        if not value:
+            answers = selected.get_values(type_source.attribute)
+            if answers:
+                reason = 'Resource type has no resource description; omitted'
+                selected.warn(target, type_source.attribute, reason)
+                selected.record_mapping(f'{target}.resource_type', sources=answers, outcome='skipped', reason=reason)
+        else:
+            kind = read_controlled_value(
+                selected, type_source.attribute, option_map or {}, target=f'{target}.resource_type',
+            )
+    return Resource(value, kind) if value else None
 
 
 def read_subjects(context, *, source: Source, option_map, target, uncertain_options=()):

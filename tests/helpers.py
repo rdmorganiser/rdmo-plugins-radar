@@ -1,4 +1,6 @@
 """Real RDMO values for mapper tests and canonical inputs for workflow tests."""
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from xml.etree import ElementTree
@@ -11,11 +13,13 @@ from rdmo_radar.exports.exports import RadarTemplateFrameworkExport as RadarExpo
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings import ExportDataset
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, read_contributors
 from rdmo_radar.mappings.template_framework.rules import (
     ATTRIBUTE_TO_RADAR_FIELDS,
     DEFAULT_URI_PREFIX,
     select_template_framework_values,
 )
+from rdmo_radar.metadata.builder import compute_metadata as compose_metadata
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import Identifier, PersonOrOrganization, RadarMetadata, Resource, Rights, SubjectArea
 from rdmo_radar.services import RadarExportService
@@ -172,3 +176,39 @@ def configure_service(export, reader=None):
         )
     export.get_service = lambda: service
     return export
+
+
+def make_tf_mapping(**readers):
+    fields = replace(TF_FIELDS, readers={**TF_FIELDS.readers, **readers})
+    return replace(TEMPLATE_FRAMEWORK_MAPPING, compute_metadata=partial(compose_metadata, fields=fields))
+
+
+def make_data_management_project():
+    project = Project.objects.create(title='Optional sources')
+    for index in (1, 10):
+        add_answer(project, 'project/dataset/id', f'Dataset {index}', set_index=index)
+        add_answer(project, 'project/dataset/description', 'Data', set_index=index)
+    add_answer(project, 'project/data_management/name', 'Jane Doe', set_prefix='0', set_index=3)
+    add_answer(project, 'project/data_management/orcid', '0000-0002-1825-0097', set_prefix='0', set_index=3)
+    return project
+
+
+def add_data_management_role(project, index, *, person=3, prefix='0'):
+    option, _ = Option.objects.get_or_create(
+        uri_prefix='https://dmp.service.base4nfdi.de/terms',
+        uri_path=f'dr{index:02}',
+        defaults={'text_lang1': 'Label does not identify the role'},
+    )
+    return add_answer(
+        project,
+        'project/data_management/role',
+        '',
+        option=option,
+        set_prefix=prefix,
+        set_index=person,
+        collection_index=index,
+    )
+
+
+def make_data_management_mapping():
+    return make_tf_mapping(contributors=partial(read_contributors, include_data_management=True))

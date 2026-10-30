@@ -1,3 +1,4 @@
+from functools import partial
 from types import SimpleNamespace
 from xml.etree import ElementTree
 
@@ -9,11 +10,13 @@ from rdmo.projects.models import Value
 
 from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_schema, get_radar_validation_errors, validate_radar_xml
+from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.imports.imports import RadarTemplateFrameworkImport as RadarImport
 from rdmo_radar.mappings.template_framework import compute_metadata
 from rdmo_radar.mappings.template_framework.fields import read_identifier
 from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
 from rdmo_radar.metadata.api import to_api_payload
+from rdmo_radar.metadata.fields import Source, read_resource
 from rdmo_radar.metadata.normalization import normalize_primary_identifier
 from rdmo_radar.metadata.read_context import ProjectReadContext
 from rdmo_radar.metadata.types import (
@@ -33,7 +36,9 @@ from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 from .helpers import (
     add_answer,
     complete_metadata,
+    make_data_management_project,
     make_export,
+    make_tf_mapping,
 )
 
 
@@ -339,6 +344,79 @@ def test_api_vocabulary_is_derived_from_xml_vocabulary():
         'relatedIdentifierType': 'RAID',
         'relationType': 'IS_TRANSLATION_OF',
     }
+
+
+@pytest.fixture
+def staff_project(db):
+    return make_data_management_project()
+
+
+@pytest.mark.parametrize(
+    'answers,expected,issues',
+    [
+        (['Dataset'], 'Dataset', False),
+        (['Dataset', 'Dataset'], 'Dataset', False),
+        (['Other'], 'Other', False),
+        ([], None, False),
+        (['dataset'], None, True),
+        (['Unknown'], None, True),
+        (['Dataset', 'Software'], None, True),
+    ],
+)
+def test_resource_type_accepts_only_unambiguous_canonical_values(answers, expected, issues):
+    description = Value(attribute=Attribute(path='description'), text='Data description')
+    types = [Value(attribute=Attribute(path='kind'), text=text, collection_index=i) for i, text in enumerate(answers)]
+    context = ProjectReadContext({'description': [description], 'kind': types}, {}, provenance=[])
+    result = read_resource(
+        context,
+        source=Source('description'),
+        type_source=Source('kind'),
+        option_map=XMLVocabulary.resource_type_general_options,
+        target='resource',
+    )
+    assert result == Resource('Data description', expected)
+    assert bool(context.issues) is issues
+
+
+def test_resource_type_requires_description_and_never_reads_unconfigured_sources():
+    kind = Value(attribute=Attribute(path='kind'), text='Dataset')
+    context = ProjectReadContext({'kind': [kind]}, {}, provenance=[])
+    assert (
+        read_resource(
+            context,
+            source=Source('description'),
+            type_source=Source('kind'),
+            option_map=XMLVocabulary.resource_type_general_options,
+            target='resource',
+        )
+        is None
+    )
+    assert any(a.outcome == 'skipped' and a.sources[0].value is kind for a in context.provenance)
+    description = Value(attribute=Attribute(path='description'), text='Data')
+    context = ProjectReadContext({'kind': [kind], 'description': [description]}, {}, provenance=[])
+    assert read_resource(context, source=Source('description'), target='resource') == Resource('Data')
+    assert all(s.value is not kind for a in context.provenance for s in a.sources)
+
+
+def test_resource_options_follow_dataset_scope_and_reach_both_exports(staff_project):
+    option = Option.objects.create(uri_prefix='https://custom.test', uri_path='type', text_lang1='Not a type label')
+    add_answer(staff_project, 'custom/type', '', option=option, set_index=1)
+    profile = make_tf_mapping(
+        resource=partial(
+            read_resource,
+            source=Source('project/dataset/description'),
+            type_source=Source('custom/type'),
+            option_map={option.uri: 'Dataset'},
+        )
+    )
+    service = build_export_service(staff_project, profile=profile, collect_mapping=True)
+    first = service.mapping(service.reader(1)).metadata
+    tenth = service.mapping(service.reader(10)).metadata
+    assert first.resource == Resource('Data', 'Dataset')
+    assert tenth.resource == Resource('Data')
+    assert to_api_payload(first)['resource']['resourceType'] == 'DATASET'
+    xml = build_xml_export_service(staff_project, profile=profile).compute_files([1])[0].xml_data
+    assert b'resourceType="Dataset"' in xml
 
 
 @pytest.mark.parametrize(

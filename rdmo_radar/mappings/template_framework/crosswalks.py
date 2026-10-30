@@ -66,6 +66,18 @@ CREATION_METHOD_OPTIONS = {
 
 SOFTWARE_REQUIREMENT = 'dmp4nfdi/v2-0-0/ur00'
 
+DATA_MANAGEMENT_ROLE_OPTIONS = {
+    f'https://dmp.service.base4nfdi.de/terms/options/dr{index:02}': role
+    for index, role in enumerate((
+        'ProjectLeader', 'ProjectManager', 'WorkPackageLeader', 'Other', 'DataManager',
+        'DataCurator', 'DataCollector', 'Editor', 'Other',
+    ))
+}
+DATA_MANAGEMENT_ROLE_WARNINGS = {
+    'https://dmp.service.base4nfdi.de/terms/options/dr03':
+        'Data steward has no equivalent RADAR contributor role; retained as Other',
+}
+
 # Complete DMP4NFDI planned PID systems in canonical RADAR spelling. The primary
 # reader filters these to its narrower schema vocabulary. None means no specific
 # controlled scheme; this table does not establish a related-identifier mapping.

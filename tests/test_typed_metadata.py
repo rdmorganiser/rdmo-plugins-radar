@@ -11,6 +11,7 @@ from rdmo.options.models import Option
 from rdmo.projects.models import Project, Snapshot
 from rdmo.questions.models import Catalog, CatalogSection, Section
 
+from rdmo_radar.exports.renderers import RadarExportRenderer
 from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
@@ -22,7 +23,14 @@ from rdmo_radar.metadata.provenance import json_leaves, xml_leaves
 from rdmo_radar.metadata.types import Affiliation, FundingReference, Identifier, Keyword, PersonOrOrganization
 from rdmo_radar.metadata.xml import parse_xml, to_xml_payload
 
-from .helpers import add_answer, add_namespaced_attribute, complete_metadata
+from .helpers import (
+    add_answer,
+    add_data_management_role,
+    add_namespaced_attribute,
+    complete_metadata,
+    make_data_management_mapping,
+    make_data_management_project,
+)
 from .test_imports import make_context
 from .test_value_scopes import add_page, add_question, add_questionset
 
@@ -449,3 +457,154 @@ def test_offline_preparation_provenance_snapshot_and_query_contract(
                 assert source.value.snapshot_id == snapshot.pk
     assert result.issues == again.issues
     assert project.values.count() == before
+
+
+@pytest.fixture
+def staff_project(db):
+    return make_data_management_project()
+
+
+def test_all_roles_expand_with_stable_indices_and_export_in_both_formats(staff_project, django_assert_num_queries):
+    for i in range(9):
+        add_data_management_role(staff_project, i)
+    service = build_export_service(staff_project, profile=make_data_management_mapping(), collect_mapping=True)
+    expected = [
+        'ProjectLeader',
+        'ProjectManager',
+        'WorkPackageLeader',
+        'DataManager',
+        'DataCurator',
+        'DataCollector',
+        'Editor',
+        'Other',
+    ]
+    for index in (1, 10):
+        with django_assert_num_queries(0):
+            result = service.compute_payload(index, 'user@example.test')
+        people = result.payload['descriptiveMetadata']['contributors']['contributor']
+        assert [p['contributorType'] for p in people] == [
+            'PROJECT_LEADER',
+            'PROJECT_MANAGER',
+            'WORK_PACKAGE_LEADER',
+            'DATA_MANAGER',
+            'DATA_CURATOR',
+            'DATA_COLLECTOR',
+            'EDITOR',
+            'OTHER',
+        ]
+        # Inspect canonical values as well as projected evidence for each output entry.
+        canonical = service.mapping(service.reader(index)).metadata.contributors
+        assert [p.contributor_type for p in canonical] == expected
+        for i, role in enumerate(expected):
+            name = next(a for a in result.provenance if a.field == f'contributors[{i}].name' and a.output_path)
+            assert name.output_value == 'Jane Doe'
+            assert name.sources[0].value.set_index == 3
+            role_row = next(
+                a for a in result.provenance if a.field == f'contributors[{i}].contributor_type' and a.output_path
+            )
+            assert role_row.sources
+            assert role_row.value == role
+        xml = RadarExportRenderer().render(to_xml_payload(complete_metadata(contributors=canonical)))
+        assert get_radar_validation_errors(xml) == ()
+        assert any('Data steward' in issue.reason for issue in result.issues)
+
+
+def test_missing_and_unknown_roles_keep_people_as_other(staff_project):
+    service = build_export_service(staff_project, profile=make_data_management_mapping(), collect_mapping=True)
+    result = service.mapping(service.reader(1))
+    assert result.metadata.contributors[0].contributor_type == 'Other'
+    assert any('No contributor role' in issue.reason for issue in result.issues)
+    add_data_management_role(staff_project, 1)
+    unknown = Option.objects.create(uri_prefix='https://unrelated.test', uri_path='dr01', text_lang1='Project manager')
+    add_answer(
+        staff_project,
+        'project/data_management/role',
+        '',
+        option=unknown,
+        set_prefix='0',
+        set_index=3,
+        collection_index=22,
+    )
+    service = build_export_service(staff_project, profile=make_data_management_mapping(), collect_mapping=True)
+    result = service.mapping(service.reader(1))
+    assert [p.contributor_type for p in result.metadata.contributors] == ['ProjectManager', 'Other']
+    assert any(a.outcome == 'rejected' for a in result.provenance)
+
+
+def test_deduplication_retains_existing_details_and_rebases_following_entries(staff_project):
+    for suffix, text in [('name', 'Preferred name'), ('orcid', ORCID), ('role', 'DataCurator')]:
+        add_answer(staff_project, f'project/contributor/{suffix}', text, set_index=7)
+    add_data_management_role(staff_project, 5)
+    add_answer(staff_project, 'project/data_management/name', 'Second person', set_prefix='0', set_index=4)
+    add_data_management_role(staff_project, 7, person=4)
+    service = build_export_service(staff_project, profile=make_data_management_mapping(), collect_mapping=True)
+    result = service.compute_payload(1, 'user@example.test')
+    people = result.payload['descriptiveMetadata']['contributors']['contributor']
+    assert [p['contributorName'] for p in people] == ['Preferred name', 'Second person']
+    assert any('differing details' in issue.reason for issue in result.issues)
+    assert any(a.outcome == 'skipped' and 'Duplicate contributor' in a.reason for a in result.provenance)
+    second = next(a for a in result.provenance if a.field == 'contributors[1].name' and a.output_path)
+    assert second.output_value == 'Second person'
+    assert second.sources[0].value.set_index == 4
+
+
+def test_identifier_only_person_is_not_exported_and_snapshots_remain_isolated(staff_project):
+    add_data_management_role(staff_project, 1)
+    snapshot = Snapshot.objects.create(project=staff_project, title='Saved')
+    staff_project.values.filter(snapshot=None, attribute__path='project/data_management/name').delete()
+    current = build_export_service(staff_project, profile=make_data_management_mapping())
+    saved = build_export_service(staff_project, profile=make_data_management_mapping(), snapshot=snapshot)
+    assert current.mapping(current.reader(1)).metadata.contributors == []
+    assert saved.mapping(saved.reader(1)).metadata.contributors[0].name == 'Jane Doe'
+
+
+def test_conflicting_orcid_does_not_restore_identity_or_cross_person_groups(staff_project):
+    add_data_management_role(staff_project, 1)
+    add_answer(
+        staff_project,
+        'project/data_management/orcid',
+        '0000-0003-4553-3671',
+        set_prefix='0',
+        set_index=3,
+        collection_index=1,
+    )
+    service = build_export_service(staff_project, profile=make_data_management_mapping(), collect_mapping=True)
+    result = service.mapping(service.reader(1))
+    assert result.metadata.contributors[0].identifiers == []
+    assert result.metadata.contributors[0].contributor_type == 'ProjectManager'
+    assert result.issues
+
+
+def test_same_names_without_identifiers_do_not_merge_different_roles(staff_project):
+    staff_project.values.filter(attribute__path='project/data_management/orcid').delete()
+    add_data_management_role(staff_project, 5)
+    add_answer(staff_project, 'project/contributor/name', 'Jane Doe')
+    add_answer(staff_project, 'project/contributor/role', 'ProjectManager')
+    service = build_export_service(staff_project, profile=make_data_management_mapping())
+    people = service.mapping(service.reader(1)).metadata.contributors
+    assert [p.contributor_type for p in people] == ['ProjectManager', 'DataCurator']
+
+
+def test_catalog_group_ancestry_keeps_people_roles_and_orcids_together(staff_project):
+    staff_project.values.filter(attribute__path__startswith='project/data_management/').delete()
+    attach_catalog(staff_project)
+    page = add_page(staff_project)
+    people = add_questionset(page, 'project/data_management/name', collection=True)
+    details = add_questionset(people)
+    add_question(details, 'project/data_management/orcid')
+    add_question(details, 'project/data_management/role')
+    for index in (3, 7):
+        add_answer(staff_project, 'project/data_management/name', f'Person {index}', set_prefix='0', set_index=index)
+        add_answer(
+            staff_project,
+            'project/data_management/orcid',
+            ORCID if index == 3 else '0000-0003-4553-3671',
+            set_prefix=f'0|{index}',
+        )
+        add_data_management_role(staff_project, 1 if index == 3 else 5, prefix=f'0|{index}', person=0)
+    service = build_export_service(staff_project, profile=make_data_management_mapping())
+    people = service.mapping(service.reader(1)).metadata.contributors
+    assert [(p.name, p.contributor_type, p.identifiers[0].value) for p in people] == [
+        ('Person 3', 'ProjectManager', ORCID),
+        ('Person 7', 'DataCurator', '0000-0003-4553-3671'),
+    ]

@@ -60,7 +60,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | Title | `project/dataset/title`, then the `project/dataset/id` collection label. |
 | Identifier | Existing `project/dataset/data_publication_pid` support; scheme from recognized `project/dataset/pids/system` options, including the exact DMP4NFDI `pid03` (DOI) and `pid06` (Handle) Option URIs. Only `DOI`, `Handle`, and `RADAR` are accepted as primary types. A populated PID with a missing, conflicting, or unsupported scheme is omitted with diagnostics. A planned system without an existing publication PID is recorded as skipped, without a scheme rejection. No identifier is invented. |
 | Subject areas | `project/research_field/title`; all 48 catalog DFG options mapped using the subject sheet. Every explicitly listed category is emitted, with duplicate entries removed. `Other` retains the original label. The uncertain Materials Engineering entry stays `Other`; workbook “Veterinary” uses the schema spelling `Veterinary Medicine`. The stray Jurisprudence note on the Economics row does not override its explicit Economics mapping. |
-| Resource | `project/dataset/description`. Resource type stays unset because there is no confirmed source. `project/dataset/format` describes file/media formats and is never read as a RADAR resource type. Complete the resource type in RADAR. |
+| Resource | `project/dataset/description`. Optional `RESOURCE_TYPE_PATH` supplies a confirmed type source; its default is `None`. File/media formats never supply the resource type. Complete missing classifications in RADAR. |
 | Data sources | `project/dataset/creation_methods`: observations → `Observation`; polls/surveys → `Survey`; laboratory/social/field experiments → `Trial`; remaining choices → `Other`. Preserve labels and free text. Unknown choices produce a warning and retain their text as `Other`. |
 | Rights | `project/dataset/sharing/conditions`: CC-BY, CC-BY-NC, CC-BY-ND, CC-BY-SA, CC0, ODC-By, ODbL, and Other. Preserve additional text. Multiple distinct selections omit rights and report all selections for completion in RADAR. |
 | Rights holders | Use only `project/dataset/ipr/rightsholder` for export and import. Preserve ORCID/ROR provider identities alongside names during export; import writes names and warns about unsupported identity data. |
@@ -69,7 +69,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped; GND entries retain label, scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
 | Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. Optional confirmed name/version Attributes can be configured in the TF field mapping. No parsing of versions from names. Missing version is reported. |
 | Creators | Prefer `project/dataset/owner/name`, `/given_name`, `/family_name`; fall back to established `project/dataset/creator/*`. Read provider identities and creator-linked affiliations. Project coordination organisations require a custom mapping. |
-| Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. Responsibility labels never become names. |
+| Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. An optional data-management reader appends people with one entry per role. Responsibility labels never become names. |
 | Language | `project/dataset/language`: recognized controlled Options, or supported language names/codes entered as text. Normalize to schema-valid ISO 639-3 codes; see the selection below. |
 | Other established fields | Preserve acronym as additional title, geolocation region, and `project/dataset/method` processing text when available. |
 
@@ -88,6 +88,40 @@ Malformed values, resolver links with queries/fragments, whitespace/control char
 markup and values incompatible with the XSD are omitted with mapping diagnostics.
 The exporter never looks up or infers a scheme, and records normalization against the
 original answer in provenance.
+
+## Optional resource classification and data-management contributors
+
+The reusable `read_resource(context, *, source, target, type_source=None, option_map=None)`
+reads the description independently of its optional classification. The type source accepts
+explicit Option identities or exact canonical text from the configured crosswalk, never
+translated labels. Invalid/conflicting types preserve the description with diagnostics.
+A type without a description is omitted with a diagnostic. No classification is guessed
+from `project/dataset/format`. Set `RESOURCE_TYPE_PATH` in the TF field assembly once a
+confirmed Attribute exists, or replace the resource callback with an explicitly configured
+reader; [the README](../README.md#typed-metadata-and-template-framework-overrides) shows the pattern.
+
+TF `read_contributors(..., include_data_management=False)` keeps the established contributor
+and partner behavior by default. Explicitly setting `include_data_management=True` appends
+named project-level data-management staff to every exported dataset. It reads only
+`project/data_management/name`, `/orcid` and `/role`, joined through full coordinates and
+catalog ancestry. Identifier-only entries never create people. Coordination staff and
+`project/data_management/id/ror` do not establish additional creators or affiliations.
+
+Exact DMP4NFDI role Option URIs `dr00`–`dr08` map to ProjectLeader, ProjectManager,
+WorkPackageLeader, Other (Data steward), DataManager, DataCurator, DataCollector, Editor
+and Other respectively. Data steward warns because RADAR has no equivalent. Unknown or
+missing roles retain the person as Other with a warning. Several selected roles emit one
+entry per distinct mapped role, in crosswalk order with Other last. Each entry retains its
+own name/identity/role provenance and correct output index. Existing contributors retain
+their current single-role conflict policy.
+
+The generic `read_people` adds `repeat_roles=False` and `start_index=0`; these defaults
+preserve its existing interface behavior. `PersonSources.role_warnings` optionally supplies
+warnings keyed by exact Option URI during role expansion. Appended entries deduplicate
+against existing entries by shared canonical identifier and role, or exact entry equality
+when no identifiers exist. Existing details are retained; differences produce warnings,
+not name-based merges. Equivalent name-only entries with differing roles remain separate.
+Import destinations are unchanged.
 
 ## Software sources
 

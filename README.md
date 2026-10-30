@@ -406,6 +406,35 @@ URIs, IDs, model instances, or unambiguous paths. Normalization functions are in
 selection; getters accept normalizer callables where interpretation needs customization. A custom
 Python function can replace any reader or writer.
 
+To enable the optional data-management contributors and a confirmed resource-type source,
+use the same profile registration pattern above with these readers:
+
+```python
+from rdmo_radar.mappings.template_framework.fields import read_contributors
+from rdmo_radar.mappings.template_framework.vocabulary import XMLVocabulary
+from rdmo_radar.metadata.fields import read_resource
+
+fields = replace(TF_FIELDS, readers={
+    **TF_FIELDS.readers,
+    'resource': partial(
+        read_resource,
+        source=Source('project/dataset/description'),
+        type_source=Source('https://example.org/domain/research/resource-kind'),
+        option_map=XMLVocabulary.resource_type_general_options,
+    ),
+    'contributors': partial(read_contributors, include_data_management=True),
+})
+```
+
+Replace the example type URI with an installed Attribute and configure its Option identities
+in `option_map` when needed; exact canonical RADAR text is also accepted. The built-in
+`RESOURCE_TYPE_PATH` remains `None` until a suitable TF Attribute is confirmed. Data-management
+contributors are disabled by default; enabling them includes project staff on every exported
+dataset, with one entry per selected role. Data steward, missing and unknown roles use Other
+with a warning. See [mapping details](docs/metadata-mapping.md#optional-resource-classification-and-data-management-contributors)
+for identity handling, role crosswalks and deduplication. These options do not add catalogue
+Attributes, rewrite answers or change import destinations.
+
 Export and import mappings are independent. Changing `fields.readers` does not change import destinations.
 Import writers use explicit `Destination(attribute, Coordinates(...))` objects and their own canonical-to-Option
 crosswalks. The TF profile continues to own its conservative merge and allocation rules. Unconfigured export
@@ -632,8 +661,8 @@ funding. An explicit dataset title takes precedence over its collection label. M
 identify answers that need completion in RADAR. See [the mapping documentation](docs/metadata-mapping.md)
 for supported fields and deferred decisions.
 
-File/media formats do not determine RADAR resource type. Resource type remains unset until users complete
-it in RADAR. RADAR XML import also leaves the file-format field untouched when importing resource types.
+File/media formats do not determine RADAR resource type. Unless an explicit type source is configured,
+users complete it in RADAR. RADAR XML import leaves the file-format field untouched when importing resource types.
 
 Direct exports use an independent REST adapter, audited against populated public RADAR API responses.
 See [the REST contract references](docs/radar-api-contract.md). The credentials provider uses a small HTTP

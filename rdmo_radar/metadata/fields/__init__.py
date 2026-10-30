@@ -21,7 +21,7 @@ from .contracts import (
     Source,
     WriteContext,
 )
-from .dataset import read_data_sources, read_rights, read_software, read_subjects
+from .dataset import read_data_sources, read_resource, read_rights, read_software, read_subjects
 from .funding import FundingSources, read_funding
 from .keywords import read_keywords
 from .people import AffiliationSources, IdentifierSource, PersonSources, RoleSource, read_people
@@ -55,6 +55,7 @@ __all__ = [
     'read_names',
     'read_option',
     'read_people',
+    'read_resource',
     'read_rights',
     'read_software',
     'read_subjects',

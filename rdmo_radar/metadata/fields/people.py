@@ -1,7 +1,7 @@
 """Grouped people and affiliations, independent of catalog Attribute paths."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from types import MappingProxyType
 
@@ -50,23 +50,28 @@ class PersonSources:
     roles: tuple[RoleSource, ...] = ()
     role_options: Mapping = dataclass_field(default_factory=dict)
     default_role: str | None = None
+    role_warnings: Mapping = dataclass_field(default_factory=dict)
 
     def __post_init__(self):
-        for name in ('name_type_options', 'role_options'):
+        for name in ('name_type_options', 'role_options', 'role_warnings'):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         for name in ('identifiers', 'roles'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
 
 
 def read_people(
-    context, *, sources: PersonSources, target, normalizer=normalize_answer, identifier_normalizer=normalize_identifier
+    context, *, sources: PersonSources, target, normalizer=normalize_answer, identifier_normalizer=normalize_identifier,
+    repeat_roles=False, start_index=0,
 ):
+    if not isinstance(start_index, int) or start_index < 0:
+        raise ValueError('The starting person index must be a nonnegative integer.')
     parent = sources.group.context(context)
     report_orphan_identities(parent, sources, target)
     people = []
     groups = parent.groups(*sources.group.anchors)
     for group in groups:
-        item_target = f'{target}[{len(people)}]'
+        item_target = f'{target}[{start_index + len(people)}]'
+        trace_start = len(parent.provenance) if parent.provenance is not None else 0
         person = _read_person_or_organization(
             group,
             sources,
@@ -76,6 +81,24 @@ def read_people(
             identifier_normalizer=identifier_normalizer,
         )
         if person is not None:
+            if repeat_roles and (sources.roles or sources.default_role is not None):
+                base_trace = tuple(parent.provenance[trace_start:]) if parent.provenance is not None else ()
+                related = parent.descendants(group, sources.group.anchors)
+                roles = _read_repeated_roles(related, sources, item_target, parent=parent)
+                for offset, (role, evidence, defaulted) in enumerate(roles):
+                    expanded_target = f'{target}[{start_index + len(people)}]'
+                    if offset and parent.provenance is not None:
+                        parent.provenance.extend(
+                            replace(attempt, field=expanded_target + attempt.field[len(item_target):])
+                            for attempt in base_trace if attempt.field.startswith(item_target)
+                        )
+                    related.record_mapping(
+                        f'{expanded_target}.contributor_type', sources=evidence, value=role,
+                        outcome='defaulted' if defaulted else 'mapped',
+                        reason='Role retained as Other' if defaulted else 'Explicit contributor role',
+                    )
+                    people.append(replace(person, contributor_type=role))
+                continue
             if sources.roles or sources.default_role is not None:
                 related = parent.descendants(group, sources.group.anchors)
                 person.contributor_type = _read_role(related, sources, item_target, parent=parent)
@@ -83,6 +106,42 @@ def read_people(
     if not groups:
         parent.record_empty_mapping(target, sources.name)
     return people
+
+
+def _read_repeated_roles(context, sources, target, *, parent):
+    evidence = {}
+    defaulted = set()
+    for source in sources.roles:
+        path = source.attribute
+        if source.require_shared_placement and not context.has_shared_placement(path, sources.group.anchors):
+            if parent.get_values(path):
+                context.warn(target, path, 'Contributor role alias has no shared catalog group')
+            continue
+        values = context.get_values(path)
+        mapped = context.map_options(path, sources.role_options, values=values)
+        for value, role in zip(values, mapped, strict=True):
+            if not value.is_true:
+                context.record_mapping(f'{target}.contributor_type', sources=(value,), outcome='skipped',
+                                       reason='Answer is not selected')
+                continue
+            if value.option is None:
+                role = value.text.strip() if value.text.strip() in sources.role_options.values() else None
+            warning = sources.role_warnings.get(value.option.uri) if value.option else None
+            if role is None:
+                warning = 'Unknown contributor role; retained as Other'
+                role = 'Other'
+                defaulted.add(role)
+                context.record_mapping(f'{target}.contributor_type', sources=(value,), outcome='rejected',
+                                       reason=warning)
+            if warning:
+                context.warn(target, path, warning)
+            evidence.setdefault(role, []).append(value)
+    if not evidence:
+        context.warn(target, sources.name, 'No contributor role supplied; retained as Other')
+        return [('Other', (), True)]
+    order = list(dict.fromkeys(sources.role_options.values()))
+    return [(role, evidence[role], role in defaulted)
+            for role in sorted(evidence, key=lambda r: (r == 'Other', order.index(r) if r in order else len(order)))]
 
 
 def report_orphan_identities(context, sources, target):
