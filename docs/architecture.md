@@ -1,0 +1,503 @@
+# RADAR plugin architecture
+
+The plugin uses RDMO 2's registered export/import interfaces, small factories, and services with explicit
+callable dependencies. Metadata mapping and serialization have separate responsibilities. RDMO 3 frontend
+integration is deferred; previous backend checks do not establish frontend support.
+
+## Responsibilities
+
+| Module | Responsibility |
+|---|---|
+| `exports/exports.py` | XML warnings, download confirmation, and ZIP responses. |
+| `exports/providers.py`, `exports/credentials.py` | Forms, sessions, OAuth or credentials requests, and result presentation. |
+| `imports/imports.py` | File checks, existing-project requirement, and RDMO import staging integration. |
+| `factories.py` | Assemble defaults and prepare operation-scoped project data. |
+| `mappings/__init__.py` | Frozen callable profiles and export datasets; no Django dependency. |
+| `mappings/common/` | Shared RADAR vocabulary definitions and project-read preparation; profiles own source selection and context state. |
+| `mappings/project.py` | One conservative project-level record, with optional custom metadata functions. |
+| `mappings/template_framework/` | TF discovery, complete dataset coordinates, import allocation, and result destinations. |
+| `services.py` | Prepare REST payloads, generate XML files, and coordinate parsing with import mapping. |
+| `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
+| `metadata/fields/` | Reusable scalar and compound field getters/writers, immutable source/destination specifications, and callable contracts. |
+| `metadata/normalization.py`, `metadata/entities.py`, `metadata/fields/keywords.py` | Normalize supported provider displays without I/O; read names and free-text/GND keywords with native Value provenance. |
+| `metadata/pids.py` | Own reusable ORCID/ROR/GND schemes and offline detection of validated resolver URLs; field readers decide which identities are supported. |
+| `metadata/languages.py` | Keep the pure static language-name/code normalizer; TF Option identities belong to its profile. |
+| `metadata/values.py` | Prepare native Values/catalog placements, match coordinates, and provide shared answer helpers. |
+| `metadata/read_context.py` | Scoped project Value access and mapping diagnostics through `ProjectReadContext`. |
+| `metadata/write_context.py` | Resolve import destinations, merge answers, and stage unsaved Values through `ProjectWriteContext`. |
+| `metadata/api.py`, `metadata/xml.py` | Convert canonical metadata to the RADAR REST/XML contracts and parse XML. |
+| `client.py` | Credentials HTTP requests, RADAR response interpretation, and shared URL construction. |
+| `exports/storage.py` | Atomically persist a confirmed RADAR ID and complete URL. |
+| `exceptions.py` | Protocol, confirmed-result storage, and XML generation errors. |
+
+Generic adapter classes require a configured mapping. Explicit project/TF subclasses select profiles through
+normal RDMO class registration; see the [README](../README.md#mapping-selection).
+
+## Request flows
+
+**XML export:** RDMO dispatches the registered plugin with a project or snapshot. The adapter resolves
+`snapshot.project` when necessary, prepares the XML service, and converts its file results into translated
+warnings or a ZIP. Missing metadata, mapping issues, and schema violations allow an explicit download.
+Generation failures produce a safe error response. Filename sanitization and collision handling belong to
+`RadarXmlExportService`; labels, templates, and responses belong to the adapter.
+
+**Credentials export:** the adapter validates the form, prepares a payload through its `get_payload()` hook,
+and creates the dataset through `RadarClient`. After RADAR confirms the ID, it constructs the human-facing
+URL from that same client's base URL and the request language, then calls `service.store_result`.
+Credentials are not stored; the bearer token belongs to the export session.
+
+**OAuth export:** RDMO's `OauthProviderMixin` owns authorization, HTTP requests, and callback replay.
+After payload preparation, before creation, the adapter saves project ID, provider class, the dataset,
+storage-enabled flag, actual RADAR base URL, and language in a JSON-compatible `export_context`. The callback
+uses the registered class's profile and captured scope, never imports a profile named by session data, and
+does not construct a metadata service or load project answers. It resolves the saved project only when
+storage was enabled. Both services and callbacks use `store_confirmed_result` to handle optional writers
+and wrap actual write failures.
+Confirmed creation clears the saved operation context; cancellation clears it too.
+
+Both REST providers inherit `get_payload(dataset)` from `RadarExportProviderBase`. By default it returns
+`RadarExportService.compute_payload(dataset, responsible_email).payload`. A subclass can return the complete
+request dictionary directly or call `super()` and customize it. The provider checks JSON serializability,
+then sends the returned dictionary unchanged. Preparation failures produce a form error before submission
+or result storage. Actual export calls the hook after valid dataset selection. When any preview setting is
+enabled, displaying the export form also calls it for every dataset. Mapping warnings and OAuth replay
+do not call the hook. The hook must prepare data without external requests, file creation, or persistent
+changes; remote dataset creation belongs exclusively to the submission workflow. Operation-local provenance
+recording remains supported. Repeated calls may produce different timestamps.
+`get_context(dataset)` returns a reader using the same prepared operation and selected scope.
+
+The independent Django settings `RADAR_PREVIEW_PAYLOAD`, `RADAR_PREVIEW_SOURCE_ANSWERS`, and `RADAR_PREVIEW_MAPPING` default to
+false. The shared `render_form()` helper prepares **Preview from current answers** automatically for every
+current dataset, without requiring valid dataset/workspace choices. Preview preparation belongs to form
+display, outside form construction and validation. The built-in preparation performs no remote requests,
+writes, or session changes. Custom hooks must obey the same preparation contract.
+Payload previews use the same preparation hook and JSON checks as actual export;
+`get_source_values(dataset)` reads prepared Attribute identities through the selected context's accessor.
+It never automatically expands to shared project scope. Source rows list available Values with their recorded
+output destinations. All panels are escaped and independently optional. Failures appear within the affected dataset
+and panel without invalidating the form or hiding other datasets. Warnings are grouped by `dataset_key`,
+never title, and remain visible even when preview panels are disabled. Mapping-warning failures are also
+isolated per dataset. The complete preview section appears before dataset/workspace selection and form controls.
+The shared **RDMO Attributes and answers** panel uses compact Bootstrap 3 list-group rows: a visible full
+Attribute URI above each answer, with coordinate badges aligned to the right only in `RADAR_DEBUG` mode.
+The same setting controls coordinates in the mapping cards, independently of Django's `DEBUG`. Native HTML titles identify
+`set_prefix`, `set_index`, and `collection_index` on hover; accessible labels include both the name and value.
+There is no tooltip JavaScript or Bootstrap tooltip initialization. Attribute and Option URIs reuse RDMO's
+`code-domain` and `code-options` classes. An unstyled flex wrapper handles URI layout while the inline
+code background covers only the URI text. Answers use RDMO's `Value.value_and_unit`; Option URIs and external
+IDs appear as indented metadata below them. External IDs remain separate because the native display property
+does not include them. Narrow layouts wrap the header without truncating URIs.
+The **RADAR Field mapping** panel uses the same compact list-group styling, with each card
+showing the canonical field, verified output path, outcome, source answers, result, and reason.
+Source cards always display their verified destinations, independently of the separate field-mapping panel.
+`compute_source_answers()` prepares presentation rows around the existing native Values; `get_source_values()`
+and the `source_values` context entries keep their native Value lists. Destinations are joined using Value
+primary keys, or object identity for unsaved Values, and include only mapped/defaulted emitted fields.
+REST JSON pointers are displayed in dot notation with array indices and quoted keys where necessary;
+XML paths retain their actual emitted locations. Missing or partial provenance is labelled explicitly.
+Source-answer previews prepare the payload and provenance once per dataset even when its JSON display is disabled.
+The join performs no queries or further mapping/payload preparation and does not alter export bodies.
+Preview data is not retained; Export prepares a fresh payload. The form wrapper reuses RDMO's field
+template, CSRF protection, and hidden stage fields. The named Export submit action is required to create a
+dataset, preventing old Preview submissions from creating one. Existing export permissions apply to previews.
+
+Both exporters delegate scoped answer access to `ProjectReadContext.get_scope_values()`. It selects native
+Values by their prepared Attribute identities and preserves the existing Attribute/coordinate ordering
+without further queries. Preview helpers do not interpret the prepared lookup structures. Empty mapping
+attempts use the public `record_empty_mapping(target, path)` method, including ambiguity diagnostics.
+`compute_dataset_previews()` prepares the REST presentation; shared helpers use `compute_mapping_preview()`,
+`compute_source_answers()`, and `compute_payload_field_path()`.
+
+`RADAR_PREVIEW_MAPPING` or `RADAR_PREVIEW_SOURCE_ANSWERS` enables operation-local `MappingAttempt`/`MappingSource` sidecars on the existing
+`MappingResult`, `ExportPayload`, and `XmlExportFile` result types. A native Value is retained as a source,
+preserving its Attribute/Option identity, set coordinates, and snapshot. Project properties and constants
+are explicitly labelled literals. `ProjectReadContext` accessors accept optional canonical `target=` fields;
+shared and grouped contexts append to the same recorder. Built-in mappings record composed fields, vocabulary
+crosswalks, defaults, and rejected/empty/skipped inputs at the decision point. Uninstrumented custom mappings
+remain supported and report provenance as unavailable. Factories copy prepared contexts without reloading
+Values; collection is disabled unless requested. REST warnings and payload previews reuse a single mapping
+result per dataset within the operation, avoiding duplicate decisions.
+
+Contributor merging computes final entries, destination indices and duplicate decisions before
+updating diagnostics. Shared provenance helpers rebase attempts and issues for the affected read
+together, using canonical field boundaries. Role expansion copies a constructed person's evidence
+to each additional role entry. Fallback labels select the successful field/value decision within
+that read rather than relying on the last recorder entry. These operations retain native answer
+identities and leave earlier diagnostics untouched.
+
+Built-in serializers have an optional `record_output` callback for canonical-field/output-location bindings.
+Each serializer records bindings beside the fields it emits, including in nested serialization helpers;
+there is no separate table repeating the REST and XML field layouts. Bindings contain format names, never
+RDMO Attributes. The generic recorder guards callback failures and invalidates the optional sidecar without
+interrupting serialization. Projection verifies XML paths against the exact rendered
+bytes and JSON pointers against the actual payload. Changed canonical values and XML-filtered entries become
+skipped attempts; uncovered output leaves become untraced. Renderer-generated constants are labelled defaults.
+Automatic JSON output coverage tracks scalar leaves, including `null`, and omits empty objects and arrays.
+These containers remain visible in the raw payload preview but receive no automatic provenance rows.
+Scalar emission can use `emit_bound_value()` to assign a value and record its binding together.
+Serializers supply the converted value and exact output path; REST callers explicitly select omission
+of `None` while XML retains its renderer input. Attempted bindings for omitted values remain available
+to projection. Container layouts and format-specific filtering stay in the individual serializers.
+Custom serializers retain their existing call signatures and report unavailable provenance. Trace projection
+failures affect only the optional sidecar, never the generated export.
+
+Raw REST overrides keep `get_payload(dataset) -> dict`. Their optional companion
+`get_payload_provenance(dataset, payload)` returns `tuple[MappingAttempt, ...] | None`; successful rows are
+checked against the returned payload. A raw override must explicitly override this companion to opt in,
+even if its payload hook calls `super()`. No inference from identical strings or inherited mapping provenance
+is performed. Incomplete supplied traces show uncovered output fields as untraced. Companion failures remain
+panel-local. Neither sidecars nor preview data enter HTTP bodies, OAuth session requests, or local storage.
+
+XML uses the same source-answer and mapping partials through presentation helpers that do not depend on
+authentication providers. Enabled flags render the XML page for valid files too; each dataset retains its
+own warnings and actual XML, source, and mapping sections. Snapshots are labelled. All flags disabled preserve
+the existing warning/direct-download behavior. `?download=1` skips preview extraction and provenance recording
+and returns the usual ZIP containing XML files only.
+
+`RADAR_DEBUG` is an independent, opt-in Django setting, defaulting to false. After ordinary dataset
+preparation, both REST adapters render the same form before authentication or remote workspace discovery.
+The form substitutes a local workspace without persisting it or reading `RADAR_PROVIDER`; existing mapping
+and preview settings still apply. Export is hidden and submissions cannot authenticate, send requests, or
+store export results; displayed forms still prepare enabled previews. Cancel retains priority. The OAuth
+callback clears pending request/state/operation/destination data before token exchange or replay, without rebuilding a reader or
+discarding an existing access token. Enabled previews still invoke custom preparation hooks; `RADAR_DEBUG`
+cannot prevent network calls made inside those hooks. Django's `DEBUG` has no effect on this behavior.
+Clients, services, mapping profiles, and the XML pipeline are unchanged.
+
+`show_mapping_warnings = None` retains canonical mapping warnings for the default payload hook and suppresses
+them when a subclass overrides it. Explicit `True` or `False` enables or disables these profile-derived
+warnings. `get_mapping_warnings()` remains separately overridable for custom diagnostics. Raw payloads bypass
+canonical metadata validation, and context issues from custom reads are not automatically presented.
+The payload hook does not affect XML services or mapping-profile-controlled dataset discovery and storage.
+
+**Import:** RDMO selects `RadarImport` using its file check. The import service parses XML and stages unsaved
+Values through the supplied plugin's `get_attribute`, `get_option`, and `values` interfaces. RDMO owns preview
+and saves only checked entries during apply. A new dataset index is allocated after the highest persisted
+current dataset-title index in the TF profile. Shared contributor/funding fields are merged using prepared
+existing Values. Other profiles own destination resolution, allocation, and merge coordinates through their
+optional writer-building hook; missing import support raises a clear validation error without TF fallback.
+
+## Value access and operation lifetime
+
+Attributes connect Questions to project Values through their foreign keys. An Attribute can be reused
+by multiple Questions and catalogs; Values do not identify one originating Question. Catalog XML uses
+full Attribute URIs for these shared references, separately from the Question URIs under `/questions/`.
+The domain hierarchy under `/domain/` does not prescribe questionnaire layout or dataset collections.
+Catalog placements and complete Value coordinates supply scope information.
+
+Internal dictionaries use `attribute_values_map`, `attribute_placements_map`, and `attribute_lookup_map`
+to distinguish prepared Values, catalog scope, and reference resolution. Attribute identity keys are
+separate from `Attribute.key` and export dataset selection keys. Existing public arguments and context
+fields remain unchanged: `path` may accept a full URI or another supported Attribute reference, while
+`values`, `placements`, and `prepared` retain their established construction contracts. Function names,
+profile members such as `get_datasets`, and registered entry points also remain compatible.
+
+Factories load project Values once with `filter(snapshot=...).select_related('attribute', 'option')` and group
+them by Attribute identity. Persisted models use their primary key; unsaved models use a full URI or object
+identity. The internal dictionary keys also retain path/URI labels for operation-local aliases. Catalog
+placements and their ancestor anchors use those same keys, canonicalized by identity so cached URI labels
+cannot break scope matching for the same primary
+key. Fresh Value relations supply the labels when both sources contain that Attribute. Prepared contexts
+also accept native Attribute-ID buckets with related Attribute models; unattached native Values are ignored.
+Catalog loading and recursive traversal reuse `Catalog.prefetch_elements()`, `pages`, `descendants`, and
+`elements`. A small placement conversion retains outermost-first page/questionset
+coordinates, repeated placements, non-collection zero coordinates, and empty collection markers.
+Path aliases are resolved against the prepared Values and catalog placements, including Attributes with
+no Values. Unrelated installed Attributes do not participate. Missing selectors return no Values; ambiguous
+selectors return no Values and a deduplicated `MappingIssue`. Exact URI or primary-key selection remains
+available even when a path is ambiguous. No installed-model lookup occurs during export mapping.
+
+Component-wise scope matching keeps dataset indices `1` and `10` distinct and supports nested and shared
+answers. The established catalog-less fallback remains. There is no separate answer tree or reader hierarchy.
+`ProjectReadContext` provides scoped access to prepared project Values and collects lookup diagnostics.
+It accepts paths, full URIs, Attribute primary keys, and identifiable Attribute objects in its
+read accessors. It also exposes `get_values_by_uri(uri)` and `get_values_by_attribute_id(pk)`. `shared()` and
+`group()` retain the prepared dictionaries, selection function, diagnostic field names, and diagnostic list.
+The default context reads project Values; a mapping can supply `value_selector(context, attribute_key)`
+and `field_names` when it needs specialized scoping or diagnostic names. Legacy path-keyed inputs remain supported:
+a bucket containing only path-only synthetic Attributes explicitly represents one fixture Attribute.
+Identifiable models in such a bucket are still split by identity; independently keyed URI-less unsaved
+models retain object identity. Synthetic inputs never establish equivalence between persisted models.
+
+Option mappings accept full URI keys, which take precedence over legacy `uri_path` keys. Path ambiguity
+is checked among the relevant scoped answers, even if the Options would map to the same RADAR value.
+`get_option()` returns its default with diagnostics for unresolved/conflicting answers; `map_options()`
+returns one mapped result per Value, using `None` for unresolved entries. Specialized Template Framework
+readers use the same mechanism and preserve unresolved descriptive labels as `Other` where applicable.
+
+Generic coordinate matching in `metadata/values.py` accepts explicit identity-based constraints and has
+no Template Framework paths. `mappings/template_framework/rules.py` owns dataset discovery Attributes,
+flat/creator fallbacks, title-only import allocation, the default namespace, and Attribute-to-RADAR
+diagnostic field names. The Template Framework profile explicitly supplies its dataset selector and field
+names to `ProjectReadContext`; that selector delegates project/group scopes to generic placement matching.
+The generic context has no Template Framework dependency.
+M7a established these access functions; M7b/M7c select their interpretation through profiles below.
+
+`ProjectWriteContext` merges prepared answers, stages unsaved Values, and collects import diagnostics.
+It resolves destinations through RDMO's `get_attribute()` / `get_option()` APIs. Full URIs
+resolve exactly. For short paths, an optional profile-supplied namespace lets `Attribute.build_uri()` and
+`Option.build_uri()` construct a preferred URI. TF explicitly supplies its own namespace; the generic
+context has none.
+The respective models supply `/domain/` and `/options/`; the plugin does not concatenate those segments.
+Namespace selection is independent of Django's `DEFAULT_URI_PREFIX` setting. When no preferred URI
+resolves, the installed-path fallback must identify one destination,
+otherwise it reports ambiguity and stages nothing for that destination. Full URIs never use fallback;
+empty paths return no destination. Successful, missing, and ambiguous resolutions are cached per import
+context. Existing and staged answers are merged
+only for the resolved Attribute, and Option deduplication uses identity. The TF import profile shares
+one import context between title-index allocation and staging, retaining both caches and diagnostics.
+Import resolution may query installed models; staged Values remain unsaved for RDMO preview/apply.
+
+`DATASET_ATTRIBUTES` contains only `project/dataset/id` and `project/dataset/title`, the Attributes used
+for Template Framework dataset discovery and scoping. It is not the complete metadata mapping.
+`ATTRIBUTE_TO_RADAR_FIELDS` translates Attribute paths into RADAR field names in diagnostics, including
+list fields such as `additionalTitles`; it does not enforce scalar values. Renaming these internal
+constants does not change discovery, scoping, or warning output.
+
+One service instance represents a prepared operation. Subsequent dataset reads add no Value queries and
+select from attribute buckets. Each read gets a fresh diagnostic list; shared/group contexts within that
+read share it. Export adapters rebuild their service when the project object, snapshot, or catalog changes.
+Profile changes also rebuild the service. Dataset discovery is cached for that service operation and
+recomputed when the service changes. Before submission, the selected key must still exist in the current
+project's datasets; a stale project or removed record is rejected before remote creation.
+For project edits, construct a new service. Preparation is not cached across requests.
+
+## Service and mapping contracts
+
+Application profiles assemble ordinary Python functions using explicit dependency injection. A profile
+binds selectors and policies to reusable getters with `functools.partial`. Individual fields use callable
+strategies; contexts expose several related operations through narrow structural protocols.
+
+| Contract | Behavior |
+| --- | --- |
+| `FieldReader[T](context, *, target) -> T` | Read one canonical field and record diagnostics/provenance. |
+| `FieldWriter[T](context, value, *, target) -> None` | Stage one canonical field at configured destinations. |
+| `FieldMapping(readers=..., writers=...)` | Validate canonical field keys/callables and freeze copied callback dictionaries. |
+| `compute_metadata(context, *, fields)` | Invoke configured readers and return `MappingResult`, including issues and optional provenance. Unconfigured fields retain canonical defaults. |
+| `write_metadata(context, metadata, *, fields)` | Invoke configured writers and warn about populated fields without writers. Return a diagnostic snapshot. |
+
+Field keys are top-level names on `RadarMetadata`, such as `language`, `rights_holders`, and
+`funding_references`. Nested getters supply indexed diagnostic targets for their child fields. Reader and
+writer maps are independent: a transformation may lose information, so export configuration is never
+reversed automatically. Existing serializers remain independent of RDMO Attribute selection.
+
+`Source(attribute, scope='current'|'project')` selects a required Attribute and lookup scope.
+`GroupSpec(anchors, scope=...)` selects repeated entities. `Coordinates(set_prefix, set_index,
+collection_index)` and `Destination(attribute, coordinates)` specify native import positions explicitly.
+Compound writers receive destination factories for repeated people, identifiers, affiliations or funding.
+Configuration objects are frozen; compound Option maps are copied and made read-only. No rule language,
+container, decorator registry, or dynamic plugin discovery is required.
+
+Getters live in `metadata/fields/`. Text, language, names, keywords and compound getters expose normalization
+strategies with canonical defaults. Pure language/provider/identifier normalizers know nothing about
+Attributes, Options, the ORM, or network requests. Getters interpret selected native Values, preserve
+provenance, and return canonical objects. They contain no TF paths or namespace defaults. Custom callables
+remain available for catalog-specific policies that do not fit a reusable specification.
+
+### Compound metadata
+
+`PersonSources` configures grouping, names, explicit identifiers, entity types, roles, and optional
+`AffiliationSources`. `IdentifierSource` describes a value and either a fixed scheme or a separate controlled
+scheme source. `FundingSources` describes name, optional scheme/separate identifier, and award fields.
+Fixed identifier schemes may be `PIDScheme` objects or compatible string names. Optional resolver-URL
+detection promotes untyped/Other identifiers; explicit specific schemes retain precedence. General
+`Source` selection and canonical `Identifier` values remain independent of scheme implementations.
+A getter does not infer behavior from the spelling of an Attribute path.
+
+Grouped access follows native coordinates and related catalog placements through
+`ProjectReadContext.descendants()`. Role aliases can explicitly require a shared catalog placement.
+Prepared data is reused; these operations add no queries or intermediate answer tree.
+
+`PersonDestinations`, `AffiliationDestinations`, `IdentifierDestinations`, and `FundingDestinations` provide
+reusable import strategies. Profiles supply separate canonical-to-Option crosswalks and own allocation and
+merge decisions. Unsupported nested values produce warnings rather than silently disappearing.
+`ProjectWriteContext` requires explicit operation coordinates and accepts an optional profile-supplied
+namespace; it has no TF namespace or dataset-position default. It preserves external IDs and stages unsaved
+native Values. Result storage remains a separate operation after confirmed remote creation.
+
+Attribute and Option import lookup share operation-local caching and URI/path fallback mechanics.
+The model-specific entry points supply their public import getter, path field and separate ambiguity
+state. Only Attribute lookup applies the additional synthetic-destination ambiguity check. Explicit
+model selectors bypass lookup; primary-key selectors still resolve through the public import API.
+
+### Shared profile definitions
+
+`mappings/common/vocabulary.py` defines the RADAR Option crosswalks and canonical constants. These
+include identifier types and schemes, languages, contributor roles, resource types, subjects, data sources,
+software types, rights, description types, and relations. Common tables/sets are read-only; profiles expose
+independent dictionary/set copies through their existing vocabulary names. Compatible supersets are shared
+in full, so newly supported Options also become available to legacy. Importing common vocabulary does not
+load reader code or require Django setup. Language Options derive from the existing canonical language
+codes; text-language normalization remains in `metadata/languages.py`.
+
+The TF `XMLVocabulary`, `APIVocabulary`, and module-level `LANGUAGE_OPTIONS` retain their interfaces;
+XML values come from common definitions and REST values use the existing `to_api_value` conversion.
+Legacy retains the public `RESOURCE_TYPE_OPTIONS` name for the shared general resource-type table.
+Its name-identifier scheme table overrides only `name_identifier_scheme/insi` to `ISNI` and
+`name_identifier_scheme/grid` to `GRID`; common/TF map those entries to `Other`.
+
+Primary, related, person, and funder identifier vocabularies remain distinct. Legacy related identifiers
+use all 24 supported related-identifier types. `Other` and `RADAR` are unmapped in that field: existing
+warnings are recorded and the identifier text is retained without a mapped type. Alternate identifiers
+continue to use the general identifier table, including `RADAR`.
+
+`prepare_project_read(project, snapshot=None)` in `mappings/common/readers.py` loads the selected project
+Values and catalog placements once and returns `(values, placements, prepared)`. Legacy, TF, and project
+reader factories reuse those structures while constructing their own contexts. Selection rules, coordinates,
+project references, diagnostic field names, and per-read diagnostic/provenance state remain profile choices.
+
+`ModelKey` names the identity kind, value, path and URI; `PreparedReadData` names the values,
+placements and lookup maps. Both remain tuple-compatible, including key equality and hashing.
+Contexts accept legacy prepared tuples and normalize their keys without copying native Values or
+discarding explicit aliases. Shared/grouped contexts reuse the normalized prepared object.
+
+First/last-answer selection, normalization, discovery, and import/store policies stay in their existing
+profiles. Legacy language uses the shared controlled Options but retains its first-answer selection and
+does not infer a language from free text. Other field bindings, including funding, remain unchanged.
+Reusable field strategies belong in `metadata.fields`; confirmed-result persistence remains in
+`exports/storage.py`.
+
+### Template Framework profile
+
+`mappings/template_framework/` owns TF Attribute paths, profile-specific Option and workbook crosswalks,
+owner/creator and contributor/partner priority, role defaults, collection conventions, import allocation,
+conservative merge policies, and RADAR-result destinations. Its RADAR vocabulary uses independent copies
+of the common tables. `TF_FIELDS` assembles every supported export and import field using the same callback
+contracts. Its profile-specific `write_metadata()` convenience function prepares a TF context and delegates
+to the generic import composer.
+
+TF keeps the reviewed 27 October 2026 source mapping. Rights-holder export/import uses only
+`project/dataset/ipr/rightsholder`. Language source selection is explicitly bound in `TF_FIELDS`; the
+pure language vocabulary accepts the twelve documented European languages and emits schema-valid codes.
+Provider answers retain ORCID/ROR/GND identities with clean names. Funding separates funder names and IDs;
+the TF funder set marker remains a marker. Coordination organisations require an explicit creator decision.
+TS4NFDI support remains deferred.
+
+### Mapping profiles and datasets
+
+`RadarMapping` retains five lifecycle hooks:
+
+| Hook | Responsibility |
+| --- | --- |
+| `get_datasets(project, reader)` | Return uniquely keyed `ExportDataset` selections. |
+| `build_reader(project, snapshot=None)` | Prepare Values/catalog placements once and return a selection-to-context callable. |
+| `compute_metadata(context)` | Return a canonical `MappingResult`; typically a partial of the generic field composer. |
+| `build_import_writer(plugin, *, set_index, existing_values, mapping=None)` | Own allocation and return a callable accepting canonical metadata. Optional. |
+| `store_result(project, dataset, radar_id, radar_url)` | Persist confirmed results at profile-owned destinations. Optional. |
+
+`ExportDataset` contains `key`, `label`, JSON-compatible profile-owned `scope`, optional `radar_url`,
+and `fallback_file_stem`. Profiles interpret scope; adapters preserve it across OAuth callbacks.
+The TF profile retains numeric keys for flat datasets and complete coordinate keys for nested records.
+It captures exact installed Attribute URIs and scalar coordinates for result storage. Ambiguity cannot
+silently enable a path fallback. A project profile exports one title-only record and has no import/store hook.
+
+Factories require `profile=` even when dependencies are overridden. Explicit reader, mapping, serializer,
+writer, renderer, validator and clock arguments retain precedence; `writer=None` disables result storage.
+Generic adapters require an explicitly configured `mapping`; named TF/project adapters are preconfigured.
+Missing mappings fail clearly. Custom canonical functions and raw REST payload overrides retain their
+existing extension contracts.
+
+### Extension examples
+
+The [README](../README.md#typed-metadata-and-template-framework-overrides) shows replacing individual fields
+through `replace(TF_FIELDS, readers={...})`. The [standalone custom profile](../examples/custom_mapping.py)
+provides a complete independent example with discovery, scoped readers, grouped creators, import staging,
+result storage, and XML/OAuth/credentials/import adapter classes. It supports explicit import prefix and
+person nesting configuration. Copy it into your own plugin and register its classes with RDMO.
+
+An installation may also supply a direct canonical function using
+`replace(PROJECT_MAPPING, compute_metadata=read_metadata)`. Field composition is a convenience, not a
+requirement for custom mappings. All preparation hooks remain suitable for repeated offline previews.
+
+This prototype removes implicit TF defaults and the former coarse component keywords (`dataset=`,
+`creators=`, `funding=`, `language_path=`). Update registrations and compose per-field callbacks instead.
+There are no database or catalog migrations. The implementation requires Python 3.12 or newer and uses
+3.12 generic/type-alias syntax for the public callable contracts.
+
+## Persistence and failures
+
+`store_export_result(project, set_index, radar_id, radar_url, *, destinations)` requires explicit Attribute
+identities/paths and native coordinates, and stores the supplied complete URL unchanged.
+With the TF profile it updates only the selected dataset's current Values (`snapshot=None`,
+`collection_index=0`), using captured coordinates for nested datasets, skips missing installed target attributes, and writes ID/URL in one transaction.
+The remote request occurs before that transaction. `ExportStoreError` retains the confirmed ID and URL.
+If creation succeeds but the local write or callback project lookup fails, the adapter shows the confirmed
+link without another export submission form. Successful storage redirects to that link.
+
+`RadarClient.get` and `post` return native Requests responses, apply the configured timeout by default,
+and propagate standard Requests transport/HTTP exceptions. Endpoint helpers additionally check JSON,
+required token/ID fields, and workspace entries; invalid responses raise `RadarProtocolError`.
+Adapters choose safe translated messages from status and workflow. Unconfirmed creation never stores a
+result and warns users to check RADAR for a draft before retrying. Creation is never retried automatically.
+
+## Verification and upstream gaps
+
+Existing tests cover canonical XML/REST fixtures, dataset boundaries, custom URI prefixes, nested/repeated
+placements, empty markers, snapshots, query reuse, callable replacement, diagnostics, import merging,
+atomic persistence, and real RDMO 2 request/session/CSRF flows. Shared fixtures live in `tests/helpers.py`.
+The TF reader bypasses the core `filter_set` prefix-boundary bug. Strict regression tests
+verify XML and REST isolation for dataset indices 1 and 10, including nested parent
+collections and snapshots, and fail if either export calls the upstream method.
+
+At the field-profile refactor checkpoint, 728 tests passed with one expected upstream failure on Python 3.12.3
+and 3.14.10, using RDMO 2.5.2. That upstream-only check has since been replaced by strict plugin regressions.
+Independent profile tests cover two namespaces/nesting layouts, grouped
+people and affiliations, separate funder identifiers, explicit import crosswalks, and confirmed-result
+storage. CI tests Python 3.12 and 3.14, including changes to the executable custom-profile example.
+
+Run the suite with `python -m pytest`, repository hooks with `pre-commit run --all-files`, and the standalone
+benchmark with `python -m tests.benchmark_mapping`. The benchmark uses 2, 50, and 100 datasets and reports
+query counts, timings, and metadata/diagnostic hashes. These retain 16 setup queries and zero subsequent
+queries on the configured RDMO 2.5.2 fixture. The important query requirement is independence from dataset count.
+
+The Ruff hook follows the sibling RDMO checkout's pinned revision and lint rules, including Django, pytest,
+logging, and gettext checks. Configuration targets Python 3.12, uses 120-character lines and single-quoted
+strings, and keeps separate import groups for RDMO and this plugin. Check the complete package and tests
+with `ruff check rdmo_radar tests examples`; the hook remains `ruff-check`, without a repository-wide formatter hook.
+
+Prefer concise code over exhaustive type annotations. Simple constants and straightforward helpers can
+rely on inference; add annotations where they clarify an interface or data structure. Runtime protections
+such as read-only shared vocabulary tables serve a separate purpose from static typing.
+
+Compatibility checks use released RDMO 2.5.1/2.5.2 and the pinned 2.6 source revision
+`9f48c2fc93e021ff8eef3e087c1368235bef2e56`, with dependency versions reported explicitly.
+That recorded 2.6 branch baseline also carries the 2.5.1 release tag; it is not a separate 2.6 release.
+M7a passed 276 tests with one expected upstream failure on each RDMO 2 target, using Python 3.14.7,
+Django 5.2.18, DRF 3.18.3, and pytest 8.4.2. Its 26 added regression cases cover identity/URI access, local
+path ambiguity, catalog-only collisions, unsaved and deferred models, Option collisions, namespace-safe
+import merging/allocation, and cached resolution failures. Metadata/diagnostic hashes and query counts
+matched a clean `9bfe6f1` baseline at 2, 50, and 100 datasets: 16 setup queries on RDMO 2.5.2, 24 on 2.5.1,
+and zero subsequent queries on both.
+
+M7b/M7c pass 323 tests with the same expected upstream failure on each RDMO 2 target. The additional 47
+cases cover explicit project/TF modes, custom profiles through native registration, complete nested scopes,
+writer precedence, unavailable imports, staging/allocation ownership, identity matching across cached URI
+labels, stale selections, and real XML/credentials/OAuth flows. Callback tests change later form state and
+disable all reader/discovery functions, while checking custom writers, disabled storage, confirmed-result
+failures, and captured dataset scope. The RDMO 2.5.2 benchmark retains its metadata/diagnostic hashes, 16 setup
+queries, and zero queries after preparation for 2, 50, and 100 datasets.
+
+The existing RDMO 3 backend environment uses revision `a14a08b74e91e75da9c79f0606ce6fdb5c86b64e`.
+That source lacks the legacy project-export views and form template. Running
+`python -m pytest --ignore=tests/test_host.py -m 'not legacy_presentation'` passes 295 tests, with one
+deselected legacy presentation case and one expected upstream failure. These checks do not establish
+RDMO 3 frontend support. Arbitrary catalog import implementations and RDMO core improvements remain
+separate follow-ups; the profile interface provides the import boundary without guessing catalog semantics.
+
+Demonstrated upstream improvements:
+
+- Boundary-safe `ValueQuerySet.filter_set`: prefix matching selects dataset `10` when requesting `1`.
+  The regression tests in `tests/test_value_scopes.py` verify that TF exports isolate
+  those datasets without calling the affected method. The upstream method itself is unchanged.
+- A public catalog placement/scope helper covering repeated placements and empty page/questionset markers.
+  The plugin currently performs only the conversion and scope matching described above.
+  RDMO 3's `compute_value_maps()` in `projects/utils.py` already groups Values by Attribute IDs and set
+  coordinates, but does not provide the catalog placements or empty collection markers needed here.
+  Its AnswerTree adds rendering/condition behavior; M7a retains native core prefetch/traversal and small
+  dictionary preparation rather than introducing another tree. Identity-aware placement preparation and
+  coordinate constraints could be replaced by a future public core helper.
+- OAuth transport timeout/request hooks and safer core logging. The inspected core mixin does not expose
+  these hooks and logs some upstream bodies itself; plugin-owned client error handlers log only status.
+
+These are separate upstream tasks. See [metadata mapping](metadata-mapping.md) and
+[the RADAR REST contract](radar-api-contract.md) for field semantics and API evidence.

@@ -1,0 +1,17 @@
+{% extends 'core/page.html' %}
+{% load i18n %}
+
+{% block page %}
+    <h1>{% trans 'RADAR dataset created' %}</h1>
+    <div class="alert alert-warning" role="alert">
+        {% trans 'The dataset was created in RADAR, but its ID and URL could not be stored in RDMO.' %}
+        {% trans 'Check the created dataset before attempting another export.' %}
+    </div>
+    <p>
+        {% if radar_url %}
+            <a href="{{ radar_url }}" target="_blank" rel="noopener noreferrer">{{ radar_id }}</a>
+        {% else %}
+            {% trans 'RADAR dataset ID' %}: {{ radar_id }}
+        {% endif %}
+    </p>
+{% endblock %}

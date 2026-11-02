@@ -1,0 +1,192 @@
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Identifier:
+    value: str
+    identifier_type: str | None = None
+    relation_type: str | None = None
+    scheme_uri: str | None = None
+
+
+@dataclass
+class Affiliation:
+    name: str
+    identifier: str | None = None
+    identifier_scheme: str | None = None
+    scheme_uri: str | None = None
+
+    @property
+    def has_identifier_metadata(self) -> bool:
+        """Any identifier details are supplied, including a scheme on its own."""
+        return any((self.identifier, self.identifier_scheme, self.scheme_uri))
+
+
+@dataclass
+class Keyword:
+    value: str
+    keyword_scheme: str | None = None
+    scheme_uri: str | None = None
+    value_uri: str | None = None
+    classification_code: str | None = None
+
+    @property
+    def has_vocabulary_metadata(self) -> bool:
+        """The keyword carries vocabulary details beyond its label."""
+        return any((self.keyword_scheme, self.scheme_uri, self.value_uri, self.classification_code))
+
+
+def as_keyword(value: 'Keyword | str') -> Keyword:
+    """Adapt legacy custom mappings without changing their metadata objects."""
+    return Keyword(value) if isinstance(value, str) else value
+
+
+@dataclass
+class PersonOrOrganization:
+    """A person or organization acting as creator, contributor, publisher, or rights holder."""
+
+    name: str
+    given_name: str | None = None
+    family_name: str | None = None
+    name_type: str | None = None
+    identifiers: list[Identifier] = field(default_factory=list)
+    affiliations: list[Affiliation] = field(default_factory=list)
+    contributor_type: str | None = None
+
+
+@dataclass
+class SubjectArea:
+    controlled_name: str
+    additional_name: str | None = None
+
+
+@dataclass
+class Resource:
+    value: str
+    resource_type: str | None = None
+
+
+@dataclass
+class Rights:
+    controlled: str
+    additional: str | None = None
+
+
+@dataclass
+class FundingReference:
+    funder_name: str | None = None
+    funder_identifier: Identifier | None = None
+    award_number: str | None = None
+    award_uri: str | None = None
+    award_title: str | None = None
+
+    @property
+    def has_award_metadata(self) -> bool:
+        """Award details are supplied independently of the funder's name or identifier."""
+        return any((self.award_number, self.award_uri, self.award_title))
+
+
+@dataclass
+class GeoLocation:
+    country: str | None = None
+    region: str | None = None
+    latitude: str | float | None = None
+    longitude: str | float | None = None
+
+    @property
+    def has_any_coordinate(self) -> bool:
+        """At least one coordinate is supplied, including numeric zero."""
+        return any(value not in (None, '') for value in (self.latitude, self.longitude))
+
+    @property
+    def has_coordinate_pair(self) -> bool:
+        """Both coordinates are supplied; numeric zero is a present coordinate."""
+        return self.latitude not in (None, '') and self.longitude not in (None, '')
+
+
+@dataclass
+class Software:
+    name: str
+    software_type: str | None = None
+    version: str | None = None
+    alternative_name: str | None = None
+    alternative_version: str | None = None
+
+
+@dataclass
+class Description:
+    value: str
+    description_type: str = 'Abstract'
+
+
+@dataclass
+class MappingIssue:
+    field: str
+    reason: str
+    value: str | None = None
+    source: str | None = None
+
+    def __str__(self) -> str:
+        suffix = f' ({self.value})' if self.value else ''
+        source = f' [{self.source}]' if self.source else ''
+        return f'{self.field}{source}: {self.reason}{suffix}'
+
+
+@dataclass
+class RadarMetadata:
+    identifier: Identifier | None = None
+    alternate_identifiers: list[Identifier] = field(default_factory=list)
+    related_identifiers: list[Identifier] = field(default_factory=list)
+    creators: list[PersonOrOrganization] = field(default_factory=list)
+    contributors: list[PersonOrOrganization] = field(default_factory=list)
+    title: str | None = None
+    additional_titles: list[str] = field(default_factory=list)
+    descriptions: list[Description] = field(default_factory=list)
+    keywords: list[Keyword | str] = field(default_factory=list)
+    publishers: list[PersonOrOrganization] = field(default_factory=list)
+    production_year: str | None = None
+    publication_year: str | None = None
+    language: str | None = None
+    subject_areas: list[SubjectArea] = field(default_factory=list)
+    resource: Resource | None = None
+    geo_locations: list[GeoLocation] = field(default_factory=list)
+    data_sources: list[Resource] = field(default_factory=list)
+    software: list[Software] = field(default_factory=list)
+    processing: list[str] = field(default_factory=list)
+    rights: Rights | None = None
+    rights_holders: list[PersonOrOrganization] = field(default_factory=list)
+    related_information: list[str] = field(default_factory=list)
+    funding_references: list[FundingReference] = field(default_factory=list)
+    version: str | None = None
+
+
+@dataclass(frozen=True)
+class MappingResult:
+    metadata: RadarMetadata
+    issues: tuple[MappingIssue, ...] = ()
+    provenance: tuple['MappingAttempt', ...] | None = None
+
+
+@dataclass(frozen=True)
+class MappingSource:
+    """A native RDMO Value or an explicitly labelled property or literal."""
+
+    reference: str
+    value: object = None
+
+
+@dataclass(frozen=True)
+class MappingAttempt:
+    """One mapping decision, optionally bound to a verified serialized output value."""
+
+    field: str
+    sources: tuple[MappingSource, ...] = ()
+    value: object = None
+    outcome: str = 'mapped'
+    reason: str = ''
+    output_path: str | None = None
+    output_value: object = None
+
+    @property
+    def unsuccessful(self):
+        return self.outcome in ('empty', 'skipped', 'rejected')
