@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from ..entities import normalized_answers, read_controlled_value
-from ..normalization import normalize_answer, normalize_identifier
+from ..normalization import normalize_answer, normalize_identifier, normalize_source_identifier
 from ..types import FundingReference
 from .contracts import AttributeSelector, GroupSpec
 from .people import IdentifierSource
@@ -70,6 +70,7 @@ def read_funding(
         else:
             funder.record_empty_mapping(f'{item_target}.funder_name', sources.name)
         identifier_inputs = [value for value, _ in answers]
+        identifier_detected = False
         if sources.identifier is not None:
             spec = sources.identifier
             raw_id = funder.get_identifier(spec.value)
@@ -88,7 +89,20 @@ def read_funding(
                     if spec.scheme_source
                     else spec.scheme
                 )
-                explicit = identifier_normalizer(raw_id, kind) if kind else None
+                invalid_selection = (
+                    spec.scheme_source and any(v.is_true for v in funder.get_values(spec.scheme_source))
+                    and kind is None
+                )
+                normalized = normalize_source_identifier(
+                    raw_id, kind, detect_scheme=spec.detect_scheme and not invalid_selection,
+                    normalizer=identifier_normalizer,
+                )
+                for issue in normalized.issues:
+                    funder.warn(target, spec.value, issue)
+                    funder.record_mapping(f'{item_target}.funder_identifier', sources=identifier_inputs,
+                                          outcome='rejected', reason=issue)
+                explicit = normalized.identifier
+                identifier_detected = normalized.detected
                 if explicit is None or (identifier is not None and explicit != identifier):
                     funder.warn(target, spec.value, 'Unknown or conflicting funder identifier')
                     identifier = None
@@ -102,7 +116,7 @@ def read_funding(
                         f'{item_target}.funder_identifier.{field}',
                         sources=identifier_inputs,
                         value=value,
-                        reason='Normalized funder identifier',
+                        reason='Detected resolver URL' if identifier_detected else 'Normalized funder identifier',
                     )
         reference = FundingReference(
             funder_name=name,

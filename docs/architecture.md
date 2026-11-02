@@ -20,6 +20,7 @@ integration is deferred; previous backend checks do not establish frontend suppo
 | `metadata/builder.py`, `metadata/importer.py` | Compose independently replaceable read/write mappings. |
 | `metadata/fields/` | Reusable scalar and compound field getters/writers, immutable source/destination specifications, and callable contracts. |
 | `metadata/normalization.py`, `metadata/entities.py`, `metadata/fields/keywords.py` | Normalize supported provider displays without I/O; read names and free-text/GND keywords with native Value provenance. |
+| `metadata/pids.py` | Own reusable ORCID/ROR/GND schemes and offline detection of validated resolver URLs; field readers decide which identities are supported. |
 | `metadata/languages.py` | Keep the pure static language-name/code normalizer; TF Option identities belong to its profile. |
 | `metadata/values.py` | Prepare native Values/catalog placements, match coordinates, and provide shared answer helpers. |
 | `metadata/read_context.py` | Scoped project Value access and mapping diagnostics through `ProjectReadContext`. |
@@ -298,6 +299,9 @@ remain available for catalog-specific policies that do not fit a reusable specif
 `PersonSources` configures grouping, names, explicit identifiers, entity types, roles, and optional
 `AffiliationSources`. `IdentifierSource` describes a value and either a fixed scheme or a separate controlled
 scheme source. `FundingSources` describes name, optional scheme/separate identifier, and award fields.
+Fixed identifier schemes may be `PIDScheme` objects or compatible string names. Optional resolver-URL
+detection promotes untyped/Other identifiers; explicit specific schemes retain precedence. General
+`Source` selection and canonical `Identifier` values remain independent of scheme implementations.
 A getter does not infer behavior from the spelling of an Attribute path.
 
 Grouped access follows native coordinates and related catalog placements through

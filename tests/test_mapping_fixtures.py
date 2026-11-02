@@ -122,6 +122,9 @@ def test_updated_prototype_xml_matches_downloaded_radar_draft(observed_draft_pro
     assert read_metadata(export, 1).metadata.data_sources == []
     first = export.prepare_files()[0]
     expected = ElementTree.parse(XML_DIRECTORY / 'RADAR_DATASET_DESCRIPTIVE_METADATA.xml').getroot()
+    # The saved draft predates the explicit scheme required for free-text keywords.
+    for keyword in expected.findall('{*}keywords/{*}keyword'):
+        keyword.set('keywordScheme', 'Other')
     assert xml_structure(ElementTree.fromstring(first['xml_data'])) == xml_structure(expected)
     assert tuple(field['path'] for field in first['missing_fields']) == missing_required_fields(observed_draft_metadata)
     assert first['has_warnings']
@@ -141,7 +144,9 @@ def test_both_providers_export_observed_radar_draft(observed_draft_project, cls)
         'title': 'Radar Testdatensatz Nr 1',
         'additionalTitles': {'additionalTitle': [{'value': 'RADAR Test', 'additionalTitleType': 'OTHER'}]},
         'keywords': {'keyword': [
-            {'value': 'Schlagwort 1'}, {'value': 'Schlagwort 2'}, {'value': 'Schlagwort 3'},
+            {'value': 'Schlagwort 1', 'keywordScheme': 'OTHER'},
+            {'value': 'Schlagwort 2', 'keywordScheme': 'OTHER'},
+            {'value': 'Schlagwort 3', 'keywordScheme': 'OTHER'},
         ]},
         'subjectAreas': {'subjectArea': [{
             'controlledSubjectAreaName': 'OTHER',

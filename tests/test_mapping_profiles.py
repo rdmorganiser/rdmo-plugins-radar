@@ -277,7 +277,7 @@ def test_simple_mapping_from_ordinary_catalog_through_native_registration(
     assert prepared.payload['descriptiveMetadata'] == {
         'title': expected.title,
         'descriptions': {'description': [{'value': expected.descriptions[0].value, 'descriptionType': 'ABSTRACT'}]},
-        'keywords': {'keyword': [{'value': keyword} for keyword in expected.keywords]},
+        'keywords': {'keyword': [{'value': keyword, 'keywordScheme': 'OTHER'} for keyword in expected.keywords]},
     }
 
 
@@ -309,7 +309,8 @@ def test_questions_share_attribute_values_without_duplicate_metadata(example_pro
         assert result.metadata.keywords == ['chemistry', 'measurements']
         assert result.issues == ()
         assert service.compute_payload(dataset, 'owner@example.test').payload['descriptiveMetadata']['keywords'] == {
-            'keyword': [{'value': 'chemistry'}, {'value': 'measurements'}],
+            'keyword': [{'value': 'chemistry', 'keywordScheme': 'OTHER'},
+                        {'value': 'measurements', 'keywordScheme': 'OTHER'}],
         }
 
 

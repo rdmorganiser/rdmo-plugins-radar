@@ -4,14 +4,8 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import unquote, urlsplit
 
+from .pids import BUILTIN_PID_SCHEMES, PIDScheme, detect_pid, resolve_scheme, scheme_name
 from .types import Identifier
-
-_PATTERNS = {
-    'ROR': r'0[0-9a-z]{6}[0-9]{2}',
-    'ORCID': r'[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9Xx]',
-    'GND': r'(?:[0-9]+-[0-9Xx]|[0-9]{8,9}[0-9Xx])',
-}
-_HOSTS = {'ror.org': 'ROR', 'orcid.org': 'ORCID', 'd-nb.info': 'GND'}
 
 
 def normalize_primary_identifier(value, scheme):
@@ -56,31 +50,55 @@ def normalize_identifier(value, scheme=None):
     if not value or '<' in value or any(char.isspace() for char in value):
         return None
     try:
-        parsed = urlsplit(value)
-        detected = _HOSTS.get(parsed.hostname) if parsed.scheme in ('http', 'https') else None
+        urlsplit(value)
     except ValueError:
         return None
+    selected = resolve_scheme(scheme)
+    if selected is not None:
+        return selected.normalize(value)
+    detected = next((item for item in BUILTIN_PID_SCHEMES.values() if item.recognizes_uri(value)), None)
     if detected:
-        path = parsed.path.strip('/')
-        if detected == 'GND':
-            if not path.startswith('gnd/'):
-                return None
-            path = path[4:]
-        if parsed.query or parsed.fragment or '/' in path or (scheme and scheme != detected):
+        if scheme and scheme_name(scheme) != detected.name:
             return None
-        scheme, value = detected, path
-    if scheme in _PATTERNS:
-        if not re.fullmatch(_PATTERNS[scheme], value):
-            return None
-        if scheme == 'ROR':
-            value = f'https://ror.org/{value}'
-        elif scheme == 'GND':
-            value = f'https://d-nb.info/gnd/{value.upper()}'
-        else:
-            value = value.upper()
-    elif not scheme:
-        return None
-    return Identifier(value, scheme)
+        return detected.normalize(value)
+    # Preserve support for explicitly named local/other identifier schemes.
+    return Identifier(value, scheme_name(scheme)) if scheme else None
+
+
+@dataclass(frozen=True)
+class IdentifierNormalization:
+    identifier: Identifier | None
+    issues: tuple[str, ...] = ()
+    detected: bool = False
+
+
+def normalize_source_identifier(value, scheme, *, detect_scheme=True, normalizer=normalize_identifier):
+    """Normalize an explicit field while keeping custom callbacks string-based.
+
+    Ambiguous detection and specific-scheme conflicts return diagnostic issues.
+    Reader-level fallbacks for malformed typed values remain the caller's policy.
+    """
+    name = scheme_name(scheme)
+    if detect_scheme:
+        selected = resolve_scheme(scheme)
+        schemes = (*BUILTIN_PID_SCHEMES.values(), selected) if selected else None
+        detection = detect_pid(value, schemes=schemes)
+        if detection.ambiguous:
+            return IdentifierNormalization(None, ('Conflicting identifier URLs',))
+        if detection.identifier:
+            identifier = detection.identifier
+            if name not in (None, 'Other', identifier.identifier_type):
+                return IdentifierNormalization(None, ('Identifier scheme conflicts with its URI',))
+            chosen = selected or resolve_scheme(identifier.identifier_type)
+            result = normalizer(identifier.value, chosen if normalizer is normalize_identifier else chosen.name)
+            return IdentifierNormalization(result, detected=result is not None)
+    if not name:
+        return IdentifierNormalization(None, ('Identifier has no recognized scheme',))
+    # Detection can be disabled without disabling conflict checks on whole URIs.
+    detected = normalizer(value)
+    if detected and name not in ('Other', detected.identifier_type):
+        return IdentifierNormalization(None, ('Identifier scheme conflicts with its URI',))
+    return IdentifierNormalization(normalizer(value, scheme if normalizer is normalize_identifier else name))
 
 
 class _ProviderDisplay(HTMLParser):
@@ -105,36 +123,55 @@ class _ProviderDisplay(HTMLParser):
         self.parts.append((data, self.href))
 
 
-def normalize_answer(text, external_id='', *, scheme=None):
+def normalize_answer(text, external_id='', *, scheme=None, require_label=True):
     """Extract labels from known ROR/ORCID/GND displays, retaining ordinary free text."""
     text = (text or '').strip()
     display = _ProviderDisplay(text)
-    links = {href: normalized for href in display.links
-             if (normalized := normalize_identifier(href)) is not None}
-    candidates = {(item.value, item.identifier_type) for item in links.values()}
+    schemes = tuple(BUILTIN_PID_SCHEMES.values())
+    if isinstance(scheme, PIDScheme) and scheme.name not in BUILTIN_PID_SCHEMES:
+        schemes += (scheme,)
+    links = {href: detection.identifier for href in display.links
+             if (detection := detect_pid(href, schemes=schemes)).identifier is not None}
+    visible = ''.join(data for data, href in display.parts if href not in links)
+    detection = detect_pid(visible, schemes=schemes)
+    candidates = {(item.value, item.identifier_type): item for item in (
+        *links.values(), *(match.identifier for match in detection.matches),
+    )}
     issues = []
     identifier = None
     if len(candidates) > 1:
         issues.append('Conflicting provider identifiers')
     else:
-        linked = next(iter(links.values()), None)
-        hint = scheme or (linked.identifier_type if linked else None)
+        linked = next(iter(candidates.values()), None)
+        specific = scheme if scheme_name(scheme) != 'Other' else None
+        hint = specific or (linked.identifier_type if linked else scheme)
+        if isinstance(scheme, PIDScheme) and linked and linked.identifier_type == scheme.name:
+            hint = scheme
         if external_id:
-            identifier = normalize_identifier(external_id, hint)
+            external = normalize_source_identifier(external_id, hint)
+            identifier = external.identifier
             if identifier is None:
-                issues.append('Unsupported or malformed external identifier')
+                if any('conflict' in issue.lower() for issue in external.issues):
+                    issues.extend(external.issues)
+                else:
+                    issues.append('Unsupported or malformed external identifier')
             elif linked and (identifier.value, identifier.identifier_type) not in candidates:
                 issues.append('Conflicting provider identifiers')
                 identifier = None
         elif linked:
-            identifier = normalize_identifier(linked.value, scheme)
+            identifier = normalize_identifier(linked.value, specific or resolve_scheme(linked.identifier_type))
+            if isinstance(scheme, PIDScheme) and scheme.name == linked.identifier_type:
+                identifier = scheme.normalize(linked.value)
             if identifier is None:
                 issues.append('Identifier scheme conflicts with provider identity')
-        elif scheme and text:
+        elif specific and text:
             identifier = normalize_identifier(text, scheme)
-    if links:
-        label = ''.join(data for data, href in display.parts if href not in links).strip()
-        if any(item.identifier_type == 'GND' for item in links.values()):
+    label = visible
+    for start, end in sorted({(match.start, match.end) for match in detection.matches}, reverse=True):
+        label = label[:start] + label[end:]
+    if candidates:
+        label = re.sub(r'\(\s*\)|\[\s*\]|\{\s*\}', '', label).strip(' \t\r\n,;:.!?')
+        if any(item.identifier_type == 'GND' for item in candidates.values()):
             label = label.replace('[]', '').split(' | ', 1)[0].strip()
         # A plain linked name is usable; a displayed URL/ID is not an entity name.
         if not label:
@@ -146,6 +183,6 @@ def normalize_answer(text, external_id='', *, scheme=None):
         label = text
     if identifier and normalize_identifier(label, identifier.identifier_type) == identifier:
         label = ''
-    if identifier and not label:
+    if identifier and not label and require_label:
         issues.append('Provider answer has no usable name or term label')
     return NormalizedAnswer(label, identifier, tuple(issues))

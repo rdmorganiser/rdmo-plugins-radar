@@ -66,7 +66,7 @@ produce the existing storage-failure result page after confirmed creation rather
 | Rights holders | Use only `project/dataset/ipr/rightsholder` for export and import. Preserve ORCID/ROR provider identities alongside names during export; import writes names and warns about unsupported identity data. |
 | Publishers | `project/dataset/curation/responsible_person/name`: text or provider names, with ORCID/ROR identity when available. Responsibility Options are not publisher names. A custom publisher callable can replace this reader. |
 | Funding | Read name, grant-number, and programme fields grouped by answer coordinates. Split `project/funder/name` provider answers into funder name and identifier. Optional `project/funder/id/type` supplies an explicit identifier scheme; it never creates an identifier. `project/funder/id` remains a set marker. Existing programme-URL support remains available. |
-| Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped; GND entries retain label, scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
+| Keywords | Combine `project/research_question/keywords` and `/keywords/gnd`. Free text stays untyped internally and exports with scheme `Other`. Pasted GND resolver URLs retain label (or URI), scheme, scheme URI, term URI and classification code. Deduplicate free text by trimmed text and GND terms by identity, preserving distinct terms with the same label. |
 | Software | The explicit `dmp4nfdi/v2-0-0/ur00` usage-requirement choice with free text → software name and `Resource Viewing`. Optional confirmed name/version Attributes can be configured in the TF field mapping. No parsing of versions from names. Missing version is reported. |
 | Creators | Prefer `project/dataset/owner/name`, `/given_name`, `/family_name`; fall back to established `project/dataset/creator/*`. Read provider identities and creator-linked affiliations. Project coordination organisations require a custom mapping. |
 | Contributors | Prefer `project/contributor/*`, retaining `project/partner/*` as fallback. Read actual names, structured names, person/entity Options, ORCID, organisation and ROR affiliation fields, including SMP autocomplete answers. Accept explicit recognized RADAR roles; unknown/conflicting roles become `Other` with a warning. An optional data-management reader appends people with one entry per role. Responsibility labels never become names. |
@@ -138,6 +138,99 @@ Disabled data-management mapping records an explicit skipped explanation. These 
 remain escaped, preview-only, and require no additional database queries.
 Disabled-source notes inspect native prepared answers only when tracing is enabled;
 they never resolve ambiguous unused Attribute paths or introduce mapping warnings.
+
+## PID schemes and detection
+
+`Source` selects an Attribute and scope. `IdentifierSource` additionally describes how to
+interpret an identifier value. Its `scheme` accepts a reusable `PIDScheme` object, a
+scheme-name string, or `None`; existing string mappings and controlled Option crosswalks
+remain supported. For example:
+
+```python
+from rdmo_radar.metadata.fields import IdentifierSource
+from rdmo_radar.metadata.pids import ORCID, ROR, detect_pid
+
+person_id = IdentifierSource('your/catalog/person/orcid', scheme=ORCID)
+organisation_id = IdentifierSource('your/catalog/organisation/id', scheme=ROR)
+generic_id = IdentifierSource('your/catalog/entity/id')
+explicit_only = IdentifierSource('your/catalog/entity/id', detect_scheme=False)
+
+detection = detect_pid('Jane Doe (https://orcid.org/0000-0002-1825-0097).')
+identifier = detection.identifier  # Identifier('0000-0002-1825-0097', 'ORCID')
+```
+
+The built-in `ORCID`, `ROR` and `GND` objects own resolver hosts, syntax, normalization
+and canonical resolver URI conversion (`scheme.as_uri(value)`). Canonical ORCID values
+remain bare IDs; ROR and GND values remain HTTPS resolver URIs. These checks do not
+verify checksums, contact resolvers, or fetch names. Primary DOI/Handle/RADAR dataset
+identifiers retain their independent normalization rules.
+
+`detect_pid` only recognizes validated resolver URLs, not bare IDs or scheme namespace
+URLs such as `https://d-nb.info/gnd/`. It returns URL matches with scheme, normalized
+identifier and text offsets. Repeated equivalent URLs represent one identity. Multiple
+distinct identities set `ambiguous=True` and make `identifier` return `None`.
+
+Provider-answer readers reuse detection for plain URLs, surrounding text, HTML links,
+and external IDs. Surrounding text supplies the label. In explicit identifier fields,
+`detect_scheme=True` permits promotion when no scheme is supplied or `Other` is selected.
+A specific scheme remains authoritative: a conflicting URL produces a warning. Unknown
+or conflicting controlled scheme selections do not silently fall back to detection.
+Bare IDs still need explicit scheme context. Scalar titles/descriptions are not scanned.
+Existing injected normalization callbacks continue receiving string scheme names.
+
+People, organisations and funders still require names. A GND-only keyword instead uses
+its canonical URI as its value and includes GND scheme, term URI and classification code.
+Unsupported keyword schemes and conflicting identities retain the original keyword text
+with a warning. Ordinary free-text keywords export as XML `keywordScheme="Other"` and
+REST `keywordScheme="OTHER"`; Other-only XML keywords import as plain text. Additional
+vocabulary metadata remains typed. Existing malformed-value fallbacks for explicitly
+typed people/affiliation identifiers remain; funding continues to omit invalid IDs.
+
+Custom schemes subclass `PIDScheme` and implement `normalize(value) -> Identifier | None`.
+Set `name`, `scheme_uri` and `resolver_hosts`; the optional `pattern` and `path_prefix`
+class attributes support the base `_local_id` parser. Populate `Identifier.scheme_uri`
+when a custom scheme needs that URI in output. Pass an instance to `IdentifierSource` or
+to `detect_pid(text, schemes=(custom_scheme,))`; no global registration is required.
+Custom normalization does not expand the schemes allowed by a RADAR field or its schema.
+
+## Project and dataset keywords
+
+The TF mapping reads the established project keyword Attributes first. Optional dataset
+keyword Attributes can be appended with `keyword_reader(dataset_sources=...)` once their
+paths are known. Each pair supplies a `Source` and a scheme (`None` for free text,
+`GND` or `'GND'` for GND identifiers). For example, in a custom mapping module:
+
+```python
+from dataclasses import replace
+from functools import partial
+
+from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, keyword_reader
+from rdmo_radar.metadata.fields import Source
+from rdmo_radar.metadata.pids import GND
+
+FIELDS = replace(TF_FIELDS, readers={
+    **TF_FIELDS.readers,
+    'keywords': keyword_reader(dataset_sources=(
+        (Source('your/catalog/dataset/keywords'), None),
+        (Source('your/catalog/dataset/keywords/gnd'), GND),
+    )),
+})
+MAPPING = replace(TEMPLATE_FRAMEWORK_MAPPING, compute_metadata=partial(compute_metadata, fields=FIELDS))
+```
+
+Use the actual Attribute selectors in place of the example paths; full URIs are also
+supported. Configure the export with `MAPPING` as its mapping profile. `Source` defaults
+to the current dataset scope, so dataset answers follow native catalog placement and
+coordinates, including nested collections. Project keywords remain shared. Missing
+dataset answers add nothing; answers from other datasets are excluded.
+
+Both XML and REST export the combined list: project sources first, then dataset sources
+in their configured order. The existing deduplication applies across all sources: free
+text by trimmed label, GND terms by identifier. The first occurrence wins; distinct GND
+identifiers with the same label remain separate. Mapping provenance retains the source
+answers and records skipped duplicates. The default mapping configures no dataset
+keyword paths. Import continues to write labels to the established project Attribute.
 
 ## Software sources
 

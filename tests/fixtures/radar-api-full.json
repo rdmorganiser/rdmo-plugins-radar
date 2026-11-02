@@ -14,7 +14,7 @@
   "title": "Dataset",
   "additionalTitles": {"additionalTitle": [{"value": "DATA", "additionalTitleType": "OTHER"}, {"value": "Alternative title", "additionalTitleType": "OTHER"}]},
   "descriptions": {"description": [{"value": "Abstract", "descriptionType": "ABSTRACT"}, {"value": "Changes", "descriptionType": "VERSION_NOTES"}]},
-  "keywords": {"keyword": [{"value": "FAIR"}, {"value": "Science"}]},
+  "keywords": {"keyword": [{"value": "FAIR", "keywordScheme": "OTHER"}, {"value": "Science", "keywordScheme": "OTHER"}]},
   "publishers": {"publisher": [{"value": "Repository"}, {"value": "University", "nameIdentifier": "ror-1", "nameIdentifierScheme": "ROR", "schemeURI": "https://ror.org/"}]},
   "productionYear": "2025",
   "publicationYear": "2026",

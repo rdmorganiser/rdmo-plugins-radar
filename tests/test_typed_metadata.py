@@ -17,7 +17,7 @@ from rdmo_radar.exports.validation import get_radar_validation_errors
 from rdmo_radar.factories import build_export_service, build_xml_export_service
 from rdmo_radar.mappings.template_framework import TEMPLATE_FRAMEWORK_MAPPING, compute_metadata, write_metadata
 from rdmo_radar.mappings.template_framework.dataset_writers import write_keywords
-from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, read_contributors
+from rdmo_radar.mappings.template_framework.fields import TF_FIELDS, keyword_reader, read_contributors
 from rdmo_radar.metadata.api import to_api_payload
 from rdmo_radar.metadata.fields import Source, read_names
 from rdmo_radar.metadata.normalization import normalize_answer
@@ -108,6 +108,77 @@ def test_unsupported_terminology_keeps_label_and_warns(project):
     result = metadata(project)
     assert result.metadata.keywords == ['Some term']
     assert any('Unsupported' in issue.reason for issue in result.issues)
+
+
+def test_project_and_dataset_keywords_append_deduplicate_and_export(project):
+    shared = add_answer(project, 'project/research_question/keywords', 'Shared')
+    add_answer(project, 'project/research_question/keywords/gnd', 'Term', external_id='4079154-3')
+    add_answer(project, 'local/dataset/keywords', ' Shared ', set_index=2)
+    specific = add_answer(project, 'local/dataset/keywords', 'Dataset two', set_index=2, collection_index=1)
+    add_answer(project, 'local/dataset/gnd', 'Same term, another label', external_id='4079154-3', set_index=2)
+    add_answer(project, 'local/dataset/gnd', 'Term', external_id='4069254-0', set_index=2, collection_index=1)
+    add_answer(project, 'local/dataset/keywords', 'Dataset twenty', set_index=20)
+    fields = replace(TF_FIELDS, readers={**TF_FIELDS.readers, 'keywords': keyword_reader(dataset_sources=(
+        (Source('local/dataset/keywords'), None),
+        (Source('local/dataset/gnd'), 'GND'),
+    ))})
+    service = build_export_service(
+        project, profile=TEMPLATE_FRAMEWORK_MAPPING, mapping=partial(compute_metadata, fields=fields),
+        collect_mapping=True,
+    )
+    result = service.mapping(service.reader(2))
+    assert result.metadata.keywords == [
+        'Shared', Keyword('Term', 'GND', 'https://d-nb.info/gnd/', GND, '4079154-3'),
+        'Dataset two',
+        Keyword('Term', 'GND', 'https://d-nb.info/gnd/', 'https://d-nb.info/gnd/4069254-0', '4069254-0'),
+    ]
+    assert result.issues == ()
+    assert sum(row.outcome == 'skipped' and row.field == 'keywords' for row in result.provenance) == 2
+    for target, answer in (('keywords[0]', shared), ('keywords[2]', specific)):
+        assert any(row.field == target and row.sources[0].value == answer for row in result.provenance)
+
+    api = service.compute_payload(2, 'owner@example.test').payload['descriptiveMetadata']['keywords']['keyword']
+    xml = RadarExportRenderer().render(to_xml_payload(result.metadata))
+    elements = ElementTree.fromstring(xml).findall('{*}keywords/{*}keyword')
+    assert [item['value'] for item in api] == [element.text for element in elements] == [
+        'Shared', 'Term', 'Dataset two', 'Term',
+    ]
+    assert api[1]['valueURI'] == elements[1].get('valueURI') == GND
+    assert service.mapping(service.reader(20)).metadata.keywords == [
+        'Shared', Keyword('Term', 'GND', 'https://d-nb.info/gnd/', GND, '4079154-3'), 'Dataset twenty',
+    ]
+    # Configured but absent dataset answers leave only the shared keywords.
+    assert service.mapping(service.reader(7)).metadata.keywords == result.metadata.keywords[:2]
+    # Configuration does not mutate the default mapping.
+    assert metadata(project).metadata.keywords == result.metadata.keywords[:2]
+
+
+def test_appended_dataset_keywords_follow_nested_catalog_coordinates(project):
+    catalog = Catalog.objects.create(uri_prefix='https://example.test', uri_path='keyword-scope')
+    section = Section.objects.create(uri_prefix='https://example.test', uri_path='keyword-section')
+    CatalogSection.objects.create(catalog=catalog, section=section)
+    project.catalog = catalog
+    project.save()
+    add_question(add_page(project), 'project/research_question/keywords')
+    dataset = add_questionset(add_page(project, 'local/records', collection=True),
+                              'project/dataset/id', collection=True)
+    add_question(dataset, 'project/dataset/title')
+    keywords = add_questionset(dataset, 'local/keyword-group', collection=True)
+    add_question(keywords, 'local/keyword-label')
+    add_answer(project, 'project/research_question/keywords', 'Shared')
+    add_answer(project, 'project/dataset/title', 'Nested dataset', set_prefix='4', set_index=2)
+    add_answer(project, 'local/keyword-label', 'Selected', set_prefix='4|2', set_index=3)
+    add_answer(project, 'local/keyword-label', 'Other dataset', set_prefix='4|20', set_index=3)
+    add_answer(project, 'local/keyword-label', 'Other parent', set_prefix='40|2', set_index=3)
+    fields = replace(TF_FIELDS, readers={**TF_FIELDS.readers, 'keywords': keyword_reader(dataset_sources=(
+        (Source('local/keyword-label'), None),
+    ))})
+    service = build_export_service(
+        project, profile=TEMPLATE_FRAMEWORK_MAPPING, mapping=partial(compute_metadata, fields=fields),
+    )
+    datasets = TEMPLATE_FRAMEWORK_MAPPING.get_datasets(project, service.reader)
+    selected = next(item for item in datasets if item.scope['set_prefix'] == '4' and item.scope['set_index'] == 2)
+    assert service.mapping(service.reader(selected)).metadata.keywords == ['Shared', 'Selected']
 
 
 def test_owner_preference_nested_affiliation_and_dataset_isolation(project):
@@ -460,7 +531,8 @@ def test_typed_xml_validation_roundtrip_and_independent_rest_expectations():
     assert parsed.funding_references[0].funder_identifier.scheme_uri == 'https://ror.org/'
     payload = to_api_payload(source)
     assert payload['keywords'] == {'keyword': [
-        {'value': 'Free text'}, {'value': 'Term', 'keywordScheme': 'GND', 'schemeURI': 'https://d-nb.info/gnd/',
+        {'value': 'Free text', 'keywordScheme': 'OTHER'},
+        {'value': 'Term', 'keywordScheme': 'GND', 'schemeURI': 'https://d-nb.info/gnd/',
                                  'valueURI': GND, 'classificationCode': '4079154-3'},
     ]}
     assert payload['publishers'] == {'publisher': [

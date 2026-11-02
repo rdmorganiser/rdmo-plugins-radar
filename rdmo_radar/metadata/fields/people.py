@@ -8,7 +8,8 @@ from types import MappingProxyType
 from rdmo.projects.models import Value
 
 from ..entities import read_controlled_value, read_named_value, read_named_values
-from ..normalization import normalize_answer, normalize_identifier
+from ..normalization import normalize_answer, normalize_identifier, normalize_source_identifier
+from ..pids import PIDScheme, scheme_name
 from ..provenance import rebase_attempts
 from ..types import Affiliation, Identifier, PersonOrOrganization
 from .contracts import AttributeSelector, GroupSpec
@@ -16,10 +17,17 @@ from .contracts import AttributeSelector, GroupSpec
 
 @dataclass(frozen=True)
 class IdentifierSource:
+    """A value with a fixed scheme object/name or controlled scheme selection.
+
+    Detection promotes validated resolver URLs when no specific scheme is chosen.
+    Disabling it still allows normalization of explicitly typed identifiers.
+    """
+
     value: AttributeSelector
-    scheme: str | None = None
+    scheme: PIDScheme | str | None = None
     scheme_source: AttributeSelector | None = None
     option_map: Mapping = dataclass_field(default_factory=dict)
+    detect_scheme: bool = True
 
     def __post_init__(self):
         object.__setattr__(self, 'option_map', MappingProxyType(dict(self.option_map)))
@@ -290,6 +298,7 @@ def _read_person_or_organization(context, sources, target, *, parent, normalizer
 
 def _read_identifiers(context, sources, target, identifiers, normalizer, identifier_normalizer, *, provenance_start):
     evidence = []
+    detected_inputs = set()
     conflicting = False
     for path, hint in ((sources.name, None), (sources.autocomplete, 'ORCID')):
         if path is None:
@@ -318,18 +327,22 @@ def _read_identifiers(context, sources, target, identifiers, normalizer, identif
             if any(value.external_id or value.text.strip() for value in input_values):
                 conflicting = True
             continue
-        if not expected:
-            context.warn(target, path, 'Identifier has no recognized scheme')
+        invalid_selection = scheme_path and any(v.is_true for v in context.get_values(scheme_path)) and scheme is None
+        normalized = normalize_source_identifier(
+            value, expected, detect_scheme=item.detect_scheme and not invalid_selection,
+            normalizer=identifier_normalizer,
+        )
+        if normalized.issues:
+            for issue in normalized.issues:
+                context.warn(target, path, issue)
+                context.record_mapping(f'{target}.identifiers', sources=input_values, outcome='rejected', reason=issue)
             conflicting = True
             continue
-        detected = identifier_normalizer(value)
-        if detected and detected.identifier_type != expected:
-            context.warn(target, path, 'Identifier scheme conflicts with its URI')
-            conflicting = True
-            continue
-        identifier = identifier_normalizer(value, expected) or Identifier(value, expected)
+        identifier = normalized.identifier or Identifier(value, scheme_name(expected))
         if scheme_path:
             input_values = [*input_values, *context.get_values(scheme_path)]
+        if normalized.detected:
+            detected_inputs.update(id(value) for value in input_values)
         evidence.append((identifier, input_values))
     by_scheme = {}
     for identifier, _ in evidence:
@@ -355,7 +368,8 @@ def _read_identifiers(context, sources, target, identifiers, normalizer, identif
                     f'{target}.identifiers[{index}].{field}',
                     sources=sources,
                     value=value,
-                    reason='Normalized entity identifier',
+                    reason='Detected resolver URL' if detected_inputs.intersection(inputs)
+                    else 'Normalized entity identifier',
                 )
     return result
 
@@ -412,16 +426,25 @@ def _read_affiliations(parent, context, sources, target, normalizer, identifier_
             group.warn(target, id_path, 'Affiliation identifier is ambiguous across multiple names')
         for person in people:
             ids = list(person.identifiers)
+            identifier_detected = False
             if raw_id and len(people) == 1:
-                if scheme:
-                    detected = identifier_normalizer(raw_id)
-                    if detected and detected.identifier_type != scheme:
-                        group.warn(target, id_path, 'Affiliation identifier scheme conflicts with its URI')
-                        ids = []
-                    else:
-                        ids.append(identifier_normalizer(raw_id, scheme) or Identifier(raw_id, scheme))
+                invalid_selection = (
+                    scheme_path and any(v.is_true for v in group.get_values(scheme_path)) and scheme is None
+                )
+                normalized = normalize_source_identifier(
+                    raw_id, scheme, detect_scheme=spec.identifier.detect_scheme and not invalid_selection,
+                    normalizer=identifier_normalizer,
+                )
+                if normalized.issues:
+                    for issue in normalized.issues:
+                        reason = f'Affiliation {issue[0].lower()}{issue[1:]}'
+                        group.warn(target, id_path, reason)
+                        group.record_mapping(f'{target}.affiliations', sources=group.get_values(id_path),
+                                             outcome='rejected', reason=reason)
+                    ids = []
                 else:
-                    group.warn(target, id_path, 'Affiliation identifier has no recognized scheme')
+                    ids.append(normalized.identifier or Identifier(raw_id, scheme_name(scheme)))
+                    identifier_detected = normalized.detected
             identities = {(identifier.value, identifier.identifier_type) for identifier in ids}
             if len(identities) > 1 or any(identifier.identifier_type == 'ORCID' for identifier in ids):
                 group.warn(target, path, 'Conflicting or non-organisational affiliation identifier')
@@ -446,7 +469,8 @@ def _read_affiliations(parent, context, sources, target, normalizer, identifier_
                         f'{target}.affiliations[{len(affiliations)}].{field}',
                         sources=sources,
                         value=value,
-                        reason='Creator-linked organisational affiliation',
+                        reason='Detected resolver URL' if identifier_detected and field != 'name'
+                        else 'Creator-linked organisational affiliation',
                     )
             affiliations.append(affiliation)
     if len(affiliations) > 1:

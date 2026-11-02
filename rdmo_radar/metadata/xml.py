@@ -109,6 +109,11 @@ def to_xml_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             record_binding(record_output, value_target, output_path, keyword.value)
             for field, name in KEYWORD_ATTRIBUTES:
                 value = getattr(keyword, field)
+                if field == 'keyword_scheme' and not value:
+                    item[name] = 'Other'
+                    record_binding(record_output, '$keywordScheme', f'{output_path}/@{name}', 'Other',
+                                   'Free-text keyword scheme default')
+                    continue
                 if field == 'scheme_uri' and value is None:
                     value = _scheme_uri(keyword, target, output_path, record_output, keyword.keyword_scheme)
                     if value is not None:
@@ -294,6 +299,10 @@ def parse_xml(root: Element) -> RadarMetadata:
     for element in _findall(root, 'keywords', 'keyword'):
         if element.text:
             attributes = {field: element.get(name) for field, name in KEYWORD_ATTRIBUTES}
+            if attributes['keyword_scheme'] == 'Other' and not any(
+                value for field, value in attributes.items() if field != 'keyword_scheme'
+            ):
+                attributes['keyword_scheme'] = None
             # Untyped XML retains the established public string representation.
             keyword = Keyword(element.text, **attributes)
             metadata.keywords.append(keyword if keyword.has_vocabulary_metadata else keyword.value)

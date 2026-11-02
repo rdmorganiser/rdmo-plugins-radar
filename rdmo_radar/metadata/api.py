@@ -132,6 +132,11 @@ def to_api_payload(metadata: RadarMetadata, *, record_output=None) -> dict:
             record_binding(record_output, value_target, f'{output_path}/value', keyword.value)
             for field, name in KEYWORD_ATTRIBUTES:
                 value = getattr(keyword, field)
+                if field == 'keyword_scheme' and not value:
+                    item[name] = 'OTHER'
+                    record_binding(record_output, '$keywordScheme', f'{output_path}/{name}', 'OTHER',
+                                   'Free-text keyword scheme default')
+                    continue
                 if field == 'keyword_scheme':
                     value = to_api_value(value)
                 if field == 'scheme_uri' and value is None:

@@ -14,6 +14,7 @@ def normalized_answers(context, path, target, *, scheme=None, normalizer=normali
         answer = normalizer(value.text, value.external_id, scheme=scheme)
         for issue in answer.issues:
             context.warn(target, path, issue)
+            context.record_mapping(target, sources=(value,), outcome='rejected', reason=issue)
         if answer.label:
             yield value, answer
         else:

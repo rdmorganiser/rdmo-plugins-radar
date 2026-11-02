@@ -1,10 +1,8 @@
 import re
 
-SCHEME_URIS = {
-    'ORCID': 'https://orcid.org/',
-    'ROR': 'https://ror.org/',
-    'GND': 'https://d-nb.info/gnd/',
-}
+from .pids import BUILTIN_PID_SCHEMES
+
+SCHEME_URIS = {name: scheme.scheme_uri for name, scheme in BUILTIN_PID_SCHEMES.items()}
 
 KEYWORD_ATTRIBUTES = (
     ('keyword_scheme', 'keywordScheme'),

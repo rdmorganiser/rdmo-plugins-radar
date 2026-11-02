@@ -28,6 +28,7 @@ from ...metadata.fields import (
 )
 from ...metadata.fields.people import report_orphan_identities
 from ...metadata.normalization import normalize_primary_identifier
+from ...metadata.pids import GND, ORCID, ROR
 from ...metadata.provenance import mark_mapping_default, rebase_mapping
 from ...metadata.types import GeoLocation, Identifier, PersonOrOrganization
 from ...metadata.values import normalize
@@ -49,6 +50,22 @@ SOFTWARE_NAME_PATH = None
 SOFTWARE_VERSION_PATH = None
 RESOURCE_TYPE_PATH = None
 
+PROJECT_KEYWORD_SOURCES = (
+    (Source('project/research_question/keywords', 'project'), None),
+    (Source('project/research_question/keywords/gnd', 'project'), GND),
+)
+
+
+def keyword_reader(*, dataset_sources=()):
+    """Append configured dataset keyword sources to the established project sources.
+
+    Each entry is a ``(Source(attribute), scheme)`` pair, with ``None`` for
+    free text or ``'GND'`` for GND identifiers. Current-scope Sources retain
+    dataset selection, including catalog placement and nested coordinates.
+    The shared reader deduplicates across all sources in their configured order.
+    """
+    return partial(read_keywords, sources=PROJECT_KEYWORD_SOURCES + tuple(dataset_sources))
+
 
 def person_sources(base, *, scope='current', **kwargs):
     """TF naming conventions are configured here, never inferred by field getters."""
@@ -68,8 +85,8 @@ def person_sources(base, *, scope='current', **kwargs):
                 scheme_source=f'{base}/name_identifier_scheme',
                 option_map=XMLVocabulary.name_identifier_scheme_options,
             ),
-            IdentifierSource(f'{base}/orcid', scheme='ORCID'),
-            IdentifierSource(f'{base}/ror', scheme='ROR'),
+            IdentifierSource(f'{base}/orcid', scheme=ORCID),
+            IdentifierSource(f'{base}/ror', scheme=ROR),
         ),
         **kwargs,
     )
@@ -95,7 +112,7 @@ PARTNER = person_sources(
     default_role='Other',
     affiliations=AffiliationSources(
         'project/partner/organization',
-        identifier=IdentifierSource('project/partner/organization/ror', scheme='ROR'),
+        identifier=IdentifierSource('project/partner/organization/ror', scheme=ROR),
     ),
 )
 CONTRIBUTOR = replace(
@@ -114,7 +131,7 @@ CONTRIBUTOR = replace(
     default_name_type=None,
     affiliations=AffiliationSources(
         'project/contributor/organization',
-        identifier=IdentifierSource('project/contributor/organization/ror', scheme='ROR'),
+        identifier=IdentifierSource('project/contributor/organization/ror', scheme=ROR),
         autocomplete='project/contributor/organization/ror-autocomplete',
     ),
     roles=(RoleSource('project/contributor/role'), RoleSource('dmp/contributor/role', require_shared_placement=True)),
@@ -141,7 +158,7 @@ FUNDING = FundingSources(
 DATA_MANAGEMENT = PersonSources(
     group=GroupSpec(('project/data_management/name',), 'project'),
     name='project/data_management/name',
-    identifiers=(IdentifierSource('project/data_management/orcid', scheme='ORCID'),),
+    identifiers=(IdentifierSource('project/data_management/orcid', scheme=ORCID),),
     roles=(RoleSource('project/data_management/role'),),
     role_options=DATA_MANAGEMENT_ROLE_OPTIONS,
     role_warnings=DATA_MANAGEMENT_ROLE_WARNINGS,
@@ -299,13 +316,7 @@ TF_FIELDS = FieldMapping(
         'identifier': read_identifier,
         'title': read_title,
         'additional_titles': read_additional_titles,
-        'keywords': partial(
-            read_keywords,
-            sources=(
-                (Source('project/research_question/keywords', 'project'), None),
-                (Source('project/research_question/keywords/gnd', 'project'), 'GND'),
-            ),
-        ),
+        'keywords': keyword_reader(),
         'publishers': partial(read_names, source=Source('project/dataset/curation/responsible_person/name')),
         'language': partial(read_language, source=Source(LANGUAGE_PATH), option_map=XMLVocabulary.language_options),
         'subject_areas': partial(
